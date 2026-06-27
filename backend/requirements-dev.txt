@@ -1,3 +1,4 @@
-# Dev / test only (not installed on Vercel if you use requirements.txt above)
+uvicorn[standard]==0.32.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
+mangum==0.19.0

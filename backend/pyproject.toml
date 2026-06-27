@@ -1,0 +1,19 @@
+[project]
+name = "cbva-api"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.138.0",
+  "motor==3.6.0",
+  "pydantic[email]==2.10.3",
+  "pydantic-settings==2.6.1",
+  "python-jose[cryptography]==3.3.0",
+  "bcrypt==4.2.1",
+  "python-multipart==0.0.17",
+  "httpx==0.28.1",
+  "slowapi==0.1.9",
+  "loguru==0.7.3",
+]
+
+[tool.vercel]
+entrypoint = "api.index:app"

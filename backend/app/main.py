@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from loguru import logger
+import os
 import sys
 
 from app.core.config import settings
@@ -46,7 +47,7 @@ app = FastAPI(
     title="CBVA API",
     version="1.0.0",
     description="CBV & Associates LLP Business Planning Platform",
-    lifespan=lifespan,
+    **({} if os.getenv("VERCEL") else {"lifespan": lifespan}),
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
