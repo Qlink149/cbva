@@ -1,0 +1,46 @@
+{
+  "name": "BaselinePlan",
+  "type": "object",
+  "properties": {
+    "leader_id": {
+      "type": "string"
+    },
+    "leader_name": {
+      "type": "string"
+    },
+    "financial_year_id": {
+      "type": "string"
+    },
+    "baseline_green": {
+      "type": "number",
+      "default": 0
+    },
+    "baseline_amber": {
+      "type": "number",
+      "default": 0
+    },
+    "baseline_blue_sky": {
+      "type": "number",
+      "default": 0
+    },
+    "baseline_total": {
+      "type": "number",
+      "default": 0
+    },
+    "baseline_locked_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_locked_by": {
+      "type": "string"
+    },
+    "is_locked": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "leader_id",
+    "financial_year_id"
+  ]
+}

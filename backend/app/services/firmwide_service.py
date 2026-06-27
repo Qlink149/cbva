@@ -1,0 +1,213 @@
+from app.core import database
+from app.services.month_matching import month_field_regex, month_label_regex, pick_pipeline_snapshot
+from app.services.fy_calendar import is_future_fy_month
+
+
+async def _empty_monthly_summary(fiscal_year: str) -> list:
+    leaders = await database.db.leaders.find({"is_active": True}).to_list(length=50)
+    engagement_counts = await database.db.engagements.aggregate([
+        {"$match": {"fiscal_year": fiscal_year, "is_archived": False}},
+        {
+            "$group": {
+                "_id": "$leader_id",
+                "engagement_count": {"$sum": 1},
+                "el_signed_count": {
+                    "$sum": {"$cond": [{"$eq": ["$el_status", "Signed"]}, 1, 0]}
+                },
+            }
+        },
+    ]).to_list(length=50)
+    count_map = {row["_id"]: row for row in engagement_counts}
+    return [
+        {
+            "_id": ldr["_id"],
+            "total_green": 0,
+            "total_amber": 0,
+            "total_blue_sky": 0,
+            "total_pipeline": 0,
+            "total_collected": 0,
+            "engagement_count": count_map.get(ldr["_id"], {}).get("engagement_count", 0),
+            "el_signed_count": count_map.get(ldr["_id"], {}).get("el_signed_count", 0),
+        }
+        for ldr in leaders
+    ]
+
+
+async def get_firmwide_summary(fiscal_year: str, month: str | None = None) -> list:
+    if month and is_future_fy_month(fiscal_year, month):
+        return await _empty_monthly_summary(fiscal_year)
+
+    if not month:
+        pipeline = [
+            {"$match": {"fiscal_year": fiscal_year, "is_archived": False}},
+            {
+                "$group": {
+                    "_id": "$leader_id",
+                    "total_green": {"$sum": "$green"},
+                    "total_amber": {"$sum": "$amber"},
+                    "total_blue_sky": {"$sum": "$blue_sky"},
+                    "total_pipeline": {"$sum": "$total"},
+                    "total_collected": {"$sum": "$collected"},
+                    "engagement_count": {"$sum": 1},
+                    "el_signed_count": {
+                        "$sum": {"$cond": [{"$eq": ["$el_status", "Signed"]}, 1, 0]}
+                    },
+                }
+            },
+            {"$sort": {"total_pipeline": -1}},
+        ]
+        return await database.db.engagements.aggregate(pipeline).to_list(length=50)
+
+    field_pattern = month_field_regex(month)
+    label_pattern = month_label_regex(month)
+    if not field_pattern or not label_pattern:
+        return []
+
+    leaders = await database.db.leaders.find({"is_active": True}).to_list(length=50)
+    leader_ids = [ldr["_id"] for ldr in leaders]
+
+    engagement_counts = await database.db.engagements.aggregate([
+        {"$match": {"fiscal_year": fiscal_year, "is_archived": False, "leader_id": {"$in": leader_ids}}},
+        {
+            "$group": {
+                "_id": "$leader_id",
+                "engagement_count": {"$sum": 1},
+                "el_signed_count": {
+                    "$sum": {"$cond": [{"$eq": ["$el_status", "Signed"]}, 1, 0]}
+                },
+            }
+        },
+    ]).to_list(length=50)
+    count_map = {row["_id"]: row for row in engagement_counts}
+
+    collected_rows = await database.db.collection_entries.aggregate([
+        {
+            "$match": {
+                "fiscal_year": fiscal_year,
+                "leader_id": {"$in": leader_ids},
+                "month": {"$regex": field_pattern, "$options": "i"},
+            }
+        },
+        {"$group": {"_id": "$leader_id", "total_collected": {"$sum": {"$ifNull": ["$collected", 0]}}}},
+    ]).to_list(length=50)
+    collected_map = {row["_id"]: row.get("total_collected", 0) for row in collected_rows}
+
+    snapshot_docs = await database.db.pipeline_snapshots.find(
+        {
+            "fiscal_year": fiscal_year,
+            "leader_id": {"$in": leader_ids},
+            "snapshot_type": "monthly",
+            "label": {"$regex": label_pattern, "$options": "i"},
+        }
+    ).to_list(length=500)
+
+    snapshots_by_leader: dict[str, list] = {}
+    for doc in snapshot_docs:
+        snapshots_by_leader.setdefault(doc["leader_id"], []).append(doc)
+
+    result = []
+    for ldr in leaders:
+        lid = ldr["_id"]
+        snap = pick_pipeline_snapshot(snapshots_by_leader.get(lid, []), month)
+        counts = count_map.get(lid, {})
+        green = (snap or {}).get("green") or 0
+        amber = (snap or {}).get("amber") or 0
+        blue_sky = (snap or {}).get("blue_sky") or 0
+        total = (snap or {}).get("total") or (green + amber + blue_sky)
+        result.append({
+            "_id": lid,
+            "total_green": green,
+            "total_amber": amber,
+            "total_blue_sky": blue_sky,
+            "total_pipeline": total,
+            "total_collected": collected_map.get(lid, 0),
+            "engagement_count": counts.get("engagement_count", 0),
+            "el_signed_count": counts.get("el_signed_count", 0),
+        })
+
+    result.sort(key=lambda row: row.get("total_pipeline", 0), reverse=True)
+    return result
+
+
+async def get_firmwide_clients(fiscal_year: str, skip: int = 0, limit: int = 200) -> tuple[list, int]:
+    query = {"fiscal_year": fiscal_year, "is_archived": False}
+    total = await database.db.engagements.count_documents(query)
+    cursor = database.db.engagements.find(
+        query,
+        sort=[("leader_id", 1), ("num", 1)],
+        skip=skip,
+        limit=limit,
+    )
+    docs = await cursor.to_list(length=limit)
+    return docs, total
+
+
+async def get_firmwide_team() -> list:
+    cursor = database.db.team_members.find({"status": "Active"}, sort=[("leader_id", 1)])
+    return await cursor.to_list(length=1000)
+
+
+async def get_firmwide_dashboard_aggregate(fiscal_year: str) -> dict:
+    """Aggregate pipeline, bluesky, and collections across all leaders for firmwide dashboard."""
+    leaders = await database.db.leaders.find({"is_active": True}).to_list(length=50)
+    leader_ids = [l["_id"] for l in leaders]
+
+    pipeline_totals = {"green": 0, "amber": 0, "blue_sky": 0, "total": 0}
+    for lid in leader_ids:
+        latest = await database.db.pipeline_snapshots.find_one(
+            {"leader_id": lid, "fiscal_year": fiscal_year},
+            sort=[("sort_order", -1)],
+        )
+        if latest:
+            pipeline_totals["green"] += latest.get("green", 0)
+            pipeline_totals["amber"] += latest.get("amber") or 0
+            pipeline_totals["blue_sky"] += latest.get("blue_sky") or 0
+            pipeline_totals["total"] += latest.get("total", 0)
+
+    bluesky_docs = await database.db.blue_sky_entries.find(
+        {"fiscal_year": fiscal_year, "leader_id": {"$in": leader_ids}}
+    ).to_list(length=500)
+    bluesky_totals = {
+        "additional": sum(d.get("additional") or 0 for d in bluesky_docs),
+        "converted": sum(d.get("converted", 0) for d in bluesky_docs),
+    }
+
+    bluesky_monthly_map: dict = {}
+    for doc in bluesky_docs:
+        month = doc["month"]
+        if month not in bluesky_monthly_map:
+            bluesky_monthly_map[month] = {
+                "month": month,
+                "opening": 0,
+                "additional": 0,
+                "converted": 0,
+                "closing": 0,
+                "sort_order": doc.get("sort_order", 0),
+            }
+        bluesky_monthly_map[month]["opening"] += doc.get("opening") or 0
+        bluesky_monthly_map[month]["additional"] += doc.get("additional") or 0
+        bluesky_monthly_map[month]["converted"] += doc.get("converted") or 0
+        bluesky_monthly_map[month]["closing"] += doc.get("closing") or 0
+
+    bluesky_monthly = sorted(bluesky_monthly_map.values(), key=lambda x: x.get("sort_order", 0))
+
+    collection_docs = await database.db.collection_entries.find(
+        {"fiscal_year": fiscal_year, "leader_id": {"$in": leader_ids}}
+    ).sort("sort_order", 1).to_list(length=500)
+
+    monthly_map: dict = {}
+    for doc in collection_docs:
+        month = doc["month"]
+        if month not in monthly_map:
+            monthly_map[month] = {"month": month, "planned": 0, "collected": 0, "sort_order": doc.get("sort_order", 0)}
+        monthly_map[month]["planned"] += doc.get("planned", 0)
+        monthly_map[month]["collected"] += doc.get("collected", 0)
+
+    monthly_lines = sorted(monthly_map.values(), key=lambda x: x.get("sort_order", 0))
+    total_collected = sum(d.get("collected", 0) for d in collection_docs)
+
+    return {
+        "pipeline": pipeline_totals,
+        "bluesky": {**bluesky_totals, "monthly_lines": bluesky_monthly},
+        "collections": {"monthly_lines": monthly_lines, "total_collected": total_collected},
+    }

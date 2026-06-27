@@ -1,0 +1,43 @@
+{
+  "name": "BlueSkyConversion",
+  "type": "object",
+  "properties": {
+    "leader_id": {
+      "type": "string"
+    },
+    "financial_year_id": {
+      "type": "string"
+    },
+    "engagement_id": {
+      "type": "string"
+    },
+    "client_name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number",
+      "default": 0
+    },
+    "converted_to": {
+      "type": "string",
+      "enum": [
+        "Amber",
+        "Green"
+      ],
+      "description": "Status the Blue Sky engagement was converted to"
+    },
+    "conversion_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "leader_id",
+    "financial_year_id",
+    "amount",
+    "converted_to"
+  ]
+}

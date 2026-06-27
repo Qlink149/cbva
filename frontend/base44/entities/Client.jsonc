@@ -1,0 +1,59 @@
+{
+  "name": "Client",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Canonical client name"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "Corporate",
+        "Promoter/HNI",
+        "Family Office",
+        "NRI",
+        "Foreign Co",
+        "SME",
+        "Other"
+      ]
+    },
+    "primary_industry": {
+      "type": "string"
+    },
+    "primary_relationship_partner_id": {
+      "type": "string",
+      "description": "FK to User - BD/origination owner"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "Dormant",
+        "Lost",
+        "Prospect"
+      ],
+      "default": "Active"
+    },
+    "date_onboarded": {
+      "type": "string",
+      "format": "date"
+    },
+    "next_meeting_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of next client update meeting"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "is_temporary": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if pending admin approval"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

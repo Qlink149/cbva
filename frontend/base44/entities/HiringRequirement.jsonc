@@ -1,0 +1,49 @@
+{
+  "name": "HiringRequirement",
+  "type": "object",
+  "properties": {
+    "leader_id": {
+      "type": "string"
+    },
+    "role_title": {
+      "type": "string"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "Analyst",
+        "Associate",
+        "Manager",
+        "Senior Manager",
+        "Director",
+        "Partner",
+        "Other"
+      ]
+    },
+    "expected_joining_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Open",
+        "In Progress",
+        "Filled",
+        "On Hold"
+      ],
+      "default": "Open"
+    },
+    "expected_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "leader_id",
+    "role_title"
+  ]
+}

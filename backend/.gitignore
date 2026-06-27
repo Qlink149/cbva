@@ -1,0 +1,29 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Logs
+*.log
+
+# Local extracted JSON + source spreadsheets (not for GitHub)
+db/
+scripts/
+csv/
+*.csv
+*.xlsx
+*.xls

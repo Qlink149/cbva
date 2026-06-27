@@ -1,0 +1,47 @@
+{
+  "name": "MonthlyPlanLine",
+  "type": "object",
+  "properties": {
+    "leader_id": {
+      "type": "string"
+    },
+    "financial_year_id": {
+      "type": "string"
+    },
+    "month": {
+      "type": "string",
+      "format": "date",
+      "description": "1st of the month"
+    },
+    "engagement_id": {
+      "type": "string"
+    },
+    "client_name": {
+      "type": "string"
+    },
+    "expected_billing": {
+      "type": "number",
+      "default": 0
+    },
+    "actual_billing": {
+      "type": "number",
+      "default": 0
+    },
+    "expected_collection": {
+      "type": "number",
+      "default": 0
+    },
+    "actual_collection": {
+      "type": "number",
+      "default": 0
+    },
+    "variance_remarks": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "leader_id",
+    "financial_year_id",
+    "month"
+  ]
+}

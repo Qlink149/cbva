@@ -1,0 +1,57 @@
+{
+  "name": "Task",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Task name / description"
+    },
+    "assignee_id": {
+      "type": "string",
+      "description": "FK to TeamMember"
+    },
+    "assignee_name": {
+      "type": "string"
+    },
+    "created_by_id": {
+      "type": "string",
+      "description": "FK to User (leader who created it)"
+    },
+    "client_name": {
+      "type": "string"
+    },
+    "engagement_id": {
+      "type": "string"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "Low",
+        "Medium",
+        "High",
+        "Urgent"
+      ],
+      "default": "Medium"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "In Progress",
+        "Done"
+      ],
+      "default": "Pending"
+    }
+  },
+  "required": [
+    "title",
+    "created_by_id"
+  ]
+}

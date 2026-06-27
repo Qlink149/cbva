@@ -1,0 +1,101 @@
+{
+  "name": "Engagement",
+  "type": "object",
+  "properties": {
+    "financial_year_id": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "client_name": {
+      "type": "string",
+      "description": "Denormalized client name for display"
+    },
+    "leader_id": {
+      "type": "string"
+    },
+    "leader_name": {
+      "type": "string"
+    },
+    "person_responsible_id": {
+      "type": "string"
+    },
+    "person_responsible_name": {
+      "type": "string"
+    },
+    "origination_partner_id": {
+      "type": "string"
+    },
+    "origination_partner_name": {
+      "type": "string"
+    },
+    "management_oversight": {
+      "type": "string",
+      "description": "Initials of management partner e.g. KK, BDC"
+    },
+    "engagement_type_id": {
+      "type": "string"
+    },
+    "engagement_type_name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Green",
+        "Amber",
+        "Blue Sky"
+      ]
+    },
+    "blue_sky_subtype": {
+      "type": "string",
+      "enum": [
+        "Identified",
+        "Unidentified"
+      ],
+      "description": "Only valid when status = Blue Sky"
+    },
+    "amount": {
+      "type": "number",
+      "description": "INR amount"
+    },
+    "el_signed": {
+      "type": "string",
+      "enum": [
+        "Signed",
+        "Not Signed",
+        "NA"
+      ],
+      "default": "NA"
+    },
+    "el_signed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "el_document_url": {
+      "type": "string",
+      "description": "URL of the uploaded EL (Engagement Letter) document"
+    },
+    "remarks": {
+      "type": "string"
+    },
+    "origination_share_pct": {
+      "type": "number"
+    },
+    "is_archived": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "financial_year_id",
+    "client_id",
+    "leader_id",
+    "status",
+    "amount"
+  ]
+}

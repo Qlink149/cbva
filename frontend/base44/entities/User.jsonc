@@ -1,0 +1,61 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "leader",
+        "management",
+        "admin"
+      ],
+      "default": "leader",
+      "description": "User role in the system"
+    },
+    "initials": {
+      "type": "string",
+      "description": "Short initials e.g. MM, VC \u2014 used in matrix views"
+    },
+    "designation": {
+      "type": "string",
+      "enum": [
+        "Leader/Partner",
+        "Director",
+        "Senior Manager",
+        "Manager",
+        "Assistant Manager",
+        "Senior Executive",
+        "Executive",
+        "Associate",
+        "Article"
+      ],
+      "description": "Professional designation"
+    },
+    "reports_to_user_id": {
+      "type": "string",
+      "description": "ID of the user this person reports to"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "profile_photo_url": {
+      "type": "string",
+      "description": "URL of profile photo"
+    },
+    "welcome_animation_pref": {
+      "type": "string",
+      "enum": [
+        "always",
+        "first_login_of_day",
+        "never"
+      ],
+      "default": "always"
+    },
+    "login_count": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": []
+}

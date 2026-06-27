@@ -1,0 +1,50 @@
+{
+  "name": "TeamMember",
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "designation": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Contact phone number"
+    },
+    "leader_id": {
+      "type": "string",
+      "description": "FK to User (leader they report to)"
+    },
+    "annual_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "joining_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "On Notice",
+        "Inactive"
+      ],
+      "default": "Active"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "full_name",
+    "leader_id"
+  ]
+}

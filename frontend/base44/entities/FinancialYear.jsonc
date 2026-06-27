@@ -1,0 +1,31 @@
+{
+  "name": "FinancialYear",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "description": "e.g. FY 26-27"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_current": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_locked": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "label",
+    "start_date",
+    "end_date"
+  ]
+}
