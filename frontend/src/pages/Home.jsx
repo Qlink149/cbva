@@ -76,7 +76,7 @@ export default function Home() {
             </div>
             <div>
               <p className="text-sm font-semibold">Clara.ai</p>
-              <p className="text-xs text-white/55">Nilkamal Sleep executive intelligence</p>
+              <p className="text-xs text-white/55">CBVA executive intelligence</p>
             </div>
           </div>
 
@@ -85,7 +85,7 @@ export default function Home() {
               Business Plan Control Room
             </p>
             <h1 className="text-5xl font-semibold leading-[1.08] tracking-tight">
-              Retail performance, pipeline, and collections in one calm view.
+              Business plan, pipeline, and collections in one calm view.
             </h1>
             <p className="mt-5 max-w-lg text-sm leading-7 text-white/62">
               A focused dashboard for leaders to track plan health, client movement, and execution signals without the noise.
@@ -108,7 +108,7 @@ export default function Home() {
 
           <div className="relative z-10 w-full max-w-md">
             <div className="mb-8 flex flex-col items-center text-center">
-              <img src={LOGO_SRC} alt="Nilkamal Sleep" className="mb-5 h-14 w-auto object-contain" />
+              <img src={LOGO_SRC} alt="CBV & Associates" className="mb-5 h-14 w-auto object-contain" />
               <span className="executive-pill rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.20em] text-[var(--violet)]">
                 Clara.ai Dashboard
               </span>
@@ -116,7 +116,7 @@ export default function Home() {
 
             <div className="executive-glass rounded-[24px] p-7 sm:p-8">
               <h1 className="text-2xl font-semibold text-[var(--text)]">Welcome back</h1>
-              <p className="mt-2 text-sm text-[var(--muted)]">Sign in to your Nilkamal/Clara dashboard.</p>
+              <p className="mt-2 text-sm text-[var(--muted)]">Sign in to your CBVA dashboard.</p>
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-4">
                 <div className="space-y-1.5">
@@ -128,7 +128,7 @@ export default function Home() {
                       autoComplete="email"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="you@nilkamal.com"
+                      placeholder="you@cbva.com"
                       className="login-input brand-input h-12 w-full rounded-xl px-10 text-sm outline-none"
                     />
                   </div>
@@ -168,7 +168,7 @@ export default function Home() {
             </div>
 
             <p className="mt-6 text-center text-[11px] text-[var(--muted)]">
-              © {new Date().getFullYear()} Nilkamal Sleep. Powered by Clara.ai.
+              © {new Date().getFullYear()} CBV & Associates. Powered by Clara.ai.
             </p>
           </div>
         </main>

@@ -160,7 +160,7 @@ export default function AppLayout({ user }) {
         <div className="page-width px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
-              <img src={LOGO_SRC} alt="Nilkamal Sleep" className="h-7 w-auto shrink-0 object-contain sm:h-8" />
+              <img src={LOGO_SRC} alt="CBV & Associates" className="h-7 w-auto shrink-0 object-contain sm:h-8" />
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
