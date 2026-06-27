@@ -1,3 +1,4 @@
+# Production dependencies (Vercel + local API)
 fastapi==0.138.0
 uvicorn[standard]==0.32.1
 motor==3.6.0
@@ -6,8 +7,7 @@ pydantic-settings==2.6.1
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
 python-multipart==0.0.17
-pytest==8.3.4
-pytest-asyncio==0.24.0
 httpx==0.28.1
 slowapi==0.1.9
 loguru==0.7.3
+mangum==0.19.0

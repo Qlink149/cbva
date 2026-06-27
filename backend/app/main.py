@@ -6,7 +6,7 @@ from loguru import logger
 import sys
 
 from app.core.config import settings
-from app.core.database import connect_db, close_db
+from app.core.database import connect_db, close_db, ensure_db_connected
 from app.core.limiter import limiter
 from app.routers import (
     auth,
@@ -53,6 +53,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.middleware("http")
+async def ensure_db_middleware(request: Request, call_next):
+    await ensure_db_connected()
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def log_requests(request: Request, call_next):
     response = await call_next(request)
     if response.status_code >= 400:
@@ -61,7 +67,8 @@ async def log_requests(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_ORIGIN],
+    allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

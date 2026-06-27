@@ -10,6 +10,8 @@ db: AsyncIOMotorDatabase | None = None
 
 async def connect_db() -> None:
     global _client, db
+    if db is not None:
+        return
     _client = AsyncIOMotorClient(
         settings.MONGODB_URL,
         serverSelectionTimeoutMS=5000,
@@ -23,6 +25,12 @@ async def connect_db() -> None:
             "MongoDB not reachable at startup — indexes skipped. "
             "Make sure MongoDB is running. Error: %s", exc
         )
+
+
+async def ensure_db_connected() -> None:
+    """Idempotent connect — used by Vercel serverless when lifespan may not run."""
+    if db is None:
+        await connect_db()
 
 
 async def close_db() -> None:
