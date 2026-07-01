@@ -14,4 +14,5 @@ export const usePipeline = (leaderId, fiscalYear) =>
       return { ...res, data: (res.data ?? []).map(normalize) };
     },
     enabled: !!leaderId && !!fiscalYear,
+    staleTime: 3 * 60 * 1000,
   });

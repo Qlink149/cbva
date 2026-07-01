@@ -126,8 +126,7 @@ export default function Actions({ user }) {
         )}
       </div>
 
-      {/* Client Action Points — in-memory annotation notes per engagement */}
-      {/* TODO: Phase 7 — persist client action points to backend */}
+      {/* Client Action Points — persisted per engagement */}
       {clientActions.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-foreground mb-3">Client Action Points</h2>

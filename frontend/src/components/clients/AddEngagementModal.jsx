@@ -11,6 +11,7 @@ const DEFAULT_FORM = {
   name: '',
   manager: '',
   relPartner: '',
+  clientScope: 'Domestic',
   elStatus: 'NA',
   green: '',
   amber: '',
@@ -27,7 +28,7 @@ function parseNum(val) {
   return isNaN(n) ? 0 : Math.round(n * L);
 }
 
-export default function AddEngagementModal({ onClose, nextNum, partnerOptions = [] }) {
+export default function AddEngagementModal({ onClose, nextNum, partnerOptions = [], showScopeField = false }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [error, setError] = useState('');
   const [partnerDropdownOpen, setPartnerDropdownOpen] = useState(false);
@@ -83,6 +84,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
       name: form.name.trim(),
       manager: form.manager.trim(),
       relPartner: form.relPartner.trim() || '',
+      clientScope: showScopeField ? form.clientScope : undefined,
       elStatus: form.elStatus,
       green: toVal(form.green),
       amber: toVal(form.amber),
@@ -180,6 +182,15 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
               )}
             </div>
           </Field>
+
+          {showScopeField && (
+            <Field label="Scope">
+              <select className="input-base" value={form.clientScope} onChange={e => set('clientScope', e.target.value)}>
+                <option value="Domestic">Domestic</option>
+                <option value="International">International</option>
+              </select>
+            </Field>
+          )}
 
           <Field label="EL Status">
             <select className="input-base" value={form.elStatus} onChange={e => set('elStatus', e.target.value)}>

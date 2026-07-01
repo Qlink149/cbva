@@ -9,14 +9,23 @@ function VarianceCell({ v }) {
   return <span className="text-red-600 font-semibold">({formatINRFull(Math.abs(v))})</span>;
 }
 
-export default function CollectionsTableReal({ rows, totalCollected, tableMaxHeight = 320, fyLabel = '' }) {
+export default function CollectionsTableReal({
+  rows,
+  totalCollected,
+  tableMaxHeight = 320,
+  fyLabel = '',
+  /** @deprecated use variant="page" */
+  fillHeight = false,
+  variant = fillHeight ? 'page' : 'embedded',
+}) {
+  const isPage = variant === 'page';
   // YTD sums
   const ytdPlanned = rows.reduce((s, r) => s + (r.planned || 0), 0);
   const ytdCollected = rows.reduce((s, r) => s + (r.collected || 0), 0);
   const ytdVariance = ytdCollected - ytdPlanned;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
+    <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden ${isPage ? 'w-full' : ''}`}>
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-border/60">
         <div className="flex items-center gap-2 mb-3">
@@ -42,8 +51,11 @@ export default function CollectionsTableReal({ rows, totalCollected, tableMaxHei
         </div>
       </div>
 
-      {/* Table — all rows, no toggle */}
-      <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: tableMaxHeight }}>
+      {/* Table — page variant scrolls with the main layout; embedded keeps an inner scroll area */}
+      <div
+        className="overflow-x-auto"
+        style={isPage ? undefined : { maxHeight: tableMaxHeight, overflowY: 'auto' }}
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/30 border-b border-border">

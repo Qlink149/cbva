@@ -83,6 +83,8 @@ async def _create_indexes() -> None:
     await db.resource_allocations.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.cross_sell_entries.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.budget_change_log.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
+    await db.engagement_change_log.create_index([("engagement_id", 1), ("changed_at", -1)])
+    await db.engagement_actions.create_index([("leader_id", 1), ("fiscal_year", 1), ("engagement_id", 1)])
     await db.collection_transactions.create_index(
         [("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)]
     )

@@ -1,32 +1,47 @@
+import { lazy, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { Skeleton } from '@/components/ui/skeleton';
 
 import Home from './pages/Home';
-import LeaderDashboard from './pages/LeaderDashboard';
-import LeaderPipeline from './pages/LeaderPipeline';
-import FirmwideClients from './pages/firmwide/FirmwideClients';
-import AdminSettings from './pages/AdminSettings';
 import AppLayout from './components/layout/AppLayout';
-import Collections from './pages/Collections';
-import Clients from './pages/Clients.jsx';
-import Actions from './pages/Actions';
-import TeamView from './pages/TeamView';
-import BlueSkyPage from './pages/BlueSkyPage';
-import GoalSetting from './pages/GoalSetting';
-import Origination from './pages/firmwide/Origination';
-import BoardPack from './pages/firmwide/BoardPack';
-import ConsolidatedSummary from './pages/firmwide/ConsolidatedSummary';
-import FirmwideTeam from './pages/firmwide/FirmwideTeam';
-import ClientDetail from './pages/ClientDetail';
-import ClientMeetings from './pages/ClientMeetings';
 import { ClientActionsProvider } from './lib/ClientActionsContext';
 import { GlobalSelectorProvider } from '@/lib/GlobalSelectorContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+
+const LeaderDashboard = lazy(() => import('./pages/LeaderDashboard'));
+const LeaderPipeline = lazy(() => import('./pages/LeaderPipeline'));
+const FirmwideClients = lazy(() => import('./pages/firmwide/FirmwideClients'));
+const AdminSettings = lazy(() => import('./pages/AdminSettings'));
+const Collections = lazy(() => import('./pages/Collections'));
+const Clients = lazy(() => import('./pages/Clients.jsx'));
+const Actions = lazy(() => import('./pages/Actions'));
+const TeamView = lazy(() => import('./pages/TeamView'));
+const BlueSkyPage = lazy(() => import('./pages/BlueSkyPage'));
+const Origination = lazy(() => import('./pages/firmwide/Origination'));
+const BoardPack = lazy(() => import('./pages/firmwide/BoardPack'));
+const ConsolidatedSummary = lazy(() => import('./pages/firmwide/ConsolidatedSummary'));
+const ClientDetail = lazy(() => import('./pages/ClientDetail'));
+const ClientMeetings = lazy(() => import('./pages/ClientMeetings'));
+
+function PageLoader() {
+  return (
+    <div className="space-y-6 p-1">
+      <Skeleton className="h-10 w-64" />
+      <Skeleton className="h-72 w-full" />
+      <Skeleton className="h-48 w-full" />
+    </div>
+  );
+}
+
+function LazyPage({ children }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
 
 const AuthenticatedApp = () => {
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
@@ -55,26 +70,26 @@ const AuthenticatedApp = () => {
       <ClientActionsProvider>
         <Routes>
           <Route element={<AppLayout user={user} />}>
-            <Route path="/" element={<LeaderDashboard user={user} />} />
-            <Route path="/my-plan/dashboard" element={<LeaderDashboard user={user} />} />
-            <Route path="/my-plan" element={<Clients user={user} />} />
-            <Route path="/my-plan/collections" element={<Collections user={user} />} />
-            <Route path="/my-plan/team" element={<TeamView user={user} />} />
-            <Route path="/my-plan/clients" element={<Clients user={user} />} />
-            <Route path="/my-plan/engagements" element={<Clients user={user} />} />
-            <Route path="/my-plan/pipeline" element={<LeaderPipeline user={user} />} />
-            <Route path="/my-plan/clients/:clientId" element={<ClientDetail user={user} />} />
-            <Route path="/my-plan/actions" element={<Actions user={user} />} />
-            <Route path="/my-plan/meetings" element={<ClientMeetings user={user} />} />
-            <Route path="/my-plan/blue-sky-summary" element={<BlueSkyPage user={user} />} />
+            <Route path="/" element={<LazyPage><LeaderDashboard user={user} /></LazyPage>} />
+            <Route path="/my-plan/dashboard" element={<LazyPage><LeaderDashboard user={user} /></LazyPage>} />
+            <Route path="/my-plan" element={<LazyPage><Clients user={user} /></LazyPage>} />
+            <Route path="/my-plan/collections" element={<LazyPage><Collections user={user} /></LazyPage>} />
+            <Route path="/my-plan/team" element={<LazyPage><TeamView user={user} /></LazyPage>} />
+            <Route path="/my-plan/clients" element={<LazyPage><Clients user={user} /></LazyPage>} />
+            <Route path="/my-plan/engagements" element={<LazyPage><Clients user={user} /></LazyPage>} />
+            <Route path="/my-plan/pipeline" element={<LazyPage><LeaderPipeline user={user} /></LazyPage>} />
+            <Route path="/my-plan/clients/:clientId" element={<LazyPage><ClientDetail user={user} /></LazyPage>} />
+            <Route path="/my-plan/actions" element={<LazyPage><Actions user={user} /></LazyPage>} />
+            <Route path="/my-plan/meetings" element={<LazyPage><ClientMeetings user={user} /></LazyPage>} />
+            <Route path="/my-plan/blue-sky-summary" element={<LazyPage><BlueSkyPage user={user} /></LazyPage>} />
             <Route path="/firmwide" element={<Navigate to="/firmwide/consolidated" replace />} />
             <Route path="/firmwide/leaders" element={<Navigate to="/firmwide/consolidated" replace />} />
-            <Route path="/firmwide/clients" element={<ProtectedRoute allowedRoles={['management', 'admin']}><FirmwideClients /></ProtectedRoute>} />
-            <Route path="/firmwide/origination" element={<ProtectedRoute allowedRoles={['management', 'admin']}><Origination /></ProtectedRoute>} />
-            <Route path="/firmwide/board-pack" element={<ProtectedRoute allowedRoles={['management', 'admin']}><BoardPack /></ProtectedRoute>} />
-            <Route path="/firmwide/consolidated" element={<ProtectedRoute allowedRoles={['management', 'admin']}><ConsolidatedSummary /></ProtectedRoute>} />
-            <Route path="/firmwide/team" element={<ProtectedRoute allowedRoles={['management', 'admin']}><FirmwideTeam /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
+            <Route path="/firmwide/team" element={<Navigate to="/firmwide/consolidated" replace />} />
+            <Route path="/firmwide/clients" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><FirmwideClients /></LazyPage></ProtectedRoute>} />
+            <Route path="/firmwide/origination" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><Origination /></LazyPage></ProtectedRoute>} />
+            <Route path="/firmwide/board-pack" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><BoardPack /></LazyPage></ProtectedRoute>} />
+            <Route path="/firmwide/consolidated" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><ConsolidatedSummary /></LazyPage></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><LazyPage><AdminSettings /></LazyPage></ProtectedRoute>} />
           </Route>
           <Route path="/home" element={<Navigate to="/" replace />} />
           <Route path="*" element={<PageNotFound />} />

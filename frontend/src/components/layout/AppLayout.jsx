@@ -22,7 +22,6 @@ const LEADER_NAV = [
 const FIRMWIDE_NAV = [
   { label: 'Consolidated', path: '/firmwide/consolidated', icon: BarChart3 },
   { label: 'All Clients', path: '/firmwide/clients', icon: Building2 },
-  { label: 'Teams', path: '/firmwide/team', icon: Users },
   { label: 'Origination', path: '/firmwide/origination', icon: BookOpen, disabled: true },
   { label: 'Board Pack', path: '/firmwide/board-pack', icon: FileText, disabled: true },
 ];

@@ -15,24 +15,36 @@ import {
   uniqueManagers,
 } from '@/lib/engagementFilters';
 import { uniqueRelationshipPartners, relationshipPartnerLabel } from '@/lib/relationshipPartners';
+import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
+import { useEngagementChanges } from '@/hooks/useEngagementMeta';
 
 const L = 100000;
 const BLUE_SKY_BG = '#00CCFF';
+const SCOPE_COL_WIDTH = 100;
 const ENGAGEMENT_COLUMN_WIDTHS_OPEN = [32, 180, 100, 100, 100, 110, 110, 120, 110, 120, 100, 100, 100, 110, 160, 32];
 const ENGAGEMENT_COLUMN_WIDTHS_CLOSED = [32, 180, 100, 100, 100, 110, 110, 120, 110, 120, 110, 160, 32];
 
-function engagementColumnWidths(collectionsOpen) {
-  return collectionsOpen ? ENGAGEMENT_COLUMN_WIDTHS_OPEN : ENGAGEMENT_COLUMN_WIDTHS_CLOSED;
+function engagementColumnWidths(collectionsOpen, showScope) {
+  const widths = [...(collectionsOpen ? ENGAGEMENT_COLUMN_WIDTHS_OPEN : ENGAGEMENT_COLUMN_WIDTHS_CLOSED)];
+  if (showScope) widths.splice(2, 0, SCOPE_COL_WIDTH);
+  return widths;
 }
 
-function engagementTableMinWidth(collectionsOpen) {
-  return engagementColumnWidths(collectionsOpen).reduce((sum, width) => sum + width, 0);
+function engagementTableMinWidth(collectionsOpen, showScope) {
+  return engagementColumnWidths(collectionsOpen, showScope).reduce((sum, width) => sum + width, 0);
 }
 
-function EngagementColGroup({ collectionsOpen }) {
+function stickyLeftOffsets(showScope) {
+  if (showScope) {
+    return { client: 32, scope: 212, manager: 212 + SCOPE_COL_WIDTH, relPartner: 312 + SCOPE_COL_WIDTH, elStatus: 412 + SCOPE_COL_WIDTH };
+  }
+  return { client: 32, manager: 212, relPartner: 312, elStatus: 412 };
+}
+
+function EngagementColGroup({ collectionsOpen, showScope }) {
   return (
     <colgroup>
-      {engagementColumnWidths(collectionsOpen).map((width, index) => (
+      {engagementColumnWidths(collectionsOpen, showScope).map((width, index) => (
         <col key={index} style={{ width, minWidth: width }} />
       ))}
     </colgroup>
@@ -138,6 +150,30 @@ function ManagerCell({ value, onChange, stickyClass, stickyStyle, listId }) {
       ) : (
         <span className="text-muted-foreground/60">-</span>
       )}
+    </td>
+  );
+}
+
+function ScopeCell({ value, onChange, stickyClass, stickyStyle }) {
+  const scope = value || 'Domestic';
+  const isIntl = scope === 'International';
+  return (
+    <td className={`${stickyClass} py-2 px-1.5`} style={stickyStyle}>
+      <div className="relative w-full">
+        <select
+          aria-label="Client scope"
+          title={scope}
+          className={`appearance-none w-full text-[10px] font-medium rounded-full pl-2.5 pr-6 py-1 cursor-pointer border border-transparent hover:border-border/60 focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 transition-colors ${
+            isIntl ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-800'
+          }`}
+          value={scope}
+          onChange={e => onChange(e.target.value)}
+        >
+          <option value="Domestic">Domestic</option>
+          <option value="International">Intl</option>
+        </select>
+        <ChevronDown className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none ${isIntl ? 'text-indigo-500' : 'text-emerald-600'}`} />
+      </div>
     </td>
   );
 }
@@ -254,6 +290,21 @@ const EditableCell = React.forwardRef(function EditableCell({ value, onChange, c
   );
 });
 
+function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction, onUpdateRemarks }) {
+  const { data: changes = [], isLoading: changesLoading } = useEngagementChanges(client.id, true);
+  return (
+    <ClientRowExpanded
+      client={client}
+      actions={actions}
+      changes={changes}
+      changesLoading={changesLoading}
+      onAddAction={onAddAction}
+      onDeleteAction={onDeleteAction}
+      onUpdateRemarks={onUpdateRemarks}
+    />
+  );
+}
+
 // Unified engagements table - same layout for all fiscal years
 function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi } = useClientActions();
@@ -291,6 +342,10 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
   }
 
+  function toggleExpandedRow(num) {
+    setExpandedRow((current) => (current === num ? null : num));
+  }
+
   function updateField(clientId, field, newVal) {
     updateEngagement({ id: clientId, [field]: newVal });
   }
@@ -307,8 +362,12 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     updateEngagement({ id: clientId, manager: val });
   }
 
-  function updateRemarks(clientId, val) {
-    updateRemarksApi({ id: clientId, remarks: val });
+  function updateScope(clientId, val) {
+    updateEngagement({ id: clientId, clientScope: val });
+  }
+
+  function updateRemarks(clientId, val, mode = 'edit') {
+    updateRemarksApi({ id: clientId, remarks: val, mode });
   }
 
   const filtered = useMemo(() => {
@@ -341,7 +400,10 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }), [filtered]);
 
   const partnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
-  const tableMinWidth = engagementTableMinWidth(collectionsOpen);
+  const showScopeColumn = leaderHasClientScope(selectedLeaderId);
+  const stickyLeft = stickyLeftOffsets(showScopeColumn);
+  const tableMinWidth = engagementTableMinWidth(collectionsOpen, showScopeColumn);
+  const bodyColSpan = (collectionsOpen ? 16 : 13) + (showScopeColumn ? 1 : 0);
 
   const HDR_BG = '#F1F2F4';
   const stickyHeaderRow1 = 'sticky z-20 top-0';
@@ -373,7 +435,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
             value={filters.name}
             onChange={e => setFilters(prev => ({ ...prev, name: e.target.value }))}
           />
-          <span className="text-xs text-muted-foreground hidden sm:block">Click any number to edit inline · Changes tracked with timestamp</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">Click any number to edit inline · Click client name to expand details</span>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -389,10 +451,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           nextNum={clients.length + 1}
           onClose={() => setShowAddModal(false)}
           partnerOptions={partnerOptions}
+          showScopeField={showScopeColumn}
         />
       )}
 
-      {showFilters && <ClientFilterPanel clients={clients} filters={filters} setFilters={setFilters} />}
+      {showFilters && <ClientFilterPanel clients={clients} filters={filters} setFilters={setFilters} showScope={showScopeColumn} />}
 
       {isLoading && (
         <div className="space-y-3 py-4">
@@ -421,14 +484,17 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 230px)', minHeight: '500px' }}
         >
           <table className="text-sm border-separate" style={{ minWidth: tableMinWidth, borderSpacing: 0, tableLayout: 'fixed' }}>
-            <EngagementColGroup collectionsOpen={collectionsOpen} />
+            <EngagementColGroup collectionsOpen={collectionsOpen} showScope={showScopeColumn} />
             <thead>
               <tr style={{ background: HDR_BG, height: 36 }}>
                 <th className={`${stickyHeaderRow1} left-0 border-b-0`} style={{ minWidth: 32, width: 32, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: 32, minWidth: 180, width: 180, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: 212, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: 312, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: 412, minWidth: 100, width: 100, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}></th>
+                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.client, minWidth: 180, width: 180, background: HDR_BG }}></th>
+                {showScopeColumn && (
+                  <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, background: HDR_BG }}></th>
+                )}
+                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.manager, minWidth: 100, width: 100, background: HDR_BG }}></th>
+                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, background: HDR_BG }}></th>
+                <th className={`${stickyHeaderRow1} border-b-0 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}></th>
                 <th colSpan={4} className="border-b-0" style={{ minWidth: 440, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}></th>
                 <th className="text-center py-1 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50" style={{ minWidth: 120, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
                   Collected <span className="font-normal normal-case">(Finance Actuals)</span>
@@ -457,8 +523,20 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: 32, minWidth: 180, width: 180, top: 36, background: HDR_BG }}
+                  style={{ left: stickyLeft.client, minWidth: 180, width: 180, top: 36, background: HDR_BG }}
                 />
+                {showScopeColumn && (
+                  <ColumnHeaderFilter
+                    label="Scope"
+                    type="multi"
+                    filterKey="clientScope"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={CLIENT_SCOPE_VALUES}
+                    className={`${stickyHeaderRow2} text-muted-foreground`}
+                    style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, top: 36, background: HDR_BG }}
+                  />
+                )}
                 <ColumnHeaderFilter
                   label="Manager"
                   type="multi"
@@ -468,7 +546,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   options={managerOptions}
                   includeEmpty
                   className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: 212, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
+                  style={{ left: stickyLeft.manager, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
                 />
                 <ColumnHeaderFilter
                   label="Rel. Partner"
@@ -479,7 +557,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   options={relPartnerOptions}
                   includeEmpty
                   className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: 312, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
+                  style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
                 />
                 <ColumnHeaderFilter
                   label="EL Status"
@@ -490,7 +568,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   options={elStatusOptions}
                   includeEmpty
                   className={`${stickyHeaderRow2} text-muted-foreground shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`}
-                  style={{ left: 412, minWidth: 100, width: 100, top: 36, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}
+                  style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, top: 36, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}
                 />
                 <ColumnHeaderFilter
                   label="Green (₹)"
@@ -617,26 +695,49 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
             <tbody>
               {filtered.map((client, i) => {
                 const isExpanded = expandedRow === client.num;
-                const actCount = clientActions.filter(a => a.clientNum === client.num).length;
+                const actCount = clientActions.filter(a => a.clientNum === client.num && a.status !== 'Done').length;
                 return (
                   <React.Fragment key={i}>
                     <tr className={`[&>td]:border-b [&>td]:border-border/50 hover:bg-muted/20 transition-colors ${isExpanded ? 'bg-muted/10' : ''}`}>
                       <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground`} style={{ minWidth: 32 }}>{client.num}</td>
                       <td className={`${stickyBase} py-3 px-3 font-medium text-foreground`} style={{ left: 32, minWidth: 180 }}>
-                        <div className="flex items-center gap-1.5">
-                          {client.name || <span className="text-muted-foreground italic">Unidentified</span>}
-                          {actCount > 0 && <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold">{actCount}</span>}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleExpandedRow(client.num)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${client.name || 'client'}`}
+                          className="flex items-center gap-1.5 text-left w-full group rounded-md -mx-1 px-1 py-0.5 hover:bg-muted/40 transition-colors"
+                        >
+                          <span className="text-muted-foreground group-hover:text-cbva-navy transition-colors shrink-0">
+                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </span>
+                          <span className={`truncate group-hover:text-cbva-navy group-hover:underline underline-offset-2 ${isExpanded ? 'text-cbva-navy' : 'text-foreground'}`}>
+                            {client.name || <span className="text-muted-foreground italic no-underline">Unidentified</span>}
+                          </span>
+                          {actCount > 0 && (
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold shrink-0">
+                              {actCount}
+                            </span>
+                          )}
+                        </button>
                       </td>
+                      {showScopeColumn && (
+                        <ScopeCell
+                          value={client.clientScope}
+                          onChange={v => updateScope(client.id, v)}
+                          stickyClass={stickyBase}
+                          stickyStyle={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}
+                        />
+                      )}
                       <ManagerCell
                         value={client.manager}
                         onChange={v => updateManager(client.id, v)}
                         stickyClass={stickyBase}
-                        stickyStyle={{ left: 212, minWidth: 100 }}
+                        stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
                         listId="engagement-manager-suggestions"
                       />
-                      <td className={`${stickyBase} py-3 px-3 text-xs text-muted-foreground`} style={{ left: 312, minWidth: 100 }}>{relationshipPartnerLabel(client.relPartner)}</td>
-                      <td className={`${stickyBase} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: 412, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}><ELBadge status={client.elStatus} /></td>
+                      <td className={`${stickyBase} py-3 px-3 text-xs text-muted-foreground`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}>{relationshipPartnerLabel(client.relPartner)}</td>
+                      <td className={`${stickyBase} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}><ELBadge status={client.elStatus} /></td>
                       <EditableCell ref={i === 0 ? bodyAlignRef : null} value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" />
                       <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" />
                       <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} />
@@ -657,15 +758,27 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       )}
                       <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td className="py-3 px-3">
-                        <button onClick={() => setExpandedRow(isExpanded ? null : client.num)} className="text-muted-foreground hover:text-cbva-navy transition-colors">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpandedRow(client.num)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} row details`}
+                          className="text-muted-foreground hover:text-cbva-navy transition-colors"
+                        >
                           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                       </td>
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={collectionsOpen ? 16 : 13} className="border-b border-border/50 p-0">
-                          <ClientRowExpanded client={client} actions={clientActions} onAddAction={addAction} onDeleteAction={a => deleteAction(a.id)} />
+                        <td colSpan={bodyColSpan} className="border-b border-border/50 p-0">
+                          <EngagementExpandedPanel
+                            client={client}
+                            actions={clientActions}
+                            onAddAction={addAction}
+                            onDeleteAction={deleteAction}
+                            onUpdateRemarks={updateRemarks}
+                          />
                         </td>
                       </tr>
                     )}
@@ -681,14 +794,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           style={{ maxWidth: '100%' }}
         >
           <table className="text-sm border-separate" style={{ minWidth: tableMinWidth, borderSpacing: 0, tableLayout: 'fixed', transform: `translateX(${footerOffset}px)` }}>
-            <EngagementColGroup collectionsOpen={collectionsOpen} />
+            <EngagementColGroup collectionsOpen={collectionsOpen} showScope={showScopeColumn} />
             <tbody>
               <tr className="bg-muted/30 [&>td]:border-t-2 [&>td]:border-border">
                 <td className={`${stickyBase} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground bg-muted/30`}></td>
-                <td className={`${stickyBase} py-3 px-3 text-xs font-bold uppercase text-foreground bg-muted/30`} style={{ left: 32 }}>TOTAL</td>
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: 212 }}></td>
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: 312 }}></td>
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: 412, clipPath: 'inset(0 -15px 0 0)' }}></td>
+                <td className={`${stickyBase} py-3 px-3 text-xs font-bold uppercase text-foreground bg-muted/30`} style={{ left: stickyLeft.client }}>TOTAL</td>
+                {showScopeColumn && <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.scope }}></td>}
+                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.manager }}></td>
+                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.relPartner }}></td>
+                <td className={`${stickyBase} py-3 px-3 bg-muted/30 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, clipPath: 'inset(0 -15px 0 0)' }}></td>
                 <td ref={footerAlignRef} className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
                 <td className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>
                 <td className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>

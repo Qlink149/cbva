@@ -3,11 +3,25 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.engagement import EngagementCreate, EngagementUpdate, RemarksUpdate, EngagementResponse
 from app.services.engagement_service import compute_totals
+from app.services.engagement_change_service import log_changes, list_changes
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.dependencies.pagination import pagination_params
 
 router = APIRouter()
+
+
+def _serialize_remarks_history(entries: list | None) -> list[dict]:
+    if not entries:
+        return []
+    return [
+        {
+            "text": e.get("text", ""),
+            "at": e.get("at"),
+            "by": e.get("by", ""),
+        }
+        for e in entries
+    ]
 
 
 def _serialize(doc: dict) -> dict:
@@ -32,9 +46,11 @@ def _serialize(doc: dict) -> dict:
         "person_responsible": doc.get("person_responsible"),
         "originator": doc.get("originator"),
         "assignment_type": doc.get("assignment_type"),
+        "client_scope": doc.get("client_scope", "Domestic"),
         "collections_fy2526": doc.get("collections_fy2526"),
         "balance": doc.get("balance"),
         "remarks": doc.get("remarks", ""),
+        "remarks_history": _serialize_remarks_history(doc.get("remarks_history")),
         "is_archived": doc.get("is_archived", False),
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
@@ -72,6 +88,7 @@ async def create_engagement(body: EngagementCreate, current_user: dict = Depends
         "num": num,
         "total": totals["total"],
         "balance": totals["balance"],
+        "remarks_history": [],
         "is_archived": False,
         "created_at": now,
         "updated_at": now,
@@ -93,6 +110,10 @@ async def update_engagement(
     enforce_leader_write_scope(current_user, existing["leader_id"])
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates.pop("remarks", None)
+
+    await log_changes(existing, updates, current_user)
+
     green = updates.get("green", existing["green"])
     amber = updates.get("amber", existing["amber"])
     blue_sky = updates.get("blue_sky", existing["blue_sky"])
@@ -105,6 +126,20 @@ async def update_engagement(
         {"_id": ObjectId(engagement_id)}, {"$set": updates}, return_document=True
     )
     return _serialize(result)
+
+
+@router.get("/{engagement_id}/changes", response_model=dict)
+async def get_engagement_changes(
+    engagement_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    existing = await database.db.engagements.find_one({"_id": ObjectId(engagement_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    enforce_leader_scope(current_user, existing["leader_id"])
+    changes = await list_changes(engagement_id, limit=limit)
+    return {"data": changes}
 
 
 @router.delete("/{engagement_id}", status_code=204)
@@ -130,9 +165,24 @@ async def update_remarks(
     if not existing:
         raise HTTPException(status_code=404, detail="Engagement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+
+    now = datetime.now(timezone.utc)
+    author = current_user.get("full_name") or current_user.get("email") or "Unknown"
+    new_text = body.remarks.strip()
+    history = list(existing.get("remarks_history") or [])
+
+    if body.mode == "add":
+        current = (existing.get("remarks") or "").strip()
+        if current:
+            history.insert(0, {"text": current, "at": now, "by": author})
+            history = history[:2]
+        remarks = new_text
+    else:
+        remarks = new_text
+
     result = await database.db.engagements.find_one_and_update(
         {"_id": ObjectId(engagement_id)},
-        {"$set": {"remarks": body.remarks, "updated_at": datetime.now(timezone.utc)}},
+        {"$set": {"remarks": remarks, "remarks_history": history, "updated_at": now}},
         return_document=True,
     )
     return _serialize(result)

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useEngagements, useUpdateEngagement, useDeleteEngagement, useUpdateRemarks } from '@/hooks/useEngagements';
+import { useEngagementActions } from '@/hooks/useEngagementMeta';
 
 const ClientActionsContext = createContext(null);
 
@@ -11,19 +12,45 @@ export function ClientActionsProvider({ children }) {
   const deleteMutation = useDeleteEngagement(selectedLeaderId, activeFY);
   const remarksMutation = useUpdateRemarks(selectedLeaderId, activeFY);
 
-  // clientActions are annotation notes per client — not yet a backend entity (Phase 5)
-  const [clientActions, setClientActions] = useState([]);
+  const {
+    actions: clientActions,
+    createAction,
+    deleteAction,
+    patchActionStatus,
+  } = useEngagementActions(selectedLeaderId, activeFY);
 
-  function addAction(action) {
-    setClientActions(prev => [...prev, { ...action, id: Date.now() + Math.random() }]);
+  const clientNameByNum = useMemo(() => {
+    const map = new Map();
+    clients.forEach((c) => map.set(c.num, c.name));
+    return map;
+  }, [clients]);
+
+  const clientActionsWithNames = useMemo(
+    () => clientActions.map((a) => ({
+      ...a,
+      clientName: clientNameByNum.get(a.clientNum) || a.clientName || '',
+    })),
+    [clientActions, clientNameByNum],
+  );
+
+  function addAction({ clientNum, clientName, description, deadline, engagementId }) {
+    if (!engagementId || !selectedLeaderId || !activeFY) return;
+    createAction.mutate({
+      engagement_id: engagementId,
+      leader_id: selectedLeaderId,
+      fiscal_year: activeFY,
+      engagement_num: clientNum,
+      description,
+      deadline: deadline || null,
+    });
   }
 
-  function deleteAction(id) {
-    setClientActions(prev => prev.filter(a => a.id !== id));
+  function removeAction(id) {
+    deleteAction.mutate(id);
   }
 
   function updateActionStatus(id, status) {
-    setClientActions(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    patchActionStatus.mutate({ id, status });
   }
 
   return (
@@ -31,9 +58,9 @@ export function ClientActionsProvider({ children }) {
       clients,
       isLoading,
       isError,
-      clientActions,
+      clientActions: clientActionsWithNames,
       addAction,
-      deleteAction,
+      deleteAction: removeAction,
       updateActionStatus,
       updateEngagement: updateMutation.mutate,
       deleteEngagement: deleteMutation.mutate,

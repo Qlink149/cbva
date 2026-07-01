@@ -6,4 +6,5 @@ export const useCollections = (leaderId, fiscalYear) =>
     queryKey: ['collections', leaderId, fiscalYear],
     queryFn: () => apiGet('/api/collections', { leader_id: leaderId, fiscal_year: fiscalYear }),
     enabled: !!leaderId && !!fiscalYear,
+    staleTime: 3 * 60 * 1000,
   });

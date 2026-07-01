@@ -4,17 +4,28 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  logLevel: 'info', // Suppress warnings, only show errors
+  logLevel: 'info',
   plugins: [
     base44({
-      // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
-      // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
       legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
       hmrNotifier: true,
       navigationNotifier: true,
-      analyticsTracker: true,
-      visualEditAgent: true
+      analyticsTracker: process.env.NODE_ENV !== 'production',
+      visualEditAgent: process.env.NODE_ENV !== 'production',
     }),
     react(),
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          radix: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select', '@radix-ui/react-tabs', '@radix-ui/react-tooltip'],
+          recharts: ['recharts'],
+          motion: ['framer-motion'],
+          query: ['@tanstack/react-query'],
+        },
+      },
+    },
+  },
 });

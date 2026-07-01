@@ -329,18 +329,10 @@ export default function AdminSettings() {
       <Tabs defaultValue="users">
         <TabsList className="bg-muted/50 flex-wrap h-auto">
           <TabsTrigger value="users" className="gap-1.5"><Users className="w-3.5 h-3.5" />Users</TabsTrigger>
-          <TabsTrigger value="settings" className="gap-1.5"><Settings className="w-3.5 h-3.5" />App Settings</TabsTrigger>
-          <TabsTrigger value="clients" className="gap-1.5"><Building2 className="w-3.5 h-3.5" />Clients</TabsTrigger>
-          <TabsTrigger value="types" className="gap-1.5"><Briefcase className="w-3.5 h-3.5" />Engagement Types</TabsTrigger>
           <TabsTrigger value="fy" className="gap-1.5"><Calendar className="w-3.5 h-3.5" />Financial Years</TabsTrigger>
-          <TabsTrigger value="baseline" className="gap-1.5"><Settings className="w-3.5 h-3.5" />Baseline Plans</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
-        <TabsContent value="settings" className="mt-4"><SettingsTab /></TabsContent>
-        <TabsContent value="clients" className="mt-4"><ClientsTab /></TabsContent>
-        <TabsContent value="types" className="mt-4"><EngagementTypesTab /></TabsContent>
         <TabsContent value="fy" className="mt-4"><FYTab /></TabsContent>
-        <TabsContent value="baseline" className="mt-4"><BaselineTab /></TabsContent>
       </Tabs>
     </div>
   );

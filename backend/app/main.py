@@ -13,6 +13,7 @@ from app.routers import (
     auth,
     leaders,
     engagements,
+    engagement_actions,
     pipeline,
     bluesky,
     collections,
@@ -78,6 +79,7 @@ app.add_middleware(
 app.include_router(auth.router,        prefix="/api/auth",         tags=["Auth"])
 app.include_router(leaders.router,     prefix="/api/leaders",      tags=["Leaders"])
 app.include_router(engagements.router, prefix="/api/engagements",  tags=["Engagements"])
+app.include_router(engagement_actions.router, prefix="/api/engagement-actions", tags=["EngagementActions"])
 app.include_router(pipeline.router,    prefix="/api/pipeline",     tags=["Pipeline"])
 app.include_router(bluesky.router,     prefix="/api/bluesky",      tags=["BlueSky"])
 app.include_router(collections.router, prefix="/api/collections",  tags=["Collections"])

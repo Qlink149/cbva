@@ -10,6 +10,8 @@ const normalize = (e) => ({
   manager: e.person_responsible ?? '',
   elStatus: e.el_status,
   blueSky: e.blue_sky,
+  clientScope: e.client_scope ?? 'Domestic',
+  remarksHistory: e.remarks_history ?? [],
   mayCol: e.may_col,
   juneCol: e.june_col,
   julyCol: e.july_col,
@@ -17,12 +19,13 @@ const normalize = (e) => ({
 
 // Convert camelCase UI field names back to snake_case for API calls
 export const toApiFields = (obj) => {
-  const { relPartner, manager, elStatus, blueSky, mayCol, juneCol, julyCol, ...rest } = obj;
+  const { relPartner, manager, elStatus, blueSky, clientScope, mayCol, juneCol, julyCol, ...rest } = obj;
   const out = { ...rest };
   if (relPartner !== undefined) out.rel_partner = relPartner;
   if (manager !== undefined) out.person_responsible = manager;
   if (elStatus !== undefined) out.el_status = elStatus;
   if (blueSky !== undefined) out.blue_sky = blueSky;
+  if (clientScope !== undefined) out.client_scope = clientScope;
   if (mayCol !== undefined) out.may_col = mayCol;
   if (juneCol !== undefined) out.june_col = juneCol;
   if (julyCol !== undefined) out.july_col = julyCol;
@@ -35,6 +38,7 @@ export const useEngagements = (leaderId, fiscalYear) =>
     queryFn: () => apiGet('/api/engagements', { leader_id: leaderId, fiscal_year: fiscalYear }),
     enabled: !!leaderId && !!fiscalYear,
     select: (res) => (res.data ?? res).map(normalize),
+    staleTime: 3 * 60 * 1000,
   });
 
 export const useCreateEngagement = () => {
@@ -50,7 +54,12 @@ export const useUpdateEngagement = (leaderId, fiscalYear) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }) => apiPut(`/api/engagements/${id}`, toApiFields(body)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) });
+      if (vars.id) {
+        qc.invalidateQueries({ queryKey: ['engagement-changes', vars.id] });
+      }
+    },
   });
 };
 
@@ -65,7 +74,8 @@ export const useDeleteEngagement = (leaderId, fiscalYear) => {
 export const useUpdateRemarks = (leaderId, fiscalYear) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, remarks }) => apiPatch(`/api/engagements/${id}/remarks`, { remarks }),
+    mutationFn: ({ id, remarks, mode = 'edit' }) =>
+      apiPatch(`/api/engagements/${id}/remarks`, { remarks, mode }),
     onSuccess: () => qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) }),
   });
 };

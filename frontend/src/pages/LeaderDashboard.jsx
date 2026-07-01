@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import PipelineBoardChart from '@/components/dashboard/PipelineBoardChart';
@@ -6,7 +6,6 @@ import BlueSkyTableReal from '@/components/dashboard/BlueSkyTableReal';
 import MonthlyEvolutionCard from '@/components/dashboard/MonthlyEvolutionCard';
 import CollectionsTableReal from '@/components/dashboard/CollectionsTableReal';
 import TeamMetrics from '@/components/dashboard/TeamMetrics';
-import ELStatusWidgets from '@/components/dashboard/ELStatusWidgets';
 import PlaceholderCard from '@/components/dashboard/PlaceholderCard';
 import ELSummaryChips from '@/components/dashboard/ELSummaryChips';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
@@ -21,6 +20,12 @@ import { useHiring } from '@/hooks/useHiring';
 import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
 
+const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
+
+function SectionSkeleton({ className = 'h-48' }) {
+  return <Skeleton className={`w-full ${className}`} />;
+}
+
 export default function LeaderDashboard({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
@@ -33,7 +38,7 @@ export default function LeaderDashboard({ user }) {
   const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId);
   const { data: elSummary } = useElSummary(selectedLeaderId, activeFY);
 
-  const isLoading = pipelineLoading || bsLoading || colLoading || engLoading || hiringLoading || teamLoading;
+  const coreLoading = pipelineLoading || bsLoading || colLoading;
 
   const pipelineData = pipelineRes?.data ?? [];
   const blueSkyRows = blueSkyRes?.data ?? [];
@@ -42,7 +47,7 @@ export default function LeaderDashboard({ user }) {
   const totalCollected = collectionsRes?.total_collected ?? 0;
   const clients = engagementsRes ?? [];
 
-  if (isLoading) {
+  if (coreLoading && pipelineData.length === 0) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
@@ -103,27 +108,43 @@ export default function LeaderDashboard({ user }) {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 xl:col-span-4">
-            <PipelineBoardChart pipelineData={pipelineData} fyLabel={fyLabel} />
+            {pipelineLoading ? <SectionSkeleton className="h-72" /> : (
+              <PipelineBoardChart pipelineData={pipelineData} fyLabel={fyLabel} />
+            )}
           </div>
           <div className="lg:col-span-7 xl:col-span-8">
-            <MonthlyEvolutionCard pipelineData={pipelineData} fyLabel={fyLabel} />
+            {pipelineLoading ? <SectionSkeleton className="h-72" /> : (
+              <MonthlyEvolutionCard pipelineData={pipelineData} fyLabel={fyLabel} />
+            )}
           </div>
         </div>
 
         <ELSummaryChips summary={elSummary} fyLabel={fyLabel} />
 
-        <BlueSkyTableReal blueSkyRows={blueSkyRows} totals={blueSkyTotals} fyLabel={fyLabel} />
+        {bsLoading ? <SectionSkeleton className="h-64" /> : (
+          <BlueSkyTableReal blueSkyRows={blueSkyRows} totals={blueSkyTotals} fyLabel={fyLabel} />
+        )}
 
-        <CollectionsTableReal rows={collectionRows} totalCollected={totalCollected} fyLabel={fyLabel} />
+        {colLoading ? <SectionSkeleton className="h-64" /> : (
+          <CollectionsTableReal rows={collectionRows} totalCollected={totalCollected} fyLabel={fyLabel} />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <PlaceholderCard title="Shadow P&L" message="To Be Built — Revenue split by engagement leaders. Coming in the next phase." />
           <PlaceholderCard title="Origination" message="To Be Built — Partner origination tracking. Coming in the next phase." />
         </div>
 
-        {clients.length > 0 && <ELStatusWidgets clients={clients} />}
+        {engLoading ? <SectionSkeleton className="h-56" /> : clients.length > 0 && (
+          <Suspense fallback={<SectionSkeleton className="h-56" />}>
+            <ELStatusWidgets clients={clients} />
+          </Suspense>
+        )}
 
-        <TeamMetrics hiringReqs={hiringReqs} teamMembers={teamMembers} />
+        {hiringLoading || teamLoading ? (
+          <SectionSkeleton className="h-48" />
+        ) : (
+          <TeamMetrics hiringReqs={hiringReqs} teamMembers={teamMembers} />
+        )}
       </div>
     </div>
   );

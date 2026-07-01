@@ -16,7 +16,7 @@ export default function LeaderFYSelector({
 }) {
   const { selectedLeaderId, setSelectedLeaderId, activeFY, setActiveFY, fiscalYears, fyLoading } = useGlobalSelector();
   const { user } = useAuth();
-  const { data: leaders = [], isLoading } = useLeaders();
+  const { data: leaders = [], isLoading } = useLeaders({ enabled: user?.role !== 'user' });
 
   const showLeaderDropdown = showLeader && user?.role !== 'user';
 

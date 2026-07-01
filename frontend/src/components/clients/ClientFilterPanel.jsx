@@ -9,8 +9,9 @@ import {
   EMPTY_FILTER,
 } from '@/lib/engagementFilters';
 import { uniqueRelationshipPartners } from '@/lib/relationshipPartners';
+import { CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 
-export default function ClientFilterPanel({ clients, filters, setFilters }) {
+export default function ClientFilterPanel({ clients, filters, setFilters, showScope = false }) {
   const relPartners = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const managers = useMemo(() => uniqueManagers(clients), [clients]);
 
@@ -101,7 +102,7 @@ export default function ClientFilterPanel({ clients, filters, setFilters }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid grid-cols-1 ${showScope ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-6`}>
           <div ref={managerDropdownRef}>
             <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-2.5">Manager</p>
             <div className="relative">
@@ -198,6 +199,36 @@ export default function ClientFilterPanel({ clients, filters, setFilters }) {
               })}
             </div>
           </div>
+
+          {showScope && (
+            <div>
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-2.5">Scope</p>
+              <div className="flex flex-wrap gap-2">
+                {CLIENT_SCOPE_VALUES.map(s => {
+                  const active = filters.clientScope?.includes(s);
+                  const isIntl = s === 'International';
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleCatToggle('clientScope', s)}
+                      className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                        active
+                          ? isIntl
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-emerald-600 text-white border-emerald-600'
+                          : isIntl
+                            ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+                            : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-200'
+                      }`}
+                    >
+                      {isIntl ? 'Intl' : s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

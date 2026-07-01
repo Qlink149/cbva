@@ -10,23 +10,21 @@ export function GlobalSelectorProvider({ children }) {
   const { user } = useAuth();
   const { data: leaders = [] } = useLeaders({ enabled: user?.role !== 'user' });
   const { data: fiscalYears = [], isLoading: fyLoading } = useFinancialYears({ enabled: !!user });
-  const [selectedLeaderId, setSelectedLeaderIdRaw] = useState(null);
+  const [selectedLeaderIdOverride, setSelectedLeaderIdOverride] = useState(null);
   const [activeFY, setActiveFY] = useState(null);
 
   const leaderList = Array.isArray(leaders) ? leaders : [];
   const activeFiscalYears = fiscalYears.filter(fy => fy.is_active !== false);
 
+  const selectedLeaderId = selectedLeaderIdOverride
+    ?? user?.leader_id
+    ?? (user?.role !== 'user' && leaderList.length > 0 ? leaderList[0].id : null);
+
   useEffect(() => {
     if (!user) {
-      setSelectedLeaderIdRaw(null);
-      return;
+      setSelectedLeaderIdOverride(null);
     }
-    if (user.leader_id) {
-      setSelectedLeaderIdRaw(user.leader_id);
-    } else if (user.role !== 'user' && leaderList.length > 0 && !selectedLeaderId) {
-      setSelectedLeaderIdRaw(leaderList[0].id);
-    }
-  }, [user, leaderList]);
+  }, [user]);
 
   useEffect(() => {
     if (!fiscalYears.length) return;
@@ -38,7 +36,7 @@ export function GlobalSelectorProvider({ children }) {
 
   const setSelectedLeaderId = (id) => {
     if (user?.role === 'user') return;
-    setSelectedLeaderIdRaw(id);
+    setSelectedLeaderIdOverride(id);
   };
 
   return (

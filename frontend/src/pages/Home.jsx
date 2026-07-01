@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, LockKeyhole, Mail, Sparkles } from 'lucide-react';
+import { ArrowRight, LockKeyhole, Mail } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import WelcomeAnimation from '@/components/welcome/WelcomeAnimation';
+
+const WelcomeAnimation = lazy(() => import('@/components/welcome/WelcomeAnimation'));
 
 const LOGO_SRC = 'https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png';
 
@@ -50,7 +51,11 @@ export default function Home() {
   if (showWelcome && loggedInUser) {
     const name = loggedInUser.full_name || 'User';
     const firstName = name.split(' ')[0];
-    return <WelcomeAnimation firstName={firstName} onComplete={() => redirectByRole(loggedInUser)} />;
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#eeeafc]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[var(--violet)]" /></div>}>
+        <WelcomeAnimation firstName={firstName} onComplete={() => redirectByRole(loggedInUser)} />
+      </Suspense>
+    );
   }
 
   return (
@@ -70,14 +75,8 @@ export default function Home() {
           }}
         >
           <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
-          <div className="relative z-10 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/15 bg-white/10 backdrop-blur">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">Clara.ai</p>
-              <p className="text-xs text-white/55">CBVA executive intelligence</p>
-            </div>
+          <div className="relative z-10">
+            <img src={LOGO_SRC} alt="CBV & Associates" className="h-12 w-auto object-contain brightness-0 invert" />
           </div>
 
           <div className="relative z-10 max-w-xl">
@@ -108,10 +107,7 @@ export default function Home() {
 
           <div className="relative z-10 w-full max-w-md">
             <div className="mb-8 flex flex-col items-center text-center">
-              <img src={LOGO_SRC} alt="CBV & Associates" className="mb-5 h-14 w-auto object-contain" />
-              <span className="executive-pill rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.20em] text-[var(--violet)]">
-                Clara.ai Dashboard
-              </span>
+              <img src={LOGO_SRC} alt="CBV & Associates" className="h-14 w-auto object-contain" />
             </div>
 
             <div className="executive-glass rounded-[24px] p-7 sm:p-8">

@@ -6,4 +6,5 @@ export const useBluesky = (leaderId, fiscalYear) =>
     queryKey: ['bluesky', leaderId, fiscalYear],
     queryFn: () => apiGet('/api/bluesky', { leader_id: leaderId, fiscal_year: fiscalYear }),
     enabled: !!leaderId && !!fiscalYear,
+    staleTime: 3 * 60 * 1000,
   });

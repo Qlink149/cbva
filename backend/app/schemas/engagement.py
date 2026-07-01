@@ -1,11 +1,19 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from datetime import datetime
 
 from app.schemas.provenance import DataProvenance
 
 ELStatus = Literal["Signed", "Not Signed", "Waived", "NA", "DS", "—"]
+ClientScope = Literal["Domestic", "International"]
+RemarkMode = Literal["edit", "add"]
 FiscalYear = str
+
+
+class RemarkHistoryEntry(BaseModel):
+    text: str
+    at: datetime
+    by: str
 
 
 class EngagementCreate(BaseModel):
@@ -26,6 +34,7 @@ class EngagementCreate(BaseModel):
     person_responsible: str = ""
     originator: str = ""
     assignment_type: str = ""
+    client_scope: ClientScope = "Domestic"
     collections_fy2526: Optional[int] = None
     remarks: str = ""
     source: Optional[DataProvenance] = None
@@ -47,12 +56,14 @@ class EngagementUpdate(BaseModel):
     person_responsible: Optional[str] = None
     originator: Optional[str] = None
     assignment_type: Optional[str] = None
+    client_scope: Optional[ClientScope] = None
     collections_fy2526: Optional[int] = None
     remarks: Optional[str] = None
 
 
 class RemarksUpdate(BaseModel):
     remarks: str
+    mode: RemarkMode = "edit"
 
 
 class EngagementResponse(BaseModel):
@@ -76,9 +87,11 @@ class EngagementResponse(BaseModel):
     person_responsible: Optional[str] = None
     originator: Optional[str] = None
     assignment_type: Optional[str] = None
+    client_scope: ClientScope = "Domestic"
     collections_fy2526: Optional[int] = None
     balance: Optional[int]
     remarks: str
+    remarks_history: List[RemarkHistoryEntry] = []
     is_archived: bool
     created_at: datetime
     updated_at: datetime

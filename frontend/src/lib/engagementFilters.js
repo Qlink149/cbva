@@ -7,6 +7,7 @@ export const DEFAULT_ENGAGEMENT_FILTERS = {
   manager: [],
   relPartner: [],
   elStatus: [],
+  clientScope: [],
   remarks: '',
   financials: {
     green: { min: '', max: '' },
@@ -28,6 +29,7 @@ export function countActiveEngagementFilters(filters) {
   count += (filters.manager?.length || 0);
   count += (filters.relPartner?.length || 0);
   count += (filters.elStatus?.length || 0);
+  count += (filters.clientScope?.length || 0);
   Object.values(filters.financials || {}).forEach(r => {
     if (r.min !== '' || r.max !== '') count += 1;
   });
@@ -67,6 +69,10 @@ export function applyEngagementFilters(clients, filters) {
 
   if (filters.elStatus?.length) {
     list = list.filter(c => matchesMulti(c.elStatus, filters.elStatus));
+  }
+
+  if (filters.clientScope?.length) {
+    list = list.filter(c => matchesMulti(c.clientScope || 'Domestic', filters.clientScope));
   }
 
   if (filters.remarks?.trim()) {

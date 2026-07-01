@@ -18,8 +18,8 @@ export default function Collections() {
   const isLoading = leaderLoading || collectionsLoading;
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="pb-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Collections</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -32,12 +32,12 @@ export default function Collections() {
       {isLoading && (
         <div className="space-y-3">
           <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-96 w-full" />
         </div>
       )}
 
       {!isLoading && rows.length > 0 && (
-        <CollectionsTableReal rows={rows} totalCollected={totalCollected} tableMaxHeight={420} />
+        <CollectionsTableReal rows={rows} totalCollected={totalCollected} variant="page" />
       )}
 
       {!isLoading && rows.length === 0 && (
