@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2 } from 'lucide-react';
 import ClientRowExpanded from '@/components/clients/ClientRowExpanded';
 import AddEngagementModal from '@/components/clients/AddEngagementModal';
@@ -49,51 +49,6 @@ function EngagementColGroup({ collectionsOpen, showScope }) {
       ))}
     </colgroup>
   );
-}
-
-function useSyncedHorizontalScroll() {
-  const bodyScrollRef = useRef(null);
-  const footerScrollRef = useRef(null);
-  const bodyAlignRef = useRef(null);
-  const footerAlignRef = useRef(null);
-  const syncingRef = useRef(false);
-  const [footerOffset, setFooterOffset] = useState(0);
-
-  function measureAlignment() {
-    if (!bodyAlignRef.current || !footerAlignRef.current) return;
-    const bodyLeft = bodyAlignRef.current.getBoundingClientRect().left;
-    const footerLeft = footerAlignRef.current.getBoundingClientRect().left - footerOffset;
-    const nextOffset = Math.round(bodyLeft - footerLeft);
-    setFooterOffset(current => (Math.abs(current - nextOffset) > 0 ? nextOffset : current));
-  }
-
-  useEffect(() => {
-    if (bodyScrollRef.current && footerScrollRef.current) {
-      footerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
-    }
-    measureAlignment();
-  });
-
-  function syncScroll(source, target) {
-    if (!source.current || !target.current || syncingRef.current) return;
-    syncingRef.current = true;
-    target.current.scrollLeft = source.current.scrollLeft;
-    measureAlignment();
-    requestAnimationFrame(() => {
-      syncingRef.current = false;
-      measureAlignment();
-    });
-  }
-
-  return {
-    bodyScrollRef,
-    footerScrollRef,
-    bodyAlignRef,
-    footerAlignRef,
-    footerOffset,
-    syncBodyToFooter: () => syncScroll(bodyScrollRef, footerScrollRef),
-    syncFooterToBody: () => syncScroll(footerScrollRef, bodyScrollRef),
-  };
 }
 
 function ELBadge({ status }) {
@@ -244,7 +199,7 @@ function RemarkCell({ value, onChange }) {
 }
 
 
-const EditableCell = React.forwardRef(function EditableCell({ value, onChange, color, colVisible = true }, ref) {
+function EditableCell({ value, onChange, color, colVisible = true }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -263,7 +218,7 @@ const EditableCell = React.forwardRef(function EditableCell({ value, onChange, c
 
   if (editing) {
     return (
-      <td ref={ref} className="py-1 px-2 text-right" style={color ? { backgroundColor: color } : {}}>
+      <td className="py-1 px-2 text-right" style={color ? { backgroundColor: color } : {}}>
         <input
           autoFocus
           className="w-24 text-right text-xs border border-cbva-navy rounded px-1 py-0.5 font-tabular focus:outline-none bg-white"
@@ -279,7 +234,6 @@ const EditableCell = React.forwardRef(function EditableCell({ value, onChange, c
   const isNavy = color === '#1e3a5f';
   return (
     <td
-      ref={ref}
       className={`py-3 px-3 text-right font-tabular text-xs cursor-pointer hover:opacity-80 transition-opacity ${isNavy ? 'text-white' : 'text-black'}`}
       style={color ? { backgroundColor: color } : {}}
       title="Click to edit"
@@ -288,7 +242,7 @@ const EditableCell = React.forwardRef(function EditableCell({ value, onChange, c
       {value != null && value > 0 ? formatINRFull(value) : '-'}
     </td>
   );
-});
+}
 
 function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction, onUpdateRemarks }) {
   const { data: changes = [], isLoading: changesLoading } = useEngagementChanges(client.id, true);
@@ -320,7 +274,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const [collectionsOpen, setCollectionsOpen] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const { bodyScrollRef, footerScrollRef, bodyAlignRef, footerAlignRef, footerOffset, syncBodyToFooter, syncFooterToBody } = useSyncedHorizontalScroll();
   const [filters, setFilters] = useState(DEFAULT_ENGAGEMENT_FILTERS);
 
   const managerOptions = useMemo(() => uniqueManagers(clients), [clients]);
@@ -387,17 +340,22 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     return list;
   }, [clients, sortField, sortDir, filters]);
 
-  const totals = useMemo(() => ({
-    green: filtered.reduce((s, c) => s + (c.green || 0), 0),
-    amber: filtered.reduce((s, c) => s + (c.amber || 0), 0),
-    blueSky: filtered.reduce((s, c) => s + (c.blueSky || 0), 0),
-    total: filtered.reduce((s, c) => s + (c.total || 0), 0),
-    collected: filtered.reduce((s, c) => s + (c.collected || 0), 0),
-    balance: filtered.reduce((s, c) => s + (c.balance || 0), 0),
-    may: filtered.reduce((s, c) => s + (c.mayCol || 0), 0),
-    june: filtered.reduce((s, c) => s + (c.juneCol || 0), 0),
-    july: filtered.reduce((s, c) => s + (c.julyCol || 0), 0),
-  }), [filtered]);
+  const totals = useMemo(() => {
+    const green = filtered.reduce((s, c) => s + (c.green || 0), 0);
+    const amber = filtered.reduce((s, c) => s + (c.amber || 0), 0);
+    const blueSky = filtered.reduce((s, c) => s + (c.blueSky || 0), 0);
+    return {
+      green,
+      amber,
+      blueSky,
+      total: green + amber + blueSky,
+      collected: filtered.reduce((s, c) => s + (c.collected || 0), 0),
+      balance: filtered.reduce((s, c) => s + (c.balance || 0), 0),
+      may: filtered.reduce((s, c) => s + (c.mayCol || 0), 0),
+      june: filtered.reduce((s, c) => s + (c.juneCol || 0), 0),
+      july: filtered.reduce((s, c) => s + (c.julyCol || 0), 0),
+    };
+  }, [filtered]);
 
   const partnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const showScopeColumn = leaderHasClientScope(selectedLeaderId);
@@ -409,6 +367,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const stickyHeaderRow1 = 'sticky z-20 top-0';
   const stickyHeaderRow2 = 'sticky z-20';
   const stickyBase = 'sticky z-10 bg-white';
+  const stickyFooter = 'sticky bottom-0 z-10 bg-muted';
+  const stickyFooterLeft = 'sticky bottom-0 z-20 bg-muted';
   const thStyle = { top: 36, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
   const activeFilterCount = countActiveEngagementFilters(filters);
@@ -478,8 +438,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           </datalist>
         )}
         <div
-          ref={bodyScrollRef}
-          onScroll={syncBodyToFooter}
           className="scrollbar-x-none overflow-auto"
           style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 230px)', minHeight: '500px' }}
         >
@@ -738,7 +696,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       />
                       <td className={`${stickyBase} py-3 px-3 text-xs text-muted-foreground`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}>{relationshipPartnerLabel(client.relPartner)}</td>
                       <td className={`${stickyBase} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}><ELBadge status={client.elStatus} /></td>
-                      <EditableCell ref={i === 0 ? bodyAlignRef : null} value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" />
+                      <EditableCell value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" />
                       <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" />
                       <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} />
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
@@ -786,41 +744,32 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 );
               })}
             </tbody>
-          </table>
-        </div>
-        <div
-          ref={footerScrollRef}
-          className="overflow-hidden border-t border-border bg-muted/30"
-          style={{ maxWidth: '100%' }}
-        >
-          <table className="text-sm border-separate" style={{ minWidth: tableMinWidth, borderSpacing: 0, tableLayout: 'fixed', transform: `translateX(${footerOffset}px)` }}>
-            <EngagementColGroup collectionsOpen={collectionsOpen} showScope={showScopeColumn} />
-            <tbody>
-              <tr className="bg-muted/30 [&>td]:border-t-2 [&>td]:border-border">
-                <td className={`${stickyBase} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground bg-muted/30`}></td>
-                <td className={`${stickyBase} py-3 px-3 text-xs font-bold uppercase text-foreground bg-muted/30`} style={{ left: stickyLeft.client }}>TOTAL</td>
-                {showScopeColumn && <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.scope }}></td>}
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.manager }}></td>
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30`} style={{ left: stickyLeft.relPartner }}></td>
-                <td className={`${stickyBase} py-3 px-3 bg-muted/30 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, clipPath: 'inset(0 -15px 0 0)' }}></td>
-                <td ref={footerAlignRef} className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
-                <td className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>
-                <td className="py-3 px-3 text-right font-tabular font-bold text-black text-xs" style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>
-                <td className="py-3 px-3 text-right font-tabular font-bold text-foreground text-xs">{formatINRFull(totals.total)}</td>
-                <td className="py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs">{formatINRFull(totals.collected)}</td>
+            <tfoot>
+              <tr className="bg-muted [&>td]:border-t-2 [&>td]:border-border">
+                <td className={`${stickyFooterLeft} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ minWidth: 32 }}></td>
+                <td className={`${stickyFooterLeft} py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ left: stickyLeft.client, minWidth: 180 }}>TOTAL</td>
+                {showScopeColumn && <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}></td>}
+                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.manager, minWidth: 100 }}></td>
+                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}></td>
+                <td className={`${stickyFooterLeft} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}></td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{formatINRFull(totals.total)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{formatINRFull(totals.collected)}</td>
                 {collectionsOpen && <>
-                  <td className="py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs border-l border-border/40">{totals.may > 0 ? formatINRFull(totals.may) : '-'}</td>
-                  <td className="py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs">{totals.june > 0 ? formatINRFull(totals.june) : '-'}</td>
-                  <td className="py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs">{totals.july > 0 ? formatINRFull(totals.july) : '-'}</td>
-                  <td className="py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-r border-border/40">{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs border-l border-border/40`}>{totals.may > 0 ? formatINRFull(totals.may) : '-'}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs`}>{totals.june > 0 ? formatINRFull(totals.june) : '-'}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-cbva-navy text-xs`}>{totals.july > 0 ? formatINRFull(totals.july) : '-'}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-r border-border/40`}>{formatINRFull(totals.balance)}</td>
                 </>}
                 {!collectionsOpen && (
-                  <td className="py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40">{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40`}>{formatINRFull(totals.balance)}</td>
                 )}
-                <td className="py-3 px-3 bg-muted/30"></td>
-                <td className="py-3 px-3 bg-muted/30"></td>
+                <td className={`${stickyFooter} py-3 px-3`}></td>
+                <td className={`${stickyFooter} py-3 px-3`}></td>
               </tr>
-            </tbody>
+            </tfoot>
           </table>
         </div>
       </div>
