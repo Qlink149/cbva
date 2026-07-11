@@ -5,13 +5,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatINR } from '@/lib/formatCurrency';
 import { Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import TeamEntryDrawer from '@/components/team/TeamEntryDrawer';
 import EditMemberDrawer from '@/components/team/EditMemberDrawer';
-import OrgChart from '@/components/team/OrgChart';
 import HeadcountTable from '@/components/team/HeadcountTable';
 import { useTeam } from '@/hooks/useTeam';
 import { useHiring } from '@/hooks/useHiring';
+import { useHeadcount } from '@/hooks/useHeadcount';
 import { getFyLabel } from '@/lib/fiscalYear';
+import { sortByDesignation } from '@/lib/designations';
 
 function InitialsAvatar({ name, size = 'md' }) {
   const initials = name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -30,6 +32,34 @@ const HIRING_STATUS_STYLES = {
   'On Hold': 'bg-muted text-muted-foreground',
 };
 
+function HiringRemarks({ req, onSave }) {
+  const [value, setValue] = useState(req.remarks || '');
+
+  React.useEffect(() => {
+    setValue(req.remarks || '');
+  }, [req.remarks]);
+
+  const commit = () => {
+    if ((value || '') !== (req.remarks || '')) {
+      onSave({ id: req.id, remarks: value });
+    }
+  };
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground shrink-0">Remarks</label>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        placeholder="Recruitment stage, interview status, CV availability..."
+        className="h-8 text-xs"
+      />
+    </div>
+  );
+}
+
 export default function TeamView({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -37,13 +67,14 @@ export default function TeamView({ user }) {
 
   const { teamMembers, isLoading: teamLoading, addMember, updateMember, deleteMember } = useTeam(selectedLeaderId);
   const { hiringReqs, isLoading: hiringLoading, addHiring, updateHiring, deleteHiring } = useHiring(selectedLeaderId);
+  const { approvedByDesignation, isLoading: headcountLoading } = useHeadcount(selectedLeaderId);
 
-  const hiringApproved = hiringReqs.length;
-  const hiringPending = hiringReqs.filter(h => h.status === 'Open' || h.status === 'In Progress').length;
+  const currentHeadcount = teamMembers.length;
+  const boardApproved = Object.values(approvedByDesignation).reduce((sum, v) => sum + (v || 0), 0);
 
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
-  const isLoading = teamLoading || hiringLoading;
+  const isLoading = teamLoading || hiringLoading || headcountLoading;
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -70,26 +101,19 @@ export default function TeamView({ user }) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="bg-card rounded-xl border border-border/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground mb-1">Total Members</p>
-          <p className="text-2xl font-medium text-foreground">{teamMembers.length}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground mb-1">Current Headcount</p>
+          <p className="text-2xl font-medium text-foreground">{currentHeadcount}</p>
         </div>
         <div className="bg-card rounded-xl border border-border/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground mb-1">Hiring Approved</p>
-          <p className="text-2xl font-medium text-foreground">{hiringApproved}</p>
-        </div>
-        <div className={`rounded-xl border p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${hiringPending > 0 ? 'bg-status-amber-bg border-status-amber/30' : 'bg-card border-border/60'}`}>
-          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground mb-1">Hiring Pending</p>
-          <p className={`text-2xl font-medium ${hiringPending > 0 ? 'text-status-amber' : 'text-foreground'}`}>{hiringPending}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground mb-1">Board-Approved Headcount</p>
+          <p className="text-2xl font-medium text-foreground">{boardApproved}</p>
         </div>
       </div>
 
-      {/* Org Chart */}
-      <OrgChart leader={user} teamMembers={teamMembers} />
-
       {/* Headcount Table */}
-      <HeadcountTable teamMembers={teamMembers} fyLabel={fyLabel} />
+      <HeadcountTable teamMembers={teamMembers} leaderId={selectedLeaderId} fyLabel={fyLabel} />
 
       {/* Hiring Requirements */}
       {hiringReqs.length > 0 && (
@@ -99,27 +123,29 @@ export default function TeamView({ user }) {
           </div>
           <div className="divide-y divide-border/50">
             {hiringReqs.map(h => (
-              <div key={h.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/20 transition-colors group">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{h.role_title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {h.level}{h.expected_joining_date ? ` · Expected ${h.expected_joining_date}` : ''}
-                    {h.expected_cost ? ` · ${formatINR(h.expected_cost)}` : ''}
-                  </p>
-                  {h.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{h.notes}</p>}
+              <div key={h.id} className="px-5 py-3 hover:bg-muted/20 transition-colors group">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{h.role_title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {h.level}{h.expected_joining_date ? ` · Expected ${h.expected_joining_date}` : ''}
+                      {h.expected_cost ? ` · ${formatINR(h.expected_cost)}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${HIRING_STATUS_STYLES[h.status] || 'bg-muted text-muted-foreground'}`}>
+                      {h.status}
+                    </span>
+                    <button
+                      onClick={() => deleteHiring.mutate(h.id)}
+                      className="text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                      title="Delete requirement"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${HIRING_STATUS_STYLES[h.status] || 'bg-muted text-muted-foreground'}`}>
-                    {h.status}
-                  </span>
-                  <button
-                    onClick={() => deleteHiring.mutate(h.id)}
-                    className="text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
-                    title="Delete requirement"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <HiringRemarks req={h} onSave={(data) => updateHiring.mutate(data)} />
               </div>
             ))}
           </div>
@@ -136,7 +162,7 @@ export default function TeamView({ user }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {teamMembers.map(m => (
+            {[...teamMembers].sort(sortByDesignation).map(m => (
               <div key={m.id} className="bg-card rounded-xl border border-border/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] group">
                 <div className="flex items-center gap-3 mb-3">
                   <InitialsAvatar name={m.full_name} />
@@ -187,6 +213,7 @@ export default function TeamView({ user }) {
       <TeamEntryDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        teamMembers={teamMembers}
         onSaveMember={(data) => addMember.mutate(data, { onSuccess: () => setDrawerOpen(false) })}
         onSaveHiring={(data) => addHiring.mutate(data, { onSuccess: () => setDrawerOpen(false) })}
         isSavingMember={addMember.isPending}
@@ -195,6 +222,7 @@ export default function TeamView({ user }) {
 
       <EditMemberDrawer
         member={editingMember}
+        teamMembers={teamMembers}
         onClose={() => setEditingMember(null)}
         onSave={(data) => updateMember.mutate({ id: editingMember.id, ...data }, { onSuccess: () => setEditingMember(null) })}
         isSaving={updateMember.isPending}

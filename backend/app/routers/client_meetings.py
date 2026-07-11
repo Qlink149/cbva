@@ -19,10 +19,15 @@ class ClientMeetingCreate(BaseModel):
     responsible_person: str = ""
     activity: str = ""
     notes: str = ""
+    minutes: str = ""
     q1_status: str = ""
     q2_status: str = ""
     q3_status: str = ""
     q4_status: str = ""
+    q1_date: str = ""
+    q2_date: str = ""
+    q3_date: str = ""
+    q4_date: str = ""
     sort_order: int = 0
 
 
@@ -34,10 +39,15 @@ class ClientMeetingUpdate(BaseModel):
     responsible_person: Optional[str] = None
     activity: Optional[str] = None
     notes: Optional[str] = None
+    minutes: Optional[str] = None
     q1_status: Optional[str] = None
     q2_status: Optional[str] = None
     q3_status: Optional[str] = None
     q4_status: Optional[str] = None
+    q1_date: Optional[str] = None
+    q2_date: Optional[str] = None
+    q3_date: Optional[str] = None
+    q4_date: Optional[str] = None
     sort_order: Optional[int] = None
 
 
@@ -53,10 +63,15 @@ def _serialize(doc: dict) -> dict:
         "responsible_person": doc.get("responsible_person", ""),
         "activity": doc.get("activity", ""),
         "notes": doc.get("notes", ""),
+        "minutes": doc.get("minutes", ""),
         "q1_status": doc.get("q1_status", ""),
         "q2_status": doc.get("q2_status", ""),
         "q3_status": doc.get("q3_status", ""),
         "q4_status": doc.get("q4_status", ""),
+        "q1_date": doc.get("q1_date", ""),
+        "q2_date": doc.get("q2_date", ""),
+        "q3_date": doc.get("q3_date", ""),
+        "q4_date": doc.get("q4_date", ""),
         "sort_order": doc.get("sort_order", 0),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),

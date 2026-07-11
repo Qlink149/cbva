@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, CheckCircle2, AlertCircle, Calendar, Upload, X } from 'lucide-react';
+import { Plus, CheckCircle2, AlertCircle, Calendar, X, Ban, ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { getFyLabel } from '@/lib/fiscalYear';
@@ -19,7 +19,7 @@ const QUARTERS = [
   { key: 'q4', label: 'Q4 (Jan–Mar)' },
 ];
 
-const FREQ_OPTIONS = ['Monthly', 'Quarterly', 'As needed', 'Custom'];
+const FREQ_OPTIONS = ['Monthly', 'Quarterly', 'Custom', 'Waiver'];
 const STATUS_OPTIONS = ['Planned', 'Completed', 'Overdue'];
 
 const STATUS_STYLES = {
@@ -29,9 +29,14 @@ const STATUS_STYLES = {
   '': 'bg-muted text-muted-foreground',
 };
 
-function StatusCell({ value, onChange }) {
+function StatusCell({ value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const style = STATUS_STYLES[value] || STATUS_STYLES[''];
+  if (disabled) {
+    return (
+      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES['']} whitespace-nowrap`}>—</span>
+    );
+  }
   return (
     <div className="relative">
       <button className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${style} whitespace-nowrap`} onClick={() => setOpen(v => !v)}>
@@ -60,6 +65,16 @@ export default function ClientMeetings() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [newRow, setNewRow] = useState({ client: '', frequency: 'Quarterly', q1: '', q2: '', q3: '', q4: '', remarks: '' });
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+
+  function toggleExpand(id) {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function updateField(id, field, val) {
     updateMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY, [field]: val });
@@ -87,7 +102,9 @@ export default function ClientMeetings() {
     deleteMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY });
   }
 
-  const allStatuses = meetings.flatMap(m => [m.q1, m.q2, m.q3, m.q4]);
+  const activeMeetings = meetings.filter(m => m.frequency !== 'Waiver');
+  const waived = meetings.filter(m => m.frequency === 'Waiver').length;
+  const allStatuses = activeMeetings.flatMap(m => [m.q1, m.q2, m.q3, m.q4]);
   const upcoming = allStatuses.filter(s => s === 'Planned').length;
   const overdue = allStatuses.filter(s => s === 'Overdue').length;
   const completed = allStatuses.filter(s => s === 'Completed').length;
@@ -113,7 +130,7 @@ export default function ClientMeetings() {
         <LeaderFYSelector />
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-card rounded-xl border border-border/60 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
             <Calendar className="w-4 h-4 text-cbva-navy" />
@@ -141,6 +158,15 @@ export default function ClientMeetings() {
             <p className="text-[11px] text-muted-foreground">Overdue</p>
           </div>
         </div>
+        <div className="bg-card rounded-xl border border-border/60 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+            <Ban className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-2xl font-medium text-foreground">{waived}</p>
+            <p className="text-[11px] text-muted-foreground">Waived</p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -162,22 +188,43 @@ export default function ClientMeetings() {
                   {QUARTERS.map(q => (
                     <th key={q.key} className="text-center py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap" style={{ minWidth: 130 }}>{q.label}</th>
                   ))}
-                  <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium" style={{ minWidth: 180 }}>Remarks</th>
+                  <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-remarks">Remarks</th>
                   <th className="py-3 px-3 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {meetings.map(m => (
-                  <tr key={m.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-3 px-4 font-medium text-foreground text-xs sticky left-0 bg-white z-10">{m.client}</td>
+                {meetings.map(m => {
+                  const isWaived = m.frequency === 'Waiver';
+                  const isExpanded = expandedIds.has(m.id);
+                  return (
+                  <React.Fragment key={m.id}>
+                  <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${isWaived ? 'bg-muted/20' : ''}`}>
+                    <td className={`py-3 px-4 font-medium text-foreground text-xs sticky left-0 z-10 ${isWaived ? 'bg-muted/40' : 'bg-white'}`}>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => toggleExpand(m.id)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0" title="Meeting minutes">
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </button>
+                        <span className={`truncate ${isWaived ? 'text-muted-foreground' : ''}`}>{m.client}</span>
+                        {isWaived && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 whitespace-nowrap">Waived</span>}
+                      </div>
+                    </td>
                     <td className="py-3 px-4">
                       <select className="text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground" value={m.frequency} onChange={e => updateField(m.id, 'frequency', e.target.value)}>
                         {FREQ_OPTIONS.map(f => <option key={f}>{f}</option>)}
                       </select>
                     </td>
                     {QUARTERS.map(q => (
-                      <td key={q.key} className="py-3 px-4 text-center">
-                        <StatusCell value={m[q.key]} onChange={v => updateField(m.id, q.key, v)} />
+                      <td key={q.key} className={`py-3 px-4 text-center ${isWaived ? 'opacity-50' : ''}`}>
+                        <div className="flex flex-col items-center gap-1">
+                          <input
+                            type="date"
+                            disabled={isWaived}
+                            className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed"
+                            value={m[`${q.key}Date`] || ''}
+                            onChange={e => updateField(m.id, `${q.key}Date`, e.target.value)}
+                          />
+                          <StatusCell value={m[q.key]} onChange={v => updateField(m.id, q.key, v)} disabled={isWaived} />
+                        </div>
                       </td>
                     ))}
                     <td className="py-3 px-4">
@@ -187,7 +234,27 @@ export default function ClientMeetings() {
                       <button onClick={() => removeRow(m.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>
-                ))}
+                  {isExpanded && (
+                    <tr className="border-b border-border/50 bg-muted/10">
+                      <td colSpan={8} className="px-4 py-3">
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-3.5 h-3.5 text-muted-foreground mt-1 shrink-0" />
+                          <div className="flex-1">
+                            <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Meeting Minutes</label>
+                            <textarea
+                              className="mt-1 w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px] resize-y"
+                              placeholder="Record meeting minutes, key decisions and action items..."
+                              defaultValue={m.minutes}
+                              onBlur={e => { if (e.target.value !== m.minutes) updateField(m.id, 'minutes', e.target.value); }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                  );
+                })}
                 {showAdd && (
                   <tr className="border-b border-border/50 bg-blue-50/30">
                     <td className="py-2 px-4 sticky left-0 bg-blue-50/30 z-10">
@@ -212,14 +279,6 @@ export default function ClientMeetings() {
             </table>
           </div>
         )}
-      </div>
-
-      <div className="bg-card rounded-xl border border-border/60 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-        <div className="flex items-center gap-2 mb-2">
-          <Upload className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold text-foreground">Meeting Minutes & Decks</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">Document upload functionality will be enabled in the next phase.</p>
       </div>
     </div>
   );

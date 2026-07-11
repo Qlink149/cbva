@@ -3,8 +3,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TEAM_DESIGNATIONS } from '@/lib/designations';
+import ReportsToSelect from '@/components/team/ReportsToSelect';
 
-export default function EditMemberDrawer({ member, onClose, onSave, isSaving }) {
+export default function EditMemberDrawer({ member, onClose, onSave, isSaving, teamMembers = [] }) {
   const [form, setForm] = useState(null);
 
   useEffect(() => {
@@ -18,6 +20,7 @@ export default function EditMemberDrawer({ member, onClose, onSave, isSaving }) 
         joining_date: member.joining_date || '',
         status: member.status || 'Active',
         notes: member.notes || '',
+        reports_to_member_id: member.reports_to_member_id || null,
       });
     }
   }, [member]);
@@ -25,7 +28,11 @@ export default function EditMemberDrawer({ member, onClose, onSave, isSaving }) 
   if (!form) return null;
 
   const handleSave = () => {
-    onSave({ ...form, annual_cost: parseFloat(form.annual_cost) || 0 });
+    onSave({
+      ...form,
+      annual_cost: parseFloat(form.annual_cost) || 0,
+      reports_to_member_id: form.reports_to_member_id || null,
+    });
   };
 
   return (
@@ -42,7 +49,12 @@ export default function EditMemberDrawer({ member, onClose, onSave, isSaving }) 
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Designation</label>
-            <Input value={form.designation} onChange={e => setForm(p => ({ ...p, designation: e.target.value }))} placeholder="e.g. Senior Manager" />
+            <Select value={form.designation || undefined} onValueChange={v => setForm(p => ({ ...p, designation: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+              <SelectContent>
+                {TEAM_DESIGNATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Email</label>
@@ -71,8 +83,14 @@ export default function EditMemberDrawer({ member, onClose, onSave, isSaving }) 
               </SelectContent>
             </Select>
           </div>
+          <ReportsToSelect
+            value={form.reports_to_member_id}
+            onChange={(v) => setForm((p) => ({ ...p, reports_to_member_id: v }))}
+            teamMembers={teamMembers}
+            excludeId={member?.id}
+          />
           <div>
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Notes</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Remarks</label>
             <Input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Any notes..." />
           </div>
           <Button

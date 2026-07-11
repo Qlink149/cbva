@@ -1,5 +1,7 @@
 from datetime import date
 
+FY_MONTH_KEYS = ["04", "05", "06", "07", "08", "09", "10", "11", "12", "01", "02", "03"]
+
 
 def parse_fy_slug(slug: str) -> tuple[int, int] | None:
     if not slug or len(slug) != 4:
@@ -26,6 +28,31 @@ def get_fy_month_calendar_year(month_key: str, fiscal_year: str) -> int | None:
     return start_year if month_num >= 4 else end_year
 
 
+def get_last_completed_calendar_month(as_of: date | None = None) -> tuple[int, int]:
+    """
+    Return (year, month) for the last fully completed calendar month.
+    Example: if as_of is 2026-07-02, returns (2026, 6).
+    """
+    as_of = as_of or date.today()
+    if as_of.month == 1:
+        return as_of.year - 1, 12
+    return as_of.year, as_of.month - 1
+
+
+def is_fy_month_after_calendar_month(
+    fiscal_year: str,
+    month_key: str,
+    cutoff_year: int,
+    cutoff_month: int,
+) -> bool:
+    """True if the FY month maps to a calendar month strictly after the cutoff."""
+    cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
+    if cal_year is None:
+        return False
+    month_num = int(month_key)
+    return (cal_year, month_num) > (cutoff_year, cutoff_month)
+
+
 def is_fy_month_elapsed(month_key: str, fiscal_year: str, as_of: date | None = None) -> bool:
     as_of = as_of or date.today()
     cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
@@ -44,3 +71,20 @@ def is_future_fy_month(fiscal_year: str, month_key: str, as_of: date | None = No
     if fiscal_year != get_current_fy_slug(as_of):
         return False
     return not is_fy_month_elapsed(month_key, fiscal_year, as_of)
+
+
+def get_available_fy_month_keys(fiscal_year: str, as_of: date | None = None) -> list[str]:
+    """
+    FY months visible in dashboards for a given fiscal year.
+    - Past FY: full year (Apr–Mar)
+    - Current FY: elapsed months inclusive of the current calendar month
+    - Future FY: April only (first month)
+    Mirrors frontend getAvailableFyMonths / getSummaryMonthKeys.
+    """
+    as_of = as_of or date.today()
+    current_fy = get_current_fy_slug(as_of)
+    if fiscal_year < current_fy:
+        return list(FY_MONTH_KEYS)
+    if fiscal_year > current_fy:
+        return ["04"]
+    return [mk for mk in FY_MONTH_KEYS if is_fy_month_elapsed(mk, fiscal_year, as_of)]

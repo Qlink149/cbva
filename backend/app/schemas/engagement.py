@@ -31,11 +31,11 @@ class EngagementCreate(BaseModel):
     june_col: Optional[int] = None
     july_col: Optional[int] = None
     august_col: Optional[int] = None
+    monthly_plan: dict[str, int] = {}
     person_responsible: str = ""
     originator: str = ""
     assignment_type: str = ""
     client_scope: ClientScope = "Domestic"
-    collections_fy2526: Optional[int] = None
     remarks: str = ""
     source: Optional[DataProvenance] = None
 
@@ -48,16 +48,15 @@ class EngagementUpdate(BaseModel):
     green: Optional[int] = Field(None, ge=0)
     amber: Optional[int] = Field(None, ge=0)
     blue_sky: Optional[int] = Field(None, ge=0)
-    collected: Optional[int] = Field(None, ge=0)
     may_col: Optional[int] = None
     june_col: Optional[int] = None
     july_col: Optional[int] = None
     august_col: Optional[int] = None
+    monthly_plan: Optional[dict[str, int]] = None
     person_responsible: Optional[str] = None
     originator: Optional[str] = None
     assignment_type: Optional[str] = None
     client_scope: Optional[ClientScope] = None
-    collections_fy2526: Optional[int] = None
     remarks: Optional[str] = None
 
 
@@ -84,12 +83,12 @@ class EngagementResponse(BaseModel):
     june_col: Optional[int]
     july_col: Optional[int]
     august_col: Optional[int] = None
+    monthly_plan: dict[str, int] = {}
     person_responsible: Optional[str] = None
     originator: Optional[str] = None
     assignment_type: Optional[str] = None
     client_scope: ClientScope = "Domestic"
-    collections_fy2526: Optional[int] = None
-    balance: Optional[int]
+    balance: Optional[int] = None
     remarks: str
     remarks_history: List[RemarkHistoryEntry] = []
     is_archived: bool

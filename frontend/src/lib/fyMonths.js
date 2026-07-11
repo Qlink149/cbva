@@ -79,3 +79,42 @@ export function monthValueMatches(monthValue, monthKey) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Planned vs Collected helpers (Engagement/Collections rework). FY month keys
+// run Apr..Mar; dynamic across all years (mirrors backend fy_calendar).
+// ---------------------------------------------------------------------------
+
+export const FY_MONTH_KEYS = FY_MONTHS.map((m) => m.key);
+export const MONTH_SHORT_NAMES = Object.fromEntries(FY_MONTHS.map((m) => [m.key, m.label]));
+export const MONTH_FULL_NAMES = Object.fromEntries(FY_MONTHS.map((m) => [m.key, m.full]));
+
+/** Short label with calendar year, e.g. ("06","2627") -> "Jun 2026". */
+export function getFyMonthLabelYear(monthKey, fySlug) {
+  const short = MONTH_SHORT_NAMES[monthKey] ?? monthKey;
+  const year = getFyMonthCalendarYear(monthKey, fySlug);
+  return year ? `${short} ${year}` : short;
+}
+
+/**
+ * Default month for a selected FY: the current calendar month.
+ * - When the current month falls inside the selected FY -> that month
+ *   (e.g. July of FY 26-27 -> "07").
+ * - Past FY (already ended) -> "03" (March, last month).
+ * - Future FY (not started) -> "04" (April, first month).
+ * Fully dynamic, no hardcoded years.
+ */
+export function getDefaultMonthKey(fySlug, now = new Date()) {
+  if (!fySlug) return '04';
+  const parsed = parseFySlug(fySlug);
+  if (!parsed) return '04';
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1; // 1-12
+  const curMonthKey = String(curMonth).padStart(2, '0');
+  // Current calendar month falls within this FY -> default to it
+  if (getFyMonthCalendarYear(curMonthKey, fySlug) === curYear) {
+    return curMonthKey;
+  }
+  // FY already ended -> last month; otherwise (future) -> first month
+  const isPast = curYear > parsed.endYear || (curYear === parsed.endYear && curMonth > 3);
+  return isPast ? '03' : '04';
+}

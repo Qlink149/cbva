@@ -112,7 +112,7 @@ export default function ClientDetailPanel({ client, engagements, onClose }) {
               <InfoRow icon={Globe} label="Industry" value={client.primary_industry} />
               <InfoRow icon={CalendarDays} label="Onboarded" value={formatDate(client.date_onboarded)} />
               <InfoRow icon={CalendarDays} label="Next Meeting" value={formatDate(client.next_meeting_date)} />
-              {client.notes && <InfoRow icon={FileText} label="Notes" value={client.notes} />}
+              {client.notes && <InfoRow icon={FileText} label="Remarks" value={client.notes} />}
             </div>
           </div>
 

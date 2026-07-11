@@ -6,12 +6,22 @@ import {
   uniqueManagers,
   toggleFilterList,
   setFinancialFilter,
+  setMonthFinancialFilter,
   EMPTY_FILTER,
 } from '@/lib/engagementFilters';
 import { uniqueRelationshipPartners } from '@/lib/relationshipPartners';
 import { CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
+import { getFyMonthLabelYear } from '@/lib/fyMonths';
 
-export default function ClientFilterPanel({ clients, filters, setFilters, showScope = false }) {
+export default function ClientFilterPanel({
+  clients,
+  filters,
+  setFilters,
+  showScope = false,
+  selectedMonths = [],
+  fySlug = '',
+  collectionsOpen = true,
+}) {
   const relPartners = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const managers = useMemo(() => uniqueManagers(clients), [clients]);
 
@@ -38,12 +48,17 @@ export default function ClientFilterPanel({ clients, filters, setFilters, showSc
     { key: 'total', label: 'Total (₹)' },
     { key: 'collected', label: 'Collected (₹)' },
     { key: 'balance', label: 'Balance (₹)' },
-    { key: 'mayCol', label: 'May Col (₹)' },
-    { key: 'juneCol', label: 'June Col (₹)' },
-    { key: 'julyCol', label: 'July Col (₹)' },
   ];
 
-  const totalActive = countActiveEngagementFilters(filters);
+  const monthFinFields = useMemo(() => (
+    selectedMonths.flatMap((mk) => [
+      { monthKey: mk, field: 'planned', label: `${getFyMonthLabelYear(mk, fySlug)} Planned (₹)` },
+      { monthKey: mk, field: 'collected', label: `${getFyMonthLabelYear(mk, fySlug)} Collected (₹)` },
+      { monthKey: mk, field: 'variance', label: `${getFyMonthLabelYear(mk, fySlug)} Variance (₹)` },
+    ])
+  ), [selectedMonths, fySlug]);
+
+  const totalActive = countActiveEngagementFilters(filters, selectedMonths);
 
   const [partnerDropdownOpen, setPartnerDropdownOpen] = useState(false);
   const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
@@ -232,7 +247,7 @@ export default function ClientFilterPanel({ clients, filters, setFilters, showSc
         </div>
 
         <div>
-          <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-3">Financial Ranges (₹)</p>
+          <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-3">Pipeline & Totals (₹)</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-4">
             {finFields.map(f => {
               const active = filters.financials[f.key]?.min !== '' || filters.financials[f.key]?.max !== '';
@@ -261,6 +276,42 @@ export default function ClientFilterPanel({ clients, filters, setFilters, showSc
             })}
           </div>
         </div>
+
+        {collectionsOpen && monthFinFields.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-semibold text-cbva-navy mb-3">
+              Planned vs Collected — selected months
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-4">
+              {monthFinFields.map((f) => {
+                const active = filters.monthly?.[f.monthKey]?.[f.field]?.min !== ''
+                  || filters.monthly?.[f.monthKey]?.[f.field]?.max !== '';
+                return (
+                  <div key={`${f.monthKey}-${f.field}`} className="space-y-1.5">
+                    <label className={`text-[10px] uppercase font-semibold ${active ? 'text-cbva-navy' : 'text-slate-500'}`}>{f.label}</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        className="w-full text-xs px-2 py-1.5 border border-border/80 rounded-md focus:outline-none focus:ring-1 focus:ring-cbva-navy bg-white shadow-sm"
+                        value={filters.monthly?.[f.monthKey]?.[f.field]?.min || ''}
+                        onChange={e => setMonthFinancialFilter(setFilters, f.monthKey, f.field, 'min', e.target.value)}
+                      />
+                      <span className="text-muted-foreground text-[10px]">-</span>
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        className="w-full text-xs px-2 py-1.5 border border-border/80 rounded-md focus:outline-none focus:ring-1 focus:ring-cbva-navy bg-white shadow-sm"
+                        value={filters.monthly?.[f.monthKey]?.[f.field]?.max || ''}
+                        onChange={e => setMonthFinancialFilter(setFilters, f.monthKey, f.field, 'max', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

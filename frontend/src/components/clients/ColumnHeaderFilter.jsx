@@ -1,7 +1,7 @@
 import React from 'react';
 import { Filter, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { EMPTY_FILTER, setFinancialFilter, clearFinancialFilter, toggleFilterList } from '@/lib/engagementFilters';
+import { EMPTY_FILTER, setFinancialFilter, clearFinancialFilter, setMonthFinancialFilter, clearMonthFinancialFilter, toggleFilterList } from '@/lib/engagementFilters';
 
 function FilterIcon({ active }) {
   return (
@@ -16,6 +16,8 @@ export function ColumnHeaderFilter({
   align = 'left',
   type,
   filterKey,
+  monthKey,
+  monthField,
   filters,
   setFilters,
   options = [],
@@ -32,6 +34,10 @@ export function ColumnHeaderFilter({
       const r = filters.financials?.[filterKey];
       return r && (r.min !== '' || r.max !== '');
     }
+    if (type === 'monthRange') {
+      const r = filters.monthly?.[monthKey]?.[monthField];
+      return r && (r.min !== '' || r.max !== '');
+    }
     return false;
   })();
 
@@ -43,6 +49,8 @@ export function ColumnHeaderFilter({
       setFilters(prev => ({ ...prev, [filterKey]: [] }));
     } else if (type === 'range') {
       clearFinancialFilter(setFilters, filterKey);
+    } else if (type === 'monthRange') {
+      clearMonthFinancialFilter(setFilters, monthKey, monthField);
     }
   }
 
@@ -144,6 +152,29 @@ export function ColumnHeaderFilter({
                     className="w-full text-xs px-2 py-1.5 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-cbva-navy"
                     value={filters.financials?.[filterKey]?.max || ''}
                     onChange={e => setFinancialFilter(setFilters, filterKey, 'max', e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {type === 'monthRange' && (
+              <div className="space-y-2">
+                <p className="text-[10px] text-muted-foreground">Amount in ₹ (raw value)</p>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    className="w-full text-xs px-2 py-1.5 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-cbva-navy"
+                    value={filters.monthly?.[monthKey]?.[monthField]?.min || ''}
+                    onChange={e => setMonthFinancialFilter(setFilters, monthKey, monthField, 'min', e.target.value)}
+                  />
+                  <span className="text-muted-foreground text-[10px]">-</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    className="w-full text-xs px-2 py-1.5 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-cbva-navy"
+                    value={filters.monthly?.[monthKey]?.[monthField]?.max || ''}
+                    onChange={e => setMonthFinancialFilter(setFilters, monthKey, monthField, 'max', e.target.value)}
                   />
                 </div>
               </div>

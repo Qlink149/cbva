@@ -17,10 +17,12 @@ from app.routers import (
     pipeline,
     bluesky,
     collections,
+    collection_transactions,
     actions,
     tasks,
     team,
     hiring,
+    headcount,
     baselines,
     el_summary,
     firmwide,
@@ -28,6 +30,7 @@ from app.routers import (
     assessments,
     financial_years,
     client_meetings,
+    consolidated,
 )
 
 
@@ -82,17 +85,20 @@ app.include_router(engagements.router, prefix="/api/engagements",  tags=["Engage
 app.include_router(engagement_actions.router, prefix="/api/engagement-actions", tags=["EngagementActions"])
 app.include_router(pipeline.router,    prefix="/api/pipeline",     tags=["Pipeline"])
 app.include_router(bluesky.router,     prefix="/api/bluesky",      tags=["BlueSky"])
-app.include_router(collections.router, prefix="/api/collections",  tags=["Collections"])
+app.include_router(collections.router,             prefix="/api/collections",             tags=["Collections"])
+app.include_router(collection_transactions.router, prefix="/api/collection-transactions", tags=["CollectionTransactions"])
 app.include_router(actions.router,     prefix="/api/actions",      tags=["Actions"])
 app.include_router(tasks.router,       prefix="/api/tasks",        tags=["Tasks"])
 app.include_router(team.router,        prefix="/api/team",         tags=["Team"])
 app.include_router(hiring.router,      prefix="/api/hiring",       tags=["Hiring"])
+app.include_router(headcount.router,   prefix="/api/headcount",    tags=["Headcount"])
 app.include_router(baselines.router,   prefix="/api/baselines",    tags=["Baselines"])
 app.include_router(el_summary.router,  prefix="/api/el-summary",   tags=["ELSummary"])
 app.include_router(financial_years.router, prefix="/api/financial-years", tags=["FinancialYears"])
 app.include_router(client_meetings.router, prefix="/api/client-meetings", tags=["ClientMeetings"])
 app.include_router(assessments.router, prefix="/api/assessments",  tags=["Assessments"])
 app.include_router(firmwide.router,    prefix="/api/firmwide",     tags=["Firmwide"])
+app.include_router(consolidated.router, prefix="/api/consolidated-summary", tags=["Consolidated"])
 app.include_router(admin.router,       prefix="/api/admin",        tags=["Admin"])
 
 

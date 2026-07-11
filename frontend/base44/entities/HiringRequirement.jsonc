@@ -38,7 +38,7 @@
       "type": "number",
       "default": 0
     },
-    "notes": {
+    "remarks": {
       "type": "string"
     }
   },

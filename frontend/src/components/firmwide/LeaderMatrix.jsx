@@ -51,8 +51,8 @@ export default function LeaderMatrix({ leaders, engagements, baselines }) {
   const DataRow = ({ label, getVal, isDrift = false }) => (
     <tr className="hover:bg-muted/20 transition-colors">
       <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{label}</td>
-      {matrix.map(m => <td key={m.leader.id} className="py-2 px-3 text-right"><CellVal value={getVal(m)} isDrift={isDrift} /></td>)}
-      <td className="py-2 px-3 text-right font-medium"><CellVal value={getVal(totals)} isDrift={isDrift} /></td>
+      {matrix.map(m => <td key={m.leader.id} className="py-2 text-right col-num"><CellVal value={getVal(m)} isDrift={isDrift} /></td>)}
+      <td className="py-2 text-right font-medium col-num"><CellVal value={getVal(totals)} isDrift={isDrift} /></td>
     </tr>
   );
 

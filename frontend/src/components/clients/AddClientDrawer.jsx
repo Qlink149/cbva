@@ -74,7 +74,7 @@ export default function AddClientDrawer({ open, onClose, onSave }) {
             <Input type="date" value={form.next_meeting_date} onChange={e => set('next_meeting_date', e.target.value)} className="mt-1" />
           </div>
           <div>
-            <Label>Notes</Label>
+            <Label>Remarks</Label>
             <Input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes" className="mt-1" />
           </div>
           <div className="flex gap-2 pt-2">

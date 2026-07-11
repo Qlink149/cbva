@@ -3,27 +3,43 @@ from typing import Optional
 from datetime import datetime
 
 
-class CollectionEntryUpdate(BaseModel):
-    planned: Optional[int] = None
-    collected: Optional[int] = None
-    outstanding: Optional[int] = None
+class CollectionPlanSet(BaseModel):
+    """Upsert the planned (target) amount for a single month."""
+    leader_id: str
+    fiscal_year: str
+    month_key: str      # "04" = April
+    planned: int = 0
     remarks: Optional[str] = None
 
 
-class CollectionEntryResponse(BaseModel):
+class CollectionEntryUpdate(BaseModel):
+    """Update planned, collected, and/or remarks on an existing collection_entries row."""
+    planned: Optional[int] = None
+    collected: Optional[int] = None
+    remarks: Optional[str] = None
+
+
+class CollectionTransactionItem(BaseModel):
     id: str
-    leader_id: str
-    fiscal_year: str
-    month: str
+    engagement_id: str
+    client_name: str
+    amount_billed: int
+    amount_collected: int
+    created_at: datetime
+
+
+class MonthCollectionResponse(BaseModel):
+    month_key: str
+    month_label: str    # e.g. "April 2025"
     sort_order: int
     planned: int
-    collected: int
-    outstanding: Optional[int]
+    actual: int
     variance: int
-    created_at: datetime
-    updated_at: datetime
+    remarks: str = ""
+    entry_id: Optional[str] = None
+    transactions: list[CollectionTransactionItem] = []
 
 
 class CollectionListResponse(BaseModel):
-    data: list[CollectionEntryResponse]
+    data: list[MonthCollectionResponse]
     total_collected: int

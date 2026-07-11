@@ -202,11 +202,11 @@ export default function Leaders() {
               <tr className="bg-muted/30 border-b border-border">
                 <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Leader</th>
                 <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Practice</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-emerald-700 font-medium">Green</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-amber-600 font-medium">Amber</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-cbva-navy font-medium">Blue Sky</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Grand Total</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">YTD Collected</th>
+                <th className="text-right py-3 col-num text-[11px] uppercase tracking-wider text-emerald-700 font-medium">Green</th>
+                <th className="text-right py-3 col-num text-[11px] uppercase tracking-wider text-amber-600 font-medium">Amber</th>
+                <th className="text-right py-3 col-num text-[11px] uppercase tracking-wider text-cbva-navy font-medium">Blue Sky</th>
+                <th className="text-right py-3 col-num text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Grand Total</th>
+                <th className="text-right py-3 col-num text-[11px] uppercase tracking-wider text-muted-foreground font-medium">YTD Collected</th>
               </tr>
             </thead>
             <tbody>
@@ -214,22 +214,22 @@ export default function Leaders() {
                 <tr key={ld.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                   <td className="py-3 px-4 font-medium text-foreground text-xs">{ld.name}</td>
                   <td className="py-3 px-4 text-xs text-muted-foreground">{ld.practice}</td>
-                  <td className="py-3 px-4 text-right font-tabular text-emerald-700 text-xs">{fmtIndian(ld.total_green)}</td>
-                  <td className="py-3 px-4 text-right font-tabular text-amber-600 text-xs">{fmtIndian(ld.total_amber)}</td>
-                  <td className="py-3 px-4 text-right font-tabular text-cbva-navy text-xs">{ld.total_blue_sky > 0 ? fmtIndian(ld.total_blue_sky) : '—'}</td>
-                  <td className="py-3 px-4 text-right font-tabular font-semibold text-foreground text-xs">{fmtIndian(ld.total_pipeline)}</td>
-                  <td className="py-3 px-4 text-right font-tabular text-slate-600 text-xs">{fmtIndian(ld.total_collected)}</td>
+                  <td className="py-3 text-right col-num font-tabular text-emerald-700 text-xs">{fmtIndian(ld.total_green)}</td>
+                  <td className="py-3 text-right col-num font-tabular text-amber-600 text-xs">{fmtIndian(ld.total_amber)}</td>
+                  <td className="py-3 text-right col-num font-tabular text-cbva-navy text-xs">{ld.total_blue_sky > 0 ? fmtIndian(ld.total_blue_sky) : '—'}</td>
+                  <td className="py-3 text-right col-num font-tabular font-semibold text-foreground text-xs">{fmtIndian(ld.total_pipeline)}</td>
+                  <td className="py-3 text-right col-num font-tabular text-slate-600 text-xs">{fmtIndian(ld.total_collected)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="bg-muted/30 border-t-2 border-border">
                 <td className="py-3 px-4 text-xs font-bold uppercase text-foreground" colSpan={2}>TOTAL</td>
-                <td className="py-3 px-4 text-right font-tabular font-bold text-emerald-700 text-xs">{fmtIndian(firmGreen)}</td>
-                <td className="py-3 px-4 text-right font-tabular font-bold text-amber-600 text-xs">{fmtIndian(firmAmber)}</td>
-                <td className="py-3 px-4 text-right font-tabular font-bold text-cbva-navy text-xs">{fmtIndian(firmBlueSky)}</td>
-                <td className="py-3 px-4 text-right font-tabular font-bold text-foreground text-xs">{fmtIndian(firmTotal)}</td>
-                <td className="py-3 px-4 text-right font-tabular font-bold text-slate-700 text-xs">{fmtIndian(firmCollected)}</td>
+                <td className="py-3 text-right col-num font-tabular font-bold text-emerald-700 text-xs">{fmtIndian(firmGreen)}</td>
+                <td className="py-3 text-right col-num font-tabular font-bold text-amber-600 text-xs">{fmtIndian(firmAmber)}</td>
+                <td className="py-3 text-right col-num font-tabular font-bold text-cbva-navy text-xs">{fmtIndian(firmBlueSky)}</td>
+                <td className="py-3 text-right col-num font-tabular font-bold text-foreground text-xs">{fmtIndian(firmTotal)}</td>
+                <td className="py-3 text-right col-num font-tabular font-bold text-slate-700 text-xs">{fmtIndian(firmCollected)}</td>
               </tr>
             </tfoot>
           </table>

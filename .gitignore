@@ -51,6 +51,10 @@ backend/csv/
 *.xlsx
 *.xls
 
+# Local CSV templates (not for commit)
+csv-templates/
+csv-templates.zip
+
 # Coverage / test artifacts
 .coverage
 htmlcov/

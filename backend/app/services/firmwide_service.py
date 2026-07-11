@@ -1,6 +1,12 @@
+from datetime import date
+
 from app.core import database
 from app.services.month_matching import month_field_regex, month_label_regex, pick_pipeline_snapshot
-from app.services.fy_calendar import is_future_fy_month
+from app.services.fy_calendar import (
+    is_future_fy_month,
+    get_available_fy_month_keys,
+    get_fy_month_calendar_year,
+)
 
 
 async def _empty_monthly_summary(fiscal_year: str) -> list:
@@ -80,15 +86,17 @@ async def get_firmwide_summary(fiscal_year: str, month: str | None = None) -> li
     ]).to_list(length=50)
     count_map = {row["_id"]: row for row in engagement_counts}
 
-    collected_rows = await database.db.collection_entries.aggregate([
+    # Use collection_transactions (source of truth) instead of collection_entries
+    # month here is a two-digit key like "04" which matches collection_transactions.month
+    collected_rows = await database.db.collection_transactions.aggregate([
         {
             "$match": {
                 "fiscal_year": fiscal_year,
                 "leader_id": {"$in": leader_ids},
-                "month": {"$regex": field_pattern, "$options": "i"},
+                "month": month,
             }
         },
-        {"$group": {"_id": "$leader_id", "total_collected": {"$sum": {"$ifNull": ["$collected", 0]}}}},
+        {"$group": {"_id": "$leader_id", "total_collected": {"$sum": "$amount_collected"}}},
     ]).to_list(length=50)
     collected_map = {row["_id"]: row.get("total_collected", 0) for row in collected_rows}
 
@@ -191,20 +199,44 @@ async def get_firmwide_dashboard_aggregate(fiscal_year: str) -> dict:
 
     bluesky_monthly = sorted(bluesky_monthly_map.values(), key=lambda x: x.get("sort_order", 0))
 
-    collection_docs = await database.db.collection_entries.find(
+    # Planned targets from collection_entries
+    ce_docs = await database.db.collection_entries.find(
         {"fiscal_year": fiscal_year, "leader_id": {"$in": leader_ids}}
-    ).sort("sort_order", 1).to_list(length=500)
+    ).to_list(length=500)
+    planned_by_month: dict = {}
+    for doc in ce_docs:
+        m = doc["month"]
+        planned_by_month[m] = planned_by_month.get(m, 0) + doc.get("planned", 0)
 
-    monthly_map: dict = {}
-    for doc in collection_docs:
-        month = doc["month"]
-        if month not in monthly_map:
-            monthly_map[month] = {"month": month, "planned": 0, "collected": 0, "sort_order": doc.get("sort_order", 0)}
-        monthly_map[month]["planned"] += doc.get("planned", 0)
-        monthly_map[month]["collected"] += doc.get("collected", 0)
+    # Actual collections from collection_transactions (source of truth)
+    tx_agg = await database.db.collection_transactions.aggregate([
+        {"$match": {"fiscal_year": fiscal_year, "leader_id": {"$in": leader_ids}}},
+        {"$group": {"_id": "$month", "collected": {"$sum": "$amount_collected"}}},
+    ]).to_list(length=12)
+    actual_by_month_key: dict = {row["_id"]: row["collected"] for row in tx_agg}
 
-    monthly_lines = sorted(monthly_map.values(), key=lambda x: x.get("sort_order", 0))
-    total_collected = sum(d.get("collected", 0) for d in collection_docs)
+    FY_MONTH_KEYS = ["04", "05", "06", "07", "08", "09", "10", "11", "12", "01", "02", "03"]
+    MONTH_FULL = {
+        "04": "April", "05": "May", "06": "June", "07": "July",
+        "08": "August", "09": "September", "10": "October", "11": "November",
+        "12": "December", "01": "January", "02": "February", "03": "March",
+    }
+
+    from app.services.fy_calendar import get_fy_month_calendar_year
+    allowed_month_keys = get_available_fy_month_keys(fiscal_year, date.today())
+    monthly_lines = []
+    total_collected = 0
+    for mk in allowed_month_keys:
+        cal_year = get_fy_month_calendar_year(mk, fiscal_year)
+        month_label = f"{MONTH_FULL[mk]} {cal_year}"
+        collected = actual_by_month_key.get(mk, 0)
+        total_collected += collected
+        monthly_lines.append({
+            "month": month_label,
+            "planned": planned_by_month.get(month_label, 0),
+            "collected": collected,
+            "sort_order": len(monthly_lines) + 1,
+        })
 
     return {
         "pipeline": pipeline_totals,

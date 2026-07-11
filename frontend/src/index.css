@@ -154,6 +154,16 @@
 }
 
 @layer components {
+  /* Compact column: month + numeric/planned/collected/variance (digits only) */
+  .col-num {
+    @apply px-2 whitespace-nowrap;
+  }
+
+  /* Wide column: Remarks (leaders write full sentences) */
+  .col-remarks {
+    @apply min-w-[240px] whitespace-normal align-top;
+  }
+
   .page-width {
     width: 100%;
     max-width: 108rem;
@@ -481,4 +491,12 @@
     min-width: 0;
     overflow-x: hidden;
   }
+}
+
+@keyframes strokeDashFlow {
+  to { stroke-dashoffset: -40; }
+}
+
+.stroke-dash-animated {
+  animation: strokeDashFlow 1.6s linear infinite;
 }

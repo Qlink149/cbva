@@ -5,20 +5,26 @@ import PipelineBoardChart from '@/components/dashboard/PipelineBoardChart';
 import BlueSkyTableReal from '@/components/dashboard/BlueSkyTableReal';
 import MonthlyEvolutionCard from '@/components/dashboard/MonthlyEvolutionCard';
 import CollectionsTableReal from '@/components/dashboard/CollectionsTableReal';
+import MeetingsCard from '@/components/dashboard/MeetingsCard';
+import ActionsCard from '@/components/dashboard/ActionsCard';
 import TeamMetrics from '@/components/dashboard/TeamMetrics';
 import PlaceholderCard from '@/components/dashboard/PlaceholderCard';
-import ELSummaryChips from '@/components/dashboard/ELSummaryChips';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { getFyLabel } from '@/lib/fiscalYear';
+import { getFyLabel, getPrevFySlug, getFyRange } from '@/lib/fiscalYear';
 import { usePipeline } from '@/hooks/usePipeline';
 import { useBluesky } from '@/hooks/useBluesky';
-import { useCollections } from '@/hooks/useCollections';
-import { useElSummary } from '@/hooks/useElSummary';
+import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
+import { useClientMeetings } from '@/hooks/useClientMeetings';
+import { useActions } from '@/hooks/useActions';
 import { useHiring } from '@/hooks/useHiring';
 import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
+import { useHeadcount } from '@/hooks/useHeadcount';
+import { useBaselines } from '@/hooks/useBaselines';
+import { useConsolidated } from '@/hooks/useConsolidated';
+import { hardcodedBlueSky, hardcodedCollections } from '@/lib/consolidatedSummary';
 
 const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
 
@@ -33,21 +39,45 @@ export default function LeaderDashboard({ user }) {
   const { data: pipelineRes, isLoading: pipelineLoading } = usePipeline(selectedLeaderId, activeFY);
   const { data: blueSkyRes, isLoading: bsLoading } = useBluesky(selectedLeaderId, activeFY);
   const { data: collectionsRes, isLoading: colLoading } = useCollections(selectedLeaderId, activeFY);
+  const updateCollectionRemarks = useUpdateCollectionRemarks(selectedLeaderId, activeFY);
   const { data: engagementsRes, isLoading: engLoading } = useEngagements(selectedLeaderId, activeFY);
   const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId);
   const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId);
-  const { data: elSummary } = useElSummary(selectedLeaderId, activeFY);
+  const { approvedByDesignation } = useHeadcount(selectedLeaderId);
+  const { data: meetings = [] } = useClientMeetings(selectedLeaderId, activeFY);
+  const { data: leaderActions = [] } = useActions(selectedLeaderId, activeFY);
+  const { data: baselines = [] } = useBaselines(selectedLeaderId);
+  const activeBaseline = baselines[0] ?? null;
+  const { rows: consolidatedRows, columns: consolidatedColumns } = useConsolidated(activeFY);
+
+  const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
+  const prevFyLabel = getFyLabel(prevFySlug, fiscalYears);
 
   const coreLoading = pipelineLoading || bsLoading || colLoading;
 
   const pipelineData = pipelineRes?.data ?? [];
-  const blueSkyRows = blueSkyRes?.data ?? [];
-  const blueSkyTotals = blueSkyRes?.totals ?? {};
-  const collectionRows = collectionsRes?.data ?? [];
-  const totalCollected = collectionsRes?.total_collected ?? 0;
-  const clients = engagementsRes ?? [];
+  // Previous-FY actuals come from the labelled reference row embedded in the
+  // current FY's pipeline snapshots (same source as the Monthly Plan Evolution),
+  // matched dynamically to the previous FY so it works for any year.
+  const prevFyRange = getFyRange(prevFySlug);
+  const prevFyRow = prevFyRange
+    ? pipelineData.find((r) => (r.label || '').replace(/–/g, '-').includes(prevFyRange))
+    : null;
+  const prevFyBlueSky = prevFyRow?.blueSky ?? null;
+  const prevFyTotal = prevFyRow
+    ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
+    : null;
 
-  if (coreLoading && pipelineData.length === 0) {
+  const blueSkyOverride = hardcodedBlueSky(activeFY, selectedLeaderId);
+  const blueSkyRows = blueSkyOverride?.rows ?? blueSkyRes?.data ?? [];
+  const blueSkyTotals = blueSkyOverride?.totals ?? blueSkyRes?.totals ?? {};
+  const collectionsOverride = hardcodedCollections(activeFY, selectedLeaderId, collectionsRes?.data ?? []);
+  const collectionRows = collectionsOverride?.rows ?? collectionsRes?.data ?? [];
+  const totalCollected = collectionsOverride?.totalCollected ?? collectionsRes?.total_collected ?? 0;
+  const clients = engagementsRes ?? [];
+  const hasEngagements = clients.length > 0;
+
+  if (coreLoading && pipelineData.length === 0 && !hasEngagements) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
@@ -61,7 +91,7 @@ export default function LeaderDashboard({ user }) {
     );
   }
 
-  if (pipelineData.length === 0) {
+  if (pipelineData.length === 0 && !hasEngagements) {
     return (
       <div className="min-h-full pb-12">
         <div className="space-y-6">
@@ -106,28 +136,53 @@ export default function LeaderDashboard({ user }) {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-5 xl:col-span-4">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+          <div className="xl:col-span-5 min-w-0">
             {pipelineLoading ? <SectionSkeleton className="h-72" /> : (
-              <PipelineBoardChart pipelineData={pipelineData} fyLabel={fyLabel} />
+              <PipelineBoardChart
+                pipelineData={pipelineData}
+                fyLabel={fyLabel}
+                fySlug={activeFY}
+                leaderId={selectedLeaderId}
+                baseline={activeBaseline}
+                prevFyBlueSky={prevFyBlueSky}
+                prevFyTotal={prevFyTotal}
+                prevFyLabel={prevFyLabel}
+              />
             )}
           </div>
-          <div className="lg:col-span-7 xl:col-span-8">
+          <div className="xl:col-span-7 min-w-0">
             {pipelineLoading ? <SectionSkeleton className="h-72" /> : (
-              <MonthlyEvolutionCard pipelineData={pipelineData} fyLabel={fyLabel} />
+              <MonthlyEvolutionCard
+                pipelineData={pipelineData}
+                fyLabel={fyLabel}
+                fySlug={activeFY}
+                leaderId={selectedLeaderId}
+                consolidatedRows={consolidatedRows}
+                consolidatedColumns={consolidatedColumns}
+              />
             )}
           </div>
         </div>
-
-        <ELSummaryChips summary={elSummary} fyLabel={fyLabel} />
 
         {bsLoading ? <SectionSkeleton className="h-64" /> : (
           <BlueSkyTableReal blueSkyRows={blueSkyRows} totals={blueSkyTotals} fyLabel={fyLabel} />
         )}
 
         {colLoading ? <SectionSkeleton className="h-64" /> : (
-          <CollectionsTableReal rows={collectionRows} totalCollected={totalCollected} fyLabel={fyLabel} />
+          <CollectionsTableReal
+            rows={collectionRows}
+            totalCollected={totalCollected}
+            fyLabel={fyLabel}
+            fySlug={activeFY}
+            onUpdateRemarks={(row, remarks) => updateCollectionRemarks.mutate({ row, remarks })}
+          />
         )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <MeetingsCard meetings={meetings} fyLabel={fyLabel} />
+          <ActionsCard actions={leaderActions} fyLabel={fyLabel} />
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <PlaceholderCard title="Shadow P&L" message="To Be Built — Revenue split by engagement leaders. Coming in the next phase." />
@@ -143,7 +198,7 @@ export default function LeaderDashboard({ user }) {
         {hiringLoading || teamLoading ? (
           <SectionSkeleton className="h-48" />
         ) : (
-          <TeamMetrics hiringReqs={hiringReqs} teamMembers={teamMembers} />
+          <TeamMetrics hiringReqs={hiringReqs} teamMembers={teamMembers} approvedByDesignation={approvedByDesignation} />
         )}
       </div>
     </div>

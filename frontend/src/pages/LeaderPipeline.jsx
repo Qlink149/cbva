@@ -100,19 +100,19 @@ export default function LeaderPipeline() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/30 border-b border-border">
-                <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">#</th>
+                <th className="text-left py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">#</th>
                 <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Client</th>
                 <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Status</th>
-                <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Amount</th>
+                <th className="text-right py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Amount</th>
                 <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">EL</th>
-                <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Remarks</th>
+                <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-remarks">Remarks</th>
                 <th className="py-3 px-4"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((eng, i) => (
                 <tr key={eng.key} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                  <td className="py-3 px-4 text-muted-foreground text-xs">{i + 1}</td>
+                  <td className="py-3 text-muted-foreground text-xs col-num">{i + 1}</td>
                   <td className="py-3 px-4 font-medium text-foreground">{eng.name || '—'}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -121,9 +121,9 @@ export default function LeaderPipeline() {
                       'bg-status-blue-bg text-status-blue'
                     }`}>{eng.status}</span>
                   </td>
-                  <td className="py-3 px-4 text-right font-tabular font-medium">{formatINR(eng.amount)}</td>
+                  <td className="py-3 text-right font-tabular font-medium col-num">{formatINR(eng.amount)}</td>
                   <td className="py-3 px-4 text-xs text-muted-foreground">{eng.elStatus || '—'}</td>
-                  <td className="py-3 px-4 text-xs text-muted-foreground max-w-[150px] truncate">{eng.remarks || '—'}</td>
+                  <td className="py-3 px-4 text-xs text-muted-foreground col-remarks">{eng.remarks || '—'}</td>
                   <td className="py-3 px-4">
                     <button
                       onClick={() => deleteEngagement.mutate(eng.id)}

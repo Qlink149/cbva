@@ -10,6 +10,7 @@ class TaskCreate(BaseModel):
     priority: Literal["Low", "Medium", "High", "Urgent"] = "Medium"
     deadline: Optional[date] = None
     notes: str = ""
+    fiscal_year: Optional[str] = None
 
 
 class TaskUpdate(BaseModel):
@@ -37,5 +38,6 @@ class TaskResponse(BaseModel):
     deadline: Optional[date]
     notes: str
     status: str
+    fiscal_year: Optional[str] = None
     created_at: datetime
     updated_at: datetime

@@ -7,6 +7,8 @@ from app.dependencies.auth import get_current_user, enforce_leader_scope, enforc
 
 router = APIRouter()
 
+MAX_REPORTS_DEPTH = 10
+
 
 def _serialize(doc: dict) -> dict:
     return {
@@ -23,9 +25,51 @@ def _serialize(doc: dict) -> dict:
         "is_manager": doc.get("is_manager", False),
         "is_leader": doc.get("is_leader", False),
         "sort_order": doc.get("sort_order", 0),
+        "reports_to_member_id": doc.get("reports_to_member_id"),
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }
+
+
+async def _validate_reports_to(
+    leader_id: str,
+    member_id: str | None,
+    reports_to_member_id: str | None,
+) -> None:
+    if not reports_to_member_id:
+        return
+    if member_id and reports_to_member_id == member_id:
+        raise HTTPException(status_code=400, detail="A member cannot report to themselves")
+
+    try:
+        parent_oid = ObjectId(reports_to_member_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid reports_to_member_id")
+
+    parent = await database.db.team_members.find_one({"_id": parent_oid})
+    if not parent:
+        raise HTTPException(status_code=400, detail="Reports-to member not found")
+    if parent.get("leader_id") != leader_id:
+        raise HTTPException(status_code=400, detail="Reports-to member must belong to the same leader")
+
+    if not member_id:
+        return
+
+    visited = {member_id}
+    current_id = reports_to_member_id
+    for _ in range(MAX_REPORTS_DEPTH):
+        if current_id in visited:
+            raise HTTPException(status_code=400, detail="Reporting hierarchy would create a cycle")
+        visited.add(current_id)
+        current = await database.db.team_members.find_one({"_id": ObjectId(current_id)})
+        if not current:
+            break
+        next_id = current.get("reports_to_member_id")
+        if not next_id:
+            break
+        current_id = next_id
+    else:
+        raise HTTPException(status_code=400, detail="Reporting hierarchy exceeds maximum depth")
 
 
 @router.get("/", response_model=dict)
@@ -46,6 +90,7 @@ async def list_team(
 @router.post("/", response_model=TeamMemberResponse, status_code=201)
 async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await _validate_reports_to(body.leader_id, None, body.reports_to_member_id)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.team_members.insert_one(doc)
@@ -63,7 +108,11 @@ async def update_member(
     if not existing:
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "reports_to_member_id" in body.model_dump(exclude_unset=True):
+        reports_to = body.reports_to_member_id
+        await _validate_reports_to(existing["leader_id"], member_id, reports_to)
+        updates["reports_to_member_id"] = reports_to
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.team_members.find_one_and_update(
         {"_id": ObjectId(member_id)}, {"$set": updates}, return_document=True

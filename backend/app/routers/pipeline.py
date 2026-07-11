@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.pipeline import PipelineSnapshotCreate, PipelineSnapshotUpdate, PipelineSnapshotResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope, require_roles
+from app.services.engagement_derivation import materialize_leader_derived_data
 
 router = APIRouter()
 
@@ -33,10 +34,11 @@ async def list_snapshots(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_scope(current_user, leader_id)
-    cursor = database.db.pipeline_snapshots.find(
+    # Refresh: initial/board/past months from consolidated; current month from engagements.
+    await materialize_leader_derived_data(leader_id, fiscal_year)
+    docs = await database.db.pipeline_snapshots.find(
         {"leader_id": leader_id, "fiscal_year": fiscal_year}
-    ).sort("sort_order", 1)
-    docs = await cursor.to_list(length=50)
+    ).sort("sort_order", 1).to_list(length=50)
     return {"data": [_serialize(d) for d in docs]}
 
 

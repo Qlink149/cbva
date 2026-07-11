@@ -4,22 +4,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Briefcase } from 'lucide-react';
+import { TEAM_DESIGNATIONS } from '@/lib/designations';
+import ReportsToSelect from '@/components/team/ReportsToSelect';
 
 const TABS = [
   { key: 'member', label: 'Add Team Member', icon: Users },
   { key: 'hiring', label: 'Hiring Requirement', icon: Briefcase },
 ];
 
-const emptyMember = { full_name: '', designation: '', email: '', phone: '', annual_cost: '', joining_date: '', status: 'Active', notes: '' };
-const emptyHiring = { role_title: '', level: 'Analyst', expected_joining_date: '', status: 'Open', expected_cost: '', notes: '' };
+const emptyMember = { full_name: '', designation: 'Associate', email: '', phone: '', annual_cost: '', joining_date: '', status: 'Active', notes: '', reports_to_member_id: null };
+const emptyHiring = { role_title: '', level: 'Analyst', expected_joining_date: '', status: 'Open', expected_cost: '', remarks: '' };
 
-export default function TeamEntryDrawer({ open, onClose, onSaveMember, onSaveHiring, isSavingMember, isSavingHiring }) {
+export default function TeamEntryDrawer({ open, onClose, onSaveMember, onSaveHiring, isSavingMember, isSavingHiring, teamMembers = [] }) {
   const [tab, setTab] = useState('member');
   const [member, setMember] = useState(emptyMember);
   const [hiring, setHiring] = useState(emptyHiring);
 
   const handleSaveMember = () => {
-    onSaveMember({ ...member, annual_cost: parseFloat(member.annual_cost) || 0 });
+    onSaveMember({
+      ...member,
+      annual_cost: parseFloat(member.annual_cost) || 0,
+      reports_to_member_id: member.reports_to_member_id || null,
+    });
   };
 
   const handleSaveHiring = () => {
@@ -57,7 +63,12 @@ export default function TeamEntryDrawer({ open, onClose, onSaveMember, onSaveHir
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Designation</label>
-              <Input value={member.designation} onChange={e => setMember(p => ({ ...p, designation: e.target.value }))} placeholder="e.g. Senior Manager" />
+              <Select value={member.designation} onValueChange={v => setMember(p => ({ ...p, designation: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TEAM_DESIGNATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Email</label>
@@ -86,8 +97,13 @@ export default function TeamEntryDrawer({ open, onClose, onSaveMember, onSaveHir
                 </SelectContent>
               </Select>
             </div>
+            <ReportsToSelect
+              value={member.reports_to_member_id}
+              onChange={(v) => setMember((p) => ({ ...p, reports_to_member_id: v }))}
+              teamMembers={teamMembers}
+            />
             <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Notes</label>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Remarks</label>
               <Input value={member.notes} onChange={e => setMember(p => ({ ...p, notes: e.target.value }))} placeholder="Any notes..." />
             </div>
             <Button className="w-full bg-cbva-navy hover:bg-cbva-navy/90 mt-2" onClick={handleSaveMember} disabled={!member.full_name || isSavingMember}>
@@ -134,8 +150,8 @@ export default function TeamEntryDrawer({ open, onClose, onSaveMember, onSaveHir
               <Input type="number" value={hiring.expected_cost} onChange={e => setHiring(p => ({ ...p, expected_cost: e.target.value }))} placeholder="0" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Notes</label>
-              <Input value={hiring.notes} onChange={e => setHiring(p => ({ ...p, notes: e.target.value }))} placeholder="Any notes..." />
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Remarks</label>
+              <Input value={hiring.remarks} onChange={e => setHiring(p => ({ ...p, remarks: e.target.value }))} placeholder="Recruitment stage, interview status, CV availability..." />
             </div>
             <Button className="w-full bg-cbva-navy hover:bg-cbva-navy/90 mt-2" onClick={handleSaveHiring} disabled={!hiring.role_title || isSavingHiring}>
               {isSavingHiring ? 'Saving…' : 'Add Hiring Requirement'}

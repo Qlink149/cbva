@@ -106,11 +106,11 @@ export default function CollectionsTable({ monthlyLines = [], boardTotal = 0, se
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/30 border-b border-border">
-              <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Month</th>
-              <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Planned</th>
-              <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Collected</th>
-              <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Outstanding</th>
-              <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Variance</th>
+              <th className="text-left py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Month</th>
+              <th className="text-right py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Planned</th>
+              <th className="text-right py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Collected</th>
+              <th className="text-right py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Outstanding</th>
+              <th className="text-right py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-num">Variance</th>
             </tr>
           </thead>
           <tbody>
@@ -120,16 +120,16 @@ export default function CollectionsTable({ monthlyLines = [], boardTotal = 0, se
                 onClick={() => onMonthSelect && onMonthSelect(selectedMonth?.key === row.key ? null : row)}
                 className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${selectedMonth?.key === row.key ? 'bg-indigo-50/60 ring-1 ring-inset ring-indigo-200' : ''}`}
               >
-                <td className="py-3 px-4 font-medium text-foreground flex items-center gap-1.5">
+                <td className="py-3 font-medium text-foreground flex items-center gap-1.5 col-num">
                   {row.full}
                   {selectedMonth?.key === row.key && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-semibold">Selected</span>}
                 </td>
-                <td className="py-3 px-4 text-right font-tabular text-muted-foreground">{formatINR(row.planned)}</td>
-                <td className="py-3 px-4 text-right font-tabular font-semibold text-foreground">{formatINR(row.collected)}</td>
-                <td className="py-3 px-4 text-right font-tabular text-slate-500">
+                <td className="py-3 text-right col-num font-tabular text-muted-foreground">{formatINR(row.planned)}</td>
+                <td className="py-3 text-right col-num font-tabular font-semibold text-foreground">{formatINR(row.collected)}</td>
+                <td className="py-3 text-right col-num font-tabular text-slate-500">
                   {row.outstanding > 0 ? formatINR(row.outstanding) : '—'}
                 </td>
-                <td className={`py-3 px-4 text-right font-tabular font-semibold ${
+                <td className={`py-3 text-right col-num font-tabular font-semibold ${
                   row.variance > 0 ? 'text-status-green' : row.variance < 0 ? 'text-status-red' : 'text-muted-foreground'
                 }`}>
                   {row.variance === 0 && row.collected === 0 ? '—' : (
@@ -141,11 +141,11 @@ export default function CollectionsTable({ monthlyLines = [], boardTotal = 0, se
           </tbody>
           <tfoot>
             <tr className="bg-muted/30 border-t border-border">
-              <td className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-foreground">Total</td>
-              <td className="py-3 px-4 text-right font-tabular font-bold text-foreground">{formatINR(rows.reduce((s, r) => s + r.planned, 0))}</td>
-              <td className="py-3 px-4 text-right font-tabular font-bold text-foreground">{formatINR(rows.reduce((s, r) => s + r.collected, 0))}</td>
-              <td className="py-3 px-4 text-right font-tabular font-bold text-slate-500">{formatINR(rows.reduce((s, r) => s + r.outstanding, 0))}</td>
-              <td className={`py-3 px-4 text-right font-tabular font-bold ${ytdVariance >= 0 ? 'text-status-green' : 'text-status-red'}`}>
+              <td className="py-3 text-xs font-bold uppercase tracking-wider text-foreground col-num">Total</td>
+              <td className="py-3 text-right col-num font-tabular font-bold text-foreground">{formatINR(rows.reduce((s, r) => s + r.planned, 0))}</td>
+              <td className="py-3 text-right col-num font-tabular font-bold text-foreground">{formatINR(rows.reduce((s, r) => s + r.collected, 0))}</td>
+              <td className="py-3 text-right col-num font-tabular font-bold text-slate-500">{formatINR(rows.reduce((s, r) => s + r.outstanding, 0))}</td>
+              <td className={`py-3 text-right col-num font-tabular font-bold ${ytdVariance >= 0 ? 'text-status-green' : 'text-status-red'}`}>
                 {ytdVariance >= 0 ? '+' : ''}{formatINR(ytdVariance)}
               </td>
             </tr>

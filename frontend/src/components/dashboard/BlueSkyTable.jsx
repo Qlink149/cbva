@@ -111,7 +111,7 @@ export default function BlueSkyTable({ engagements = [], conversions = [] }) {
                     </span>
                   ),
                 },
-                { key: 'amount', className: 'text-right font-tabular font-medium', render: r => formatINR(r.amount) },
+                { key: 'amount', className: 'text-right font-tabular font-medium col-num', render: r => formatINR(r.amount) },
               ]}
             />
           </div>
@@ -124,7 +124,7 @@ export default function BlueSkyTable({ engagements = [], conversions = [] }) {
               emptyMsg="No conversions to Green this period"
               columns={[
                 { key: 'client', className: 'text-slate-700 pr-2' },
-                { key: 'amount', className: 'text-right font-tabular font-medium text-emerald-700', render: r => formatINR(r.amount) },
+                { key: 'amount', className: 'text-right font-tabular font-medium text-emerald-700 col-num', render: r => formatINR(r.amount) },
               ]}
             />
           </div>
@@ -137,7 +137,7 @@ export default function BlueSkyTable({ engagements = [], conversions = [] }) {
               emptyMsg="No conversions to Amber this period"
               columns={[
                 { key: 'client', className: 'text-slate-700 pr-2' },
-                { key: 'amount', className: 'text-right font-tabular font-medium text-amber-700', render: r => formatINR(r.amount) },
+                { key: 'amount', className: 'text-right font-tabular font-medium text-amber-700 col-num', render: r => formatINR(r.amount) },
               ]}
             />
           </div>

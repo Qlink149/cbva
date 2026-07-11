@@ -40,7 +40,7 @@ export default function Actions({ user }) {
   const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
   const patchActionStatus = usePatchActionStatus(selectedLeaderId, activeFY);
 
-  const { tasks, isLoading: tasksLoading, createTask, deleteTask } = useTasks(selectedLeaderId);
+  const { tasks, isLoading: tasksLoading, createTask, deleteTask } = useTasks(selectedLeaderId, activeFY);
 
   const handleAddTask = () => {
     if (!form.title.trim()) return;
@@ -90,18 +90,18 @@ export default function Actions({ user }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-muted/30 border-b border-border">
-                    <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium w-8">#</th>
+                    <th className="text-left py-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium w-8 col-num">#</th>
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Category</th>
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Description</th>
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Status</th>
-                    <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Notes</th>
+                    <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-remarks">Remarks</th>
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Due Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   {leaderActions.map((item) => (
                     <tr key={item.id ?? item.num} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                      <td className="py-3 px-4 text-muted-foreground text-xs">{item.num}</td>
+                      <td className="py-3 text-muted-foreground text-xs col-num">{item.num}</td>
                       <td className="py-3 px-4 font-medium text-foreground text-xs">{item.category}</td>
                       <td className="py-3 px-4 text-slate-600 text-xs max-w-xs">{item.description}</td>
                       <td className="py-3 px-4">
@@ -115,7 +115,7 @@ export default function Actions({ user }) {
                           <option value="Closed">Closed</option>
                         </select>
                       </td>
-                      <td className="py-3 px-4 text-xs text-muted-foreground">{item.notes || '—'}</td>
+                      <td className="py-3 px-4 text-xs text-muted-foreground col-remarks">{item.notes || '—'}</td>
                       <td className="py-3 px-4 text-xs text-muted-foreground">{item.due_date || '—'}</td>
                     </tr>
                   ))}

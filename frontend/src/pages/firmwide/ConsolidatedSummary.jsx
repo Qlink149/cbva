@@ -1,48 +1,60 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatINR } from '@/lib/formatCurrency';
+import { formatINRFull } from '@/lib/formatCurrency';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { getFyLabel, getCurrentFySlug } from '@/lib/fiscalYear';
-import { getFyMonthLabel, getAvailableFyMonths, getCurrentMonthKey } from '@/lib/fyMonths';
-import { useFirmwideLeaders } from '@/hooks/useFirmwide';
+import { getFyLabel } from '@/lib/fiscalYear';
+import { useLeaders } from '@/hooks/useLeaders';
+import { useConsolidated } from '@/hooks/useConsolidated';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
+import { buildCsv, TONE_STYLES } from '@/lib/consolidatedSummary';
+
+const fmt = (v) => (v == null ? '—' : formatINRFull(v));
+
+const BORDER = 'border border-[#BFBFBF]';
 
 export default function ConsolidatedSummary() {
-  const { activeFY, fiscalYears } = useGlobalSelector();
-  const [selectedMonth, setSelectedMonth] = useState('');
-  const { data: leaders = [], isLoading, isFetching } = useFirmwideLeaders(activeFY, selectedMonth || undefined);
+  const { activeFY, fiscalYears, fyLoading } = useGlobalSelector();
+  const { data: leaders = [] } = useLeaders();
 
-  useEffect(() => {
-    setSelectedMonth('');
-  }, [activeFY]);
-
-  useEffect(() => {
-    const allowed = getAvailableFyMonths(activeFY, fiscalYears).map(m => m.key);
-    if (selectedMonth && !allowed.includes(selectedMonth)) {
-      setSelectedMonth('');
-    }
-  }, [activeFY, fiscalYears, selectedMonth]);
+  const { isLoading, isFetching, columns, rows } = useConsolidated(activeFY);
   const fyLabel = getFyLabel(activeFY, fiscalYears);
-  const monthLabel = getFyMonthLabel(selectedMonth);
 
-  const totals = leaders.reduce(
-    (acc, l) => ({
-      green: acc.green + (l.total_green || 0),
-      amber: acc.amber + (l.total_amber || 0),
-      blueSky: acc.blueSky + (l.total_blue_sky || 0),
-      pipeline: acc.pipeline + (l.total_pipeline || 0),
-      collected: acc.collected + (l.total_collected || 0),
-      engagements: acc.engagements + (l.engagement_count || 0),
-    }),
-    { green: 0, amber: 0, blueSky: 0, pipeline: 0, collected: 0, engagements: 0 }
+  const nameByLeader = useMemo(
+    () => Object.fromEntries((Array.isArray(leaders) ? leaders : []).map((l) => [l.id, l.name])),
+    [leaders]
   );
 
-  const isCurrentFy = activeFY === getCurrentFySlug(fiscalYears);
-  const periodLabel = selectedMonth
-    ? `${monthLabel} · ${fyLabel}`
-    : isCurrentFy
-      ? `YTD through ${getFyMonthLabel(getCurrentMonthKey())} · ${fyLabel}`
-      : fyLabel;
+  const loading = fyLoading || !activeFY || isLoading;
+
+  const stickyFirstCol =
+    'sticky left-0 z-20 min-w-[240px] border-r border-[#BFBFBF] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]';
+  const stickyHeader =
+    'sticky top-0 z-30 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.08)]';
+  const stickyCorner =
+    'sticky left-0 top-0 z-40 min-w-[240px] border-r border-[#BFBFBF] shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.12)]';
+
+  const handleExport = () => {
+    const csv = buildCsv(rows, columns);
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `consolidated-summary-${activeFY ?? 'fy'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const rowStyle = (tone, bold = false) => {
+    if (!tone || !TONE_STYLES[tone]) {
+      return { background: bold ? '#D9D9D9' : undefined, color: '#000000', fontWeight: bold ? 700 : 400 };
+    }
+    const s = TONE_STYLES[tone];
+    return { background: s.bg, color: s.color, fontWeight: bold ? 700 : 500 };
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -50,85 +62,146 @@ export default function ConsolidatedSummary() {
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Consolidated Summary</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Firmwide pipeline & collections · {periodLabel}
+            Management consolidated view · {fyLabel || 'Select fiscal year'}
+            {isFetching && !loading ? ' · Updating…' : ''}
           </p>
         </div>
-        <LeaderFYSelector
-          showLeader={false}
-          showMonth
-          selectedMonth={selectedMonth}
-          onMonthChange={setSelectedMonth}
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <LeaderFYSelector showLeader={false} />
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={loading || !rows.length}>
+            <Download className="mr-1 h-4 w-4" /> Export CSV
+          </Button>
+        </div>
       </div>
 
-      {isLoading && <Skeleton className="h-96 w-full" />}
+      {loading && <Skeleton className="h-96 w-full" />}
 
-      {!isLoading && isFetching && selectedMonth && (
-        <p className="text-xs text-muted-foreground">Updating {monthLabel} view…</p>
+      {!loading && rows.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
+          <div className="p-4 sm:p-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-3">
+              Summary · {fyLabel}
+            </p>
+            <div
+              className="overflow-auto rounded-lg border border-[#BFBFBF]"
+              style={{ maxHeight: 'calc(100vh - 180px)', minHeight: '560px' }}
+            >
+              {/* border-separate is required for sticky th/td to work reliably */}
+              <table className="w-max min-w-full text-sm border-separate" style={{ borderSpacing: 0 }}>
+                <thead>
+                  <tr>
+                    <th
+                      className={`${stickyCorner} text-left px-3 py-2 font-bold text-white ${BORDER}`}
+                      style={{ fontSize: 11, background: '#808080' }}
+                    >
+                      Particulars
+                    </th>
+                    {columns.map((c) => (
+                      <th
+                        key={c.code}
+                        title={c.leader_id ? nameByLeader[c.leader_id] ?? c.code : undefined}
+                        className={`${stickyHeader} text-right px-2 py-2 font-bold text-white col-num min-w-[5.5rem] ${BORDER}`}
+                        style={{ fontSize: 11, background: '#808080' }}
+                      >
+                        {c.code}
+                      </th>
+                    ))}
+                    <th
+                      className={`${stickyHeader} text-right px-2 py-2 font-bold text-white col-num min-w-[6rem] ${BORDER}`}
+                      style={{ fontSize: 11, background: '#808080' }}
+                    >
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => {
+                    if (row.kind === 'section') {
+                      return (
+                        <tr key={`s-${idx}`}>
+                          <td
+                            className={`${stickyFirstCol} px-3 py-2 font-bold text-foreground ${BORDER}`}
+                            style={{ fontSize: 11, background: '#E8E8E8' }}
+                          >
+                            {row.label}
+                          </td>
+                          {columns.map((c) => (
+                            <td key={c.code} className={`${BORDER} py-2`} style={{ background: '#E8E8E8' }} aria-hidden />
+                          ))}
+                          <td className={`${BORDER} py-2`} style={{ background: '#E8E8E8' }} aria-hidden />
+                        </tr>
+                      );
+                    }
+                    if (row.kind === 'subheader') {
+                      return (
+                        <tr key={`h-${idx}`}>
+                          <td
+                            className={`${stickyFirstCol} px-3 py-1.5 font-semibold italic text-muted-foreground ${BORDER}`}
+                            style={{ fontSize: 11, background: '#F3F3F3' }}
+                          >
+                            {row.label}
+                          </td>
+                          {columns.map((c) => (
+                            <td key={c.code} className={`${BORDER} py-1.5`} style={{ background: '#F3F3F3' }} aria-hidden />
+                          ))}
+                          <td className={`${BORDER} py-1.5`} style={{ background: '#F3F3F3' }} aria-hidden />
+                        </tr>
+                      );
+                    }
+
+                    const isTotal = row.label?.toLowerCase() === 'total' || row.label === 'Total Bluesky';
+                    const style = rowStyle(row.tone, isTotal);
+                    const cellBg = style.background ?? '#FFFFFF';
+
+                    return (
+                      <tr key={`d-${idx}`}>
+                        <td
+                          className={`${stickyFirstCol} px-3 py-2 whitespace-nowrap ${BORDER}`}
+                          style={{ ...style, fontSize: 11, background: cellBg }}
+                        >
+                          {row.label}
+                        </td>
+                        {columns.map((c) => {
+                          const val = row.values?.[c.code];
+                          return (
+                            <td
+                              key={c.code}
+                              className={`px-2 py-2 text-right font-tabular col-num whitespace-nowrap ${BORDER}`}
+                              style={{ ...style, fontSize: 11, background: cellBg }}
+                              title={row.is_dynamic ? 'Live from engagements' : undefined}
+                            >
+                              {fmt(val)}
+                            </td>
+                          );
+                        })}
+                        <td
+                          className={`px-2 py-2 text-right font-tabular font-semibold col-num whitespace-nowrap ${BORDER}`}
+                          style={{ ...style, fontSize: 11, background: cellBg }}
+                        >
+                          {fmt(row.total)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
 
-      {!isLoading && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[
-              { label: 'Green', value: totals.green },
-              { label: 'Amber', value: totals.amber },
-              { label: 'Blue Sky', value: totals.blueSky },
-              { label: 'Total Pipeline', value: totals.pipeline },
-              { label: selectedMonth ? `${monthLabel} Collected` : 'Collected', value: totals.collected },
-              { label: 'Engagements', value: totals.engagements, isCount: true },
-            ].map(s => (
-              <div key={s.label} className="bg-card rounded-xl border p-4">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{s.label}</p>
-                <p className="text-lg font-semibold font-tabular">
-                  {s.isCount ? s.value : formatINR(s.value)}
-                </p>
-              </div>
-            ))}
-          </div>
+      {!loading && rows.length === 0 && (
+        <div className="rounded-xl border border-dashed p-12 text-center text-muted-foreground">
+          No consolidated data for {fyLabel}. Import the management consolidated sheet to seed this view.
+        </div>
+      )}
 
-          <div className="bg-card rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/30 border-b">
-                  <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Leader</th>
-                  <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Practice</th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Green</th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Amber</th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Blue Sky</th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Pipeline</th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">
-                    {selectedMonth ? `${monthLabel} Collected` : 'Collected'}
-                  </th>
-                  <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Clients</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaders.map(l => (
-                  <tr key={l.id} className="border-b border-border/50 hover:bg-muted/20">
-                    <td className="py-2 px-3 font-medium">{l.name}</td>
-                    <td className="py-2 px-3 text-muted-foreground">{l.practice || '—'}</td>
-                    <td className="py-2 px-3 text-right font-tabular">{formatINR(l.total_green || 0)}</td>
-                    <td className="py-2 px-3 text-right font-tabular">{formatINR(l.total_amber || 0)}</td>
-                    <td className="py-2 px-3 text-right font-tabular">{formatINR(l.total_blue_sky || 0)}</td>
-                    <td className="py-2 px-3 text-right font-tabular font-medium">{formatINR(l.total_pipeline || 0)}</td>
-                    <td className="py-2 px-3 text-right font-tabular">{formatINR(l.total_collected || 0)}</td>
-                    <td className="py-2 px-3 text-right font-tabular">{l.engagement_count || 0}</td>
-                  </tr>
-                ))}
-                <tr className="bg-muted/20 font-medium">
-                  <td className="py-2 px-3" colSpan={2}>Total</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(totals.green)}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(totals.amber)}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(totals.blueSky)}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(totals.pipeline)}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(totals.collected)}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{totals.engagements}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </>
+      {!loading && rows.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Read-only consolidated view · Historical rows from management sheet · Current FY plan, bifurcation,
+          and collections update live from engagements · Blank leaders (AK, SP, VP) shown as “—” · Total column
+          auto-sums across leaders.
+        </p>
       )}
     </div>
   );

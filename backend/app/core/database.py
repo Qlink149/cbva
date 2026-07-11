@@ -1,8 +1,6 @@
-import logging
+from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.core.config import settings
-
-logger = logging.getLogger(__name__)
 
 _client: AsyncIOMotorClient | None = None
 db: AsyncIOMotorDatabase | None = None
@@ -70,22 +68,17 @@ async def _create_indexes() -> None:
     await db.team_members.create_index([("leader_id", 1), ("is_manager", 1)])
     await db.team_members.create_index([("leader_id", 1), ("sort_order", 1)])
     await db.hiring_requirements.create_index([("leader_id", 1), ("status", 1)])
+    await db.headcount_plans.create_index([("leader_id", 1), ("designation", 1)], unique=True)
     await db.baseline_plans.create_index([("leader_id", 1), ("financial_year_id", 1)], unique=True)
-    await db.monthly_plan_lines.create_index([("leader_id", 1), ("financial_year_id", 1), ("month", 1)])
     await db.el_summaries.create_index(
         [("leader_id", 1), ("fiscal_year", 1)],
         unique=True,
     )
     await db.assessments.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.assessments.create_index("content_hash")
-    await db.new_clients.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.client_meetings.create_index([("leader_id", 1), ("fiscal_year", 1), ("client_name", 1)])
-    await db.resource_allocations.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
-    await db.cross_sell_entries.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
-    await db.budget_change_log.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.engagement_change_log.create_index([("engagement_id", 1), ("changed_at", -1)])
     await db.engagement_actions.create_index([("leader_id", 1), ("fiscal_year", 1), ("engagement_id", 1)])
-    await db.collection_transactions.create_index(
-        [("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)]
-    )
-    await db.team_allocations.create_index([("leader_id", 1), ("fiscal_year", 1), ("member_name", 1)])
+    await db.collection_transactions.create_index([("leader_id", 1), ("fiscal_year", 1), ("month", 1)])
+    await db.collection_transactions.create_index("engagement_id")
+    await db.consolidated_summaries.create_index("report_fy", unique=True)

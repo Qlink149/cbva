@@ -9,7 +9,12 @@ const normalize = (m) => ({
   q2: m.q2_status || '',
   q3: m.q3_status || '',
   q4: m.q4_status || '',
+  q1Date: m.q1_date || '',
+  q2Date: m.q2_date || '',
+  q3Date: m.q3_date || '',
+  q4Date: m.q4_date || '',
   remarks: m.notes || '',
+  minutes: m.minutes || '',
   datesTillPeriod: m.dates_till_period || '',
   nextPeriod: m.next_period || '',
   responsiblePerson: m.responsible_person || '',
@@ -22,10 +27,15 @@ const toApi = (fields) => {
   if (fields.client != null) out.client_name = fields.client;
   if (fields.frequency != null) out.meeting_frequency = fields.frequency;
   if (fields.remarks != null) out.notes = fields.remarks;
+  if (fields.minutes != null) out.minutes = fields.minutes;
   if (fields.q1 != null) out.q1_status = fields.q1;
   if (fields.q2 != null) out.q2_status = fields.q2;
   if (fields.q3 != null) out.q3_status = fields.q3;
   if (fields.q4 != null) out.q4_status = fields.q4;
+  if (fields.q1Date != null) out.q1_date = fields.q1Date;
+  if (fields.q2Date != null) out.q2_date = fields.q2Date;
+  if (fields.q3Date != null) out.q3_date = fields.q3Date;
+  if (fields.q4Date != null) out.q4_date = fields.q4Date;
   return out;
 };
 

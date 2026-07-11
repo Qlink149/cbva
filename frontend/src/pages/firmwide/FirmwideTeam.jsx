@@ -12,20 +12,11 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFirmwideTeam } from '@/hooks/useFirmwide';
 import { useLeaders } from '@/hooks/useLeaders';
+import OrgChart from '@/components/team/OrgChart';
+import ReportsToSelect from '@/components/team/ReportsToSelect';
+import { DESIGNATION_ORDER, LEADER_DESIGNATIONS, sortByDesignation } from '@/lib/designations';
 
-const DESIGNATIONS = [
-  'Managing Partner',
-  'Partner',
-  'Business Leader',
-  'Director',
-  'Senior Manager',
-  'Manager',
-  'Associate',
-  'Analyst',
-  'Other',
-];
-
-const LEADER_DESIGNATIONS = ['Managing Partner', 'Partner', 'Business Leader', 'Director'];
+const DESIGNATIONS = DESIGNATION_ORDER;
 
 const EMPTY_FORM = {
   full_name: '',
@@ -35,9 +26,10 @@ const EMPTY_FORM = {
   leader_id: '',
   status: 'Active',
   notes: '',
+  reports_to_member_id: null,
 };
 
-function MemberForm({ member, leaders, onSave, onClose }) {
+function MemberForm({ member, leaders, members = [], onSave, onClose }) {
   const [form, setForm] = useState(member ? {
     full_name: member.full_name || '',
     designation: member.designation || 'Manager',
@@ -46,9 +38,12 @@ function MemberForm({ member, leaders, onSave, onClose }) {
     leader_id: member.leader_id || '',
     status: member.status || 'Active',
     notes: member.notes || '',
+    reports_to_member_id: member.reports_to_member_id || null,
   } : { ...EMPTY_FORM });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const leaderTeamMembers = members.filter((m) => m.leader_id === form.leader_id && m.id !== member?.id);
 
   return (
     <div className="space-y-4 mt-2">
@@ -93,8 +88,19 @@ function MemberForm({ member, leaders, onSave, onClose }) {
             </SelectContent>
           </Select>
         </div>
+        {form.leader_id && (
+          <div className="col-span-2">
+            <ReportsToSelect
+              value={form.reports_to_member_id}
+              onChange={(v) => set('reports_to_member_id', v)}
+              teamMembers={leaderTeamMembers}
+              excludeId={member?.id}
+              label="Reports To (Manager)"
+            />
+          </div>
+        )}
         <div className="col-span-2">
-          <Label>Notes</Label>
+          <Label>Remarks</Label>
           <Input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes..." />
         </div>
       </div>
@@ -144,8 +150,8 @@ export default function FirmwideTeam() {
   }, [members, filterDesig]);
 
   const grouped = useMemo(() => ({
-    leaderTier: filtered.filter(m => LEADER_DESIGNATIONS.includes(m.designation)),
-    staffTier: filtered.filter(m => !LEADER_DESIGNATIONS.includes(m.designation)),
+    leaderTier: filtered.filter(m => LEADER_DESIGNATIONS.includes(m.designation)).sort(sortByDesignation),
+    staffTier: filtered.filter(m => !LEADER_DESIGNATIONS.includes(m.designation)).sort(sortByDesignation),
   }), [filtered]);
 
   const leaderMap = useMemo(() => Object.fromEntries(leaders.map(l => [l.id, l.name])), [leaders]);
@@ -175,6 +181,8 @@ export default function FirmwideTeam() {
           <Plus className="w-4 h-4" /> Add Member
         </Button>
       </div>
+
+      <OrgChart mode="firmwide" leaders={leaders} teamMembers={members} />
 
       <div className="flex gap-2 flex-wrap">
         {[
@@ -226,6 +234,7 @@ export default function FirmwideTeam() {
           <DialogHeader><DialogTitle>Add Team Member</DialogTitle></DialogHeader>
           <MemberForm
             leaders={leaders}
+            members={members}
             onSave={(data) => addMember.mutate(data)}
             onClose={() => setAddOpen(false)}
           />
@@ -239,6 +248,7 @@ export default function FirmwideTeam() {
             <MemberForm
               member={editMember}
               leaders={leaders}
+              members={members}
               onSave={(data) => updateMember.mutate({ id: editMember.id, ...data })}
               onClose={() => setEditMember(null)}
             />

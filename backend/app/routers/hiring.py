@@ -17,7 +17,7 @@ def _serialize(doc: dict) -> dict:
         "expected_joining_date": doc.get("expected_joining_date"),
         "status": doc.get("status", "Open"),
         "expected_cost": doc.get("expected_cost", 0),
-        "notes": doc.get("notes", ""),
+        "remarks": doc.get("remarks", doc.get("notes", "")),
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }

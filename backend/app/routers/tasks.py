@@ -20,6 +20,7 @@ def _serialize(doc: dict) -> dict:
         "deadline": doc.get("deadline"),
         "notes": doc.get("notes", ""),
         "status": doc.get("status", "Pending"),
+        "fiscal_year": doc.get("fiscal_year"),
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }
@@ -28,10 +29,14 @@ def _serialize(doc: dict) -> dict:
 @router.get("/", response_model=dict)
 async def list_tasks(
     leader_id: str = Query(...),
+    fiscal_year: str = Query(None),
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_scope(current_user, leader_id)
-    cursor = database.db.tasks.find({"leader_id": leader_id}).sort("created_at", -1)
+    query: dict = {"leader_id": leader_id}
+    if fiscal_year:
+        query["$or"] = [{"fiscal_year": fiscal_year}, {"fiscal_year": None}, {"fiscal_year": {"$exists": False}}]
+    cursor = database.db.tasks.find(query).sort("created_at", -1)
     docs = await cursor.to_list(length=200)
     return {"data": [_serialize(d) for d in docs]}
 

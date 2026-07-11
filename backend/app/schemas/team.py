@@ -16,6 +16,7 @@ class TeamMemberCreate(BaseModel):
     is_manager: bool = False
     is_leader: bool = False
     sort_order: int = 0
+    reports_to_member_id: Optional[str] = None
 
 
 class TeamMemberUpdate(BaseModel):
@@ -29,6 +30,7 @@ class TeamMemberUpdate(BaseModel):
     fiscal_year: Optional[str] = None
     is_manager: Optional[bool] = None
     sort_order: Optional[int] = None
+    reports_to_member_id: Optional[str] = None
 
 
 class TeamMemberResponse(BaseModel):
@@ -45,5 +47,6 @@ class TeamMemberResponse(BaseModel):
     is_manager: bool = False
     is_leader: bool = False
     sort_order: int = 0
+    reports_to_member_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime

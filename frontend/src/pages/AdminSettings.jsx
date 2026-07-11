@@ -215,21 +215,21 @@ function BaselineTab() {
         <table className="w-full text-sm">
           <thead><tr className="bg-muted/30 border-b">
             <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Leader</th>
-            <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Green</th>
-            <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Amber</th>
-            <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Blue Sky</th>
-            <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Total</th>
-            <th className="text-center py-2 px-3 text-xs text-muted-foreground font-medium">Locked</th>
+            <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Green</th>
+            <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Amber</th>
+            <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Blue Sky</th>
+            <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Total</th>
+            <th className="text-center py-2 text-xs text-muted-foreground font-medium col-num">Locked</th>
           </tr></thead>
           <tbody>
             {baselines.map(b => (
               <tr key={b.id} className="border-b border-border/50">
                 <td className="py-2 px-3 font-medium">{leaderMap[b.leader_id] || b.leader_id}</td>
-                <td className="py-2 px-3 text-right font-tabular">{formatINR(b.baseline_green)}</td>
-                <td className="py-2 px-3 text-right font-tabular">{formatINR(b.baseline_amber)}</td>
-                <td className="py-2 px-3 text-right font-tabular">{formatINR(b.baseline_blue_sky)}</td>
-                <td className="py-2 px-3 text-right font-tabular font-medium">{formatINR(b.baseline_total)}</td>
-                <td className="py-2 px-3 text-center">{b.is_locked ? '🔒' : '🔓'}</td>
+                <td className="py-2 text-right font-tabular col-num">{formatINR(b.baseline_green)}</td>
+                <td className="py-2 text-right font-tabular col-num">{formatINR(b.baseline_amber)}</td>
+                <td className="py-2 text-right font-tabular col-num">{formatINR(b.baseline_blue_sky)}</td>
+                <td className="py-2 text-right font-tabular font-medium col-num">{formatINR(b.baseline_total)}</td>
+                <td className="py-2 text-center col-num">{b.is_locked ? '🔒' : '🔓'}</td>
               </tr>
             ))}
           </tbody>

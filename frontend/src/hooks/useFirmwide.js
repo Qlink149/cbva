@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/api/client';
 
 export const useFirmwideSummary = (fiscalYear) =>
@@ -27,6 +27,27 @@ export const useFirmwideClients = (fiscalYear) =>
     queryKey: ['firmwide-clients', fiscalYear],
     queryFn: () => apiGet('/api/firmwide/clients', { fiscal_year: fiscalYear }),
     enabled: !!fiscalYear,
+  });
+
+export const useFirmwideClientsInfinite = (fiscalYear, { limit = 100 } = {}) =>
+  useInfiniteQuery({
+    queryKey: ['firmwide-clients-infinite', fiscalYear, limit],
+    enabled: !!fiscalYear,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      apiGet('/api/firmwide/clients', {
+        fiscal_year: fiscalYear,
+        skip: pageParam,
+        limit,
+      }),
+    getNextPageParam: (lastPage, allPages) => {
+      const total = lastPage?.total;
+      const loaded = allPages.reduce((acc, p) => acc + (p?.data?.length ?? 0), 0);
+
+      if (typeof total !== 'number') return undefined;
+      if (loaded >= total) return undefined;
+      return loaded;
+    },
   });
 
 export const useFirmwideTeam = () =>

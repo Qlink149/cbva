@@ -36,15 +36,15 @@ export default function Origination() {
           <table className="w-full text-sm">
             <thead><tr className="bg-muted/30 border-b">
               <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Partner</th>
-              <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Clients</th>
-              <th className="text-right py-2 px-3 text-xs text-muted-foreground font-medium">Pipeline</th>
+              <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Clients</th>
+              <th className="text-right py-2 text-xs text-muted-foreground font-medium col-num">Pipeline</th>
             </tr></thead>
             <tbody>
               {byPartner.map(([partner, stats]) => (
                 <tr key={partner} className="border-b border-border/50">
                   <td className="py-2 px-3 font-medium">{partner}</td>
-                  <td className="py-2 px-3 text-right">{stats.count}</td>
-                  <td className="py-2 px-3 text-right font-tabular">{formatINR(stats.total)}</td>
+                  <td className="py-2 text-right col-num">{stats.count}</td>
+                  <td className="py-2 text-right font-tabular col-num">{formatINR(stats.total)}</td>
                 </tr>
               ))}
             </tbody>

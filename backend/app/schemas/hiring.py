@@ -10,7 +10,7 @@ class HiringRequirementCreate(BaseModel):
     expected_joining_date: Optional[date] = None
     status: Literal["Open", "In Progress", "Filled", "On Hold"] = "Open"
     expected_cost: int = 0
-    notes: str = ""
+    remarks: str = ""
 
 
 class HiringRequirementUpdate(BaseModel):
@@ -19,7 +19,7 @@ class HiringRequirementUpdate(BaseModel):
     expected_joining_date: Optional[date] = None
     status: Optional[Literal["Open", "In Progress", "Filled", "On Hold"]] = None
     expected_cost: Optional[int] = None
-    notes: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class HiringRequirementResponse(BaseModel):
@@ -30,6 +30,6 @@ class HiringRequirementResponse(BaseModel):
     expected_joining_date: Optional[date]
     status: str
     expected_cost: int
-    notes: str
+    remarks: str
     created_at: datetime
     updated_at: datetime
