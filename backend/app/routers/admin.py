@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime, timezone
 from bson import ObjectId
+from pydantic import BaseModel, Field
+from typing import Optional
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.schemas.settings import PublicSettings, AppSettingsResponse
 from app.schemas.financial_year import FinancialYearCreate, FinancialYearUpdate
@@ -11,6 +13,43 @@ from app.dependencies.auth import require_roles
 from app.services import audit_service
 
 router = APIRouter()
+
+
+def _fy_display_label(fiscal_year: str) -> str:
+    if len(fiscal_year) == 4 and fiscal_year.isdigit():
+        return f"20{fiscal_year[:2]}-{fiscal_year[2:]}"
+    return fiscal_year
+
+
+def _serialize_plan_snapshot(doc: dict | None, snapshot_type: str) -> dict | None:
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "leader_id": doc["leader_id"],
+        "fiscal_year": doc["fiscal_year"],
+        "label": doc["label"],
+        "snapshot_type": doc.get("snapshot_type", snapshot_type),
+        "green": doc.get("green", 0),
+        "amber": doc.get("amber") or 0,
+        "blue_sky": doc.get("blue_sky") or 0,
+        "total": doc.get("total", 0),
+        "source": doc.get("source"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
+class PlanAmounts(BaseModel):
+    green: int = Field(0, ge=0)
+    amber: int = Field(0, ge=0)
+    blue_sky: int = Field(0, ge=0)
+
+
+class AdminPlansUpsert(BaseModel):
+    leader_id: str
+    fiscal_year: str
+    initial: Optional[PlanAmounts] = None
+    board: Optional[PlanAmounts] = None
 
 
 # ─── Users ────────────────────────────────────────────────────────────────────
@@ -252,3 +291,135 @@ async def update_financial_year(
         label=existing["slug"],
     )
     return serialize_financial_year(result)
+
+
+# ─── Initial / Board Plans ─────────────────────────────────────────────────────
+
+async def _upsert_manual_plan(
+    *,
+    leader_id: str,
+    fiscal_year: str,
+    snapshot_type: str,
+    label: str,
+    sort_order: int,
+    amounts: PlanAmounts,
+    user: dict,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    green = amounts.green
+    amber = amounts.amber
+    blue_sky = amounts.blue_sky
+    total = green + amber + blue_sky
+
+    existing = await database.db.pipeline_snapshots.find_one(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": snapshot_type}
+    )
+    updates = {
+        "leader_id": leader_id,
+        "fiscal_year": fiscal_year,
+        "label": label,
+        "sort_order": sort_order,
+        "green": green,
+        "amber": amber,
+        "blue_sky": blue_sky,
+        "total": total,
+        "snapshot_type": snapshot_type,
+        "source": "manual",
+        "updated_at": now,
+    }
+    result = await database.db.pipeline_snapshots.find_one_and_update(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": snapshot_type},
+        {"$set": updates, "$setOnInsert": {"created_at": now, "as_of_date": None}},
+        upsert=True,
+        return_document=True,
+    )
+    if existing:
+        await audit_service.log_update(
+            "pipeline_snapshot", existing, updates, user,
+            label=label,
+            leader_id=leader_id,
+            fiscal_year=fiscal_year,
+        )
+    else:
+        await audit_service.log_create(
+            "pipeline_snapshot", result, user,
+            label=label,
+            leader_id=leader_id,
+            fiscal_year=fiscal_year,
+        )
+    return _serialize_plan_snapshot(result, snapshot_type)
+
+
+@router.get("/plans")
+async def get_admin_plans(
+    leader_id: str = Query(...),
+    fiscal_year: str = Query(...),
+    current_user: dict = Depends(require_roles("admin")),
+):
+    initial = await database.db.pipeline_snapshots.find_one(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": "initial"}
+    )
+    board = await database.db.pipeline_snapshots.find_one(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": "board"}
+    )
+    return {
+        "leader_id": leader_id,
+        "fiscal_year": fiscal_year,
+        "initial": _serialize_plan_snapshot(initial, "initial"),
+        "board": _serialize_plan_snapshot(board, "board"),
+    }
+
+
+@router.put("/plans")
+async def upsert_admin_plans(
+    body: AdminPlansUpsert,
+    current_user: dict = Depends(require_roles("admin")),
+):
+    if not body.initial and not body.board:
+        raise HTTPException(status_code=400, detail="Provide initial and/or board plan amounts")
+
+    leader = await database.db.leaders.find_one({"_id": body.leader_id})
+    if not leader:
+        raise HTTPException(status_code=404, detail="Leader not found")
+
+    fy_label = _fy_display_label(body.fiscal_year)
+    result = {
+        "leader_id": body.leader_id,
+        "fiscal_year": body.fiscal_year,
+        "initial": None,
+        "board": None,
+    }
+
+    if body.initial is not None:
+        result["initial"] = await _upsert_manual_plan(
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+            snapshot_type="initial",
+            label=f"Initial Plan ({fy_label})",
+            sort_order=0,
+            amounts=body.initial,
+            user=current_user,
+        )
+    else:
+        existing = await database.db.pipeline_snapshots.find_one(
+            {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year, "snapshot_type": "initial"}
+        )
+        result["initial"] = _serialize_plan_snapshot(existing, "initial")
+
+    if body.board is not None:
+        result["board"] = await _upsert_manual_plan(
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+            snapshot_type="board",
+            label=f"Board Plan ({fy_label})",
+            sort_order=1,
+            amounts=body.board,
+            user=current_user,
+        )
+    else:
+        existing = await database.db.pipeline_snapshots.find_one(
+            {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year, "snapshot_type": "board"}
+        )
+        result["board"] = _serialize_plan_snapshot(existing, "board")
+
+    return result

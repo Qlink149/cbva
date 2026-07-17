@@ -113,6 +113,26 @@ export const useUpdateFinancialYear = () => {
   });
 };
 
+// ─── Initial / Board Plans ────────────────────────────────────────────────────
+
+export const useAdminPlans = (leaderId, fiscalYear) =>
+  useQuery({
+    queryKey: ['admin-plans', leaderId, fiscalYear],
+    queryFn: () => apiGet('/api/admin/plans', { leader_id: leaderId, fiscal_year: fiscalYear }),
+    enabled: !!leaderId && !!fiscalYear,
+  });
+
+export const useUpsertAdminPlans = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPut('/api/admin/plans', body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['admin-plans', vars.leader_id, vars.fiscal_year] });
+      qc.invalidateQueries({ queryKey: ['pipeline', vars.leader_id, vars.fiscal_year] });
+    },
+  });
+};
+
 // ─── Firmwide Dashboard ───────────────────────────────────────────────────────
 
 export const useFirmwideDashboardAggregate = (fiscalYear) =>

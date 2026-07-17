@@ -130,6 +130,8 @@ async def _upsert_pipeline_snapshot(
     sort_order: int,
     amounts: dict,
     now: datetime,
+    source: str | None = None,
+    skip_if_manual: bool = False,
 ) -> None:
     green = amounts.get("green")
     amber = amounts.get("amber")
@@ -138,26 +140,35 @@ async def _upsert_pipeline_snapshot(
     if total is None:
         total = (green or 0) + (amber or 0) + (blue_sky or 0)
 
+    existing = await database.db.pipeline_snapshots.find_one(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": snapshot_type}
+    )
+    if skip_if_manual and existing and existing.get("source") == "manual":
+        return
+
+    set_fields = {
+        "leader_id": leader_id,
+        "fiscal_year": fiscal_year,
+        "label": label,
+        "sort_order": sort_order,
+        "green": green if green is not None else 0,
+        "amber": amber,
+        "blue_sky": blue_sky,
+        "total": total if total is not None else 0,
+        "snapshot_type": snapshot_type,
+        "updated_at": now,
+    }
+    if source is not None:
+        set_fields["source"] = source
+
     await database.db.pipeline_snapshots.update_one(
         {
             "leader_id": leader_id,
             "fiscal_year": fiscal_year,
             "snapshot_type": snapshot_type,
-            "label": label,
         },
         {
-            "$set": {
-                "leader_id": leader_id,
-                "fiscal_year": fiscal_year,
-                "label": label,
-                "sort_order": sort_order,
-                "green": green if green is not None else 0,
-                "amber": amber,
-                "blue_sky": blue_sky,
-                "total": total if total is not None else 0,
-                "snapshot_type": snapshot_type,
-                "updated_at": now,
-            },
+            "$set": set_fields,
             "$setOnInsert": {"created_at": now, "as_of_date": None},
         },
         upsert=True,
@@ -190,7 +201,7 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
     today = date.today()
     current_mk = f"{today.month:02d}"
 
-    # --- Initial Plan (consolidated; never overwrite with live engagements) ---
+    # --- Initial Plan (consolidated; never overwrite manual admin entries) ---
     initial = _plan_amounts_from_rows(consolidated_rows, code, f"fy{fiscal_year}_initial") if code else None
     if initial:
         await _upsert_pipeline_snapshot(
@@ -201,6 +212,8 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
             sort_order=0,
             amounts=initial,
             now=now,
+            source="consolidated",
+            skip_if_manual=True,
         )
     elif has_engagement_totals:
         # Fallback only when consolidated has no initial row for this leader
@@ -216,9 +229,10 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
                 sort_order=0,
                 amounts=totals,
                 now=now,
+                source="engagement_fallback",
             )
 
-    # --- Board Plan (consolidated) ---
+    # --- Board Plan (consolidated; never overwrite manual admin entries) ---
     board = _plan_amounts_from_rows(consolidated_rows, code, f"fy{fiscal_year}_board") if code else None
     if board:
         await _upsert_pipeline_snapshot(
@@ -229,6 +243,8 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
             sort_order=1,
             amounts=board,
             now=now,
+            source="consolidated",
+            skip_if_manual=True,
         )
     elif has_engagement_totals:
         existing = await database.db.pipeline_snapshots.find_one(
@@ -243,6 +259,7 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
                 sort_order=1,
                 amounts=totals,
                 now=now,
+                source="engagement_fallback",
             )
 
     # --- Monthly snapshots ---

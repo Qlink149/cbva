@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Settings, Users, Building2, Briefcase, Calendar } from 'lucide-react';
+import { Plus, Settings, Users, Building2, Briefcase, Calendar, Target } from 'lucide-react';
 import { formatINR } from '@/lib/formatCurrency';
 import { useBaselines } from '@/hooks/useBaselines';
 import {
@@ -16,9 +16,12 @@ import {
   useAdminClients, useCreateAdminClient,
   useAdminEngagementTypes, useCreateEngagementType,
   useAdminFinancialYears, useCreateFinancialYear, useUpdateFinancialYear,
+  useAdminPlans, useUpsertAdminPlans,
 } from '@/hooks/useAdmin';
 import { useLeaders } from '@/hooks/useLeaders';
-
+import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
+import { getFyLabel } from '@/lib/fiscalYear';
+import { useToast } from '@/components/ui/use-toast';
 function UsersTab() {
   const { data: users = [], isLoading } = useAdminUsers();
   const { data: leaders = [] } = useLeaders();
@@ -319,6 +322,196 @@ function FYTab() {
   );
 }
 
+function parseAmount(val) {
+  if (val === '' || val == null) return 0;
+  const n = Number(String(val).replace(/,/g, ''));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+}
+
+function PlanAmountFields({ title, form, setForm, source }) {
+  const total = parseAmount(form.green) + parseAmount(form.amber) + parseAmount(form.blue_sky);
+  return (
+    <div className="bg-card rounded-xl border p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        {source && (
+          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-muted text-muted-foreground">
+            {source === 'manual' ? 'Manual' : source}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <Label className="text-xs">Green (₹)</Label>
+          <Input
+            type="number"
+            min={0}
+            value={form.green}
+            onChange={(e) => setForm((p) => ({ ...p, green: e.target.value }))}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Amber (₹)</Label>
+          <Input
+            type="number"
+            min={0}
+            value={form.amber}
+            onChange={(e) => setForm((p) => ({ ...p, amber: e.target.value }))}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Blue Sky (₹)</Label>
+          <Input
+            type="number"
+            min={0}
+            value={form.blue_sky}
+            onChange={(e) => setForm((p) => ({ ...p, blue_sky: e.target.value }))}
+          />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Total: <span className="font-tabular font-medium text-foreground">{formatINR(total)}</span>
+      </p>
+    </div>
+  );
+}
+
+function PlansTab() {
+  const { toast } = useToast();
+  const { data: leaders = [], isLoading: leadersLoading } = useLeaders();
+  const { data: financialYears = [], isLoading: fyLoading } = useAdminFinancialYears();
+  const { activeFY } = useGlobalSelector();
+  const [leaderId, setLeaderId] = useState('');
+  const [fiscalYear, setFiscalYear] = useState(activeFY || '');
+  const [initialForm, setInitialForm] = useState({ green: '', amber: '', blue_sky: '' });
+  const [boardForm, setBoardForm] = useState({ green: '', amber: '', blue_sky: '' });
+
+  const leaderList = Array.isArray(leaders) ? leaders : [];
+  const fyList = Array.isArray(financialYears) ? financialYears : [];
+
+  const { data: plans, isLoading: plansLoading, isFetching } = useAdminPlans(leaderId, fiscalYear);
+  const upsertPlans = useUpsertAdminPlans();
+
+  useEffect(() => {
+    if (!leaderId && leaderList.length) setLeaderId(leaderList[0].id);
+  }, [leaderId, leaderList]);
+
+  useEffect(() => {
+    if (!fiscalYear && (activeFY || fyList[0]?.slug)) {
+      setFiscalYear(activeFY || fyList[0].slug);
+    }
+  }, [fiscalYear, activeFY, fyList]);
+
+  useEffect(() => {
+    if (!plans) return;
+    setInitialForm({
+      green: plans.initial?.green ?? '',
+      amber: plans.initial?.amber ?? '',
+      blue_sky: plans.initial?.blue_sky ?? '',
+    });
+    setBoardForm({
+      green: plans.board?.green ?? '',
+      amber: plans.board?.amber ?? '',
+      blue_sky: plans.board?.blue_sky ?? '',
+    });
+  }, [plans]);
+
+  const handleSave = async () => {
+    if (!leaderId || !fiscalYear) return;
+    try {
+      await upsertPlans.mutateAsync({
+        leader_id: leaderId,
+        fiscal_year: fiscalYear,
+        initial: {
+          green: parseAmount(initialForm.green),
+          amber: parseAmount(initialForm.amber),
+          blue_sky: parseAmount(initialForm.blue_sky),
+        },
+        board: {
+          green: parseAmount(boardForm.green),
+          amber: parseAmount(boardForm.amber),
+          blue_sky: parseAmount(boardForm.blue_sky),
+        },
+      });
+      toast({ title: 'Plans saved', description: 'Initial and Board plans updated.' });
+    } catch (err) {
+      toast({
+        title: 'Save failed',
+        description: err?.response?.data?.detail || err.message || 'Could not save plans',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (leadersLoading || fyLoading) return <Skeleton className="h-64 w-full" />;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-medium">Initial & Board Plans</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Set governance targets per leader and financial year. Manual entries are not overwritten by imports.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+        <div>
+          <Label>Leader</Label>
+          <Select value={leaderId} onValueChange={setLeaderId}>
+            <SelectTrigger><SelectValue placeholder="Select leader" /></SelectTrigger>
+            <SelectContent>
+              {leaderList.map((l) => (
+                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Financial Year</Label>
+          <Select value={fiscalYear} onValueChange={setFiscalYear}>
+            <SelectTrigger><SelectValue placeholder="Select FY" /></SelectTrigger>
+            <SelectContent>
+              {fyList.map((fy) => (
+                <SelectItem key={fy.slug || fy.id} value={fy.slug}>
+                  {fy.label || getFyLabel(fy.slug) || fy.slug}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {!leaderId || !fiscalYear ? (
+        <p className="text-sm text-muted-foreground">Select a leader and financial year to edit plans.</p>
+      ) : plansLoading || isFetching ? (
+        <Skeleton className="h-48 w-full" />
+      ) : (
+        <div className="space-y-4 max-w-3xl">
+          <PlanAmountFields
+            title="Initial Plan"
+            form={initialForm}
+            setForm={setInitialForm}
+            source={plans?.initial?.source}
+          />
+          <PlanAmountFields
+            title="Board Plan"
+            form={boardForm}
+            setForm={setBoardForm}
+            source={plans?.board?.source}
+          />
+          <Button
+            className="bg-cbva-navy hover:bg-cbva-navy/90"
+            onClick={handleSave}
+            disabled={upsertPlans.isPending}
+          >
+            {upsertPlans.isPending ? 'Saving…' : 'Save Plans'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   return (
     <div className="space-y-6 pb-12">
@@ -329,9 +522,11 @@ export default function AdminSettings() {
       <Tabs defaultValue="users">
         <TabsList className="bg-muted/50 flex-wrap h-auto">
           <TabsTrigger value="users" className="gap-1.5"><Users className="w-3.5 h-3.5" />Users</TabsTrigger>
+          <TabsTrigger value="plans" className="gap-1.5"><Target className="w-3.5 h-3.5" />Plans</TabsTrigger>
           <TabsTrigger value="fy" className="gap-1.5"><Calendar className="w-3.5 h-3.5" />Financial Years</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
+        <TabsContent value="plans" className="mt-4"><PlansTab /></TabsContent>
         <TabsContent value="fy" className="mt-4"><FYTab /></TabsContent>
       </Tabs>
     </div>
