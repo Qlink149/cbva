@@ -12,6 +12,7 @@ from app.core.security import (
 from app.core import database
 from app.dependencies.auth import get_current_user
 from app.core.limiter import limiter
+from app.services import audit_service
 from loguru import logger
 
 router = APIRouter()
@@ -54,6 +55,16 @@ async def login(request: Request, body: LoginRequest):
         {"$set": {"last_login": datetime.now(timezone.utc)}},
     )
     logger.info("User logged in: {}", body.email)
+
+    await audit_service.log_event(
+        entity_type="auth",
+        entity_id=user_id,
+        entity_label=body.email,
+        action="login",
+        user=user,
+        changes=[],
+        source="auth",
+    )
 
     return TokenResponse(
         access_token=access_token,

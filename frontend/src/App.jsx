@@ -26,6 +26,7 @@ const BlueSkyPage = lazy(() => import('./pages/BlueSkyPage'));
 const Origination = lazy(() => import('./pages/firmwide/Origination'));
 const BoardPack = lazy(() => import('./pages/firmwide/BoardPack'));
 const ConsolidatedSummary = lazy(() => import('./pages/firmwide/ConsolidatedSummary'));
+const ChangeLog = lazy(() => import('./pages/firmwide/ChangeLog'));
 const ClientDetail = lazy(() => import('./pages/ClientDetail'));
 const ClientMeetings = lazy(() => import('./pages/ClientMeetings'));
 
@@ -89,6 +90,7 @@ const AuthenticatedApp = () => {
             <Route path="/firmwide/origination" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><Origination /></LazyPage></ProtectedRoute>} />
             <Route path="/firmwide/board-pack" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><BoardPack /></LazyPage></ProtectedRoute>} />
             <Route path="/firmwide/consolidated" element={<ProtectedRoute allowedRoles={['management', 'admin']}><LazyPage><ConsolidatedSummary /></LazyPage></ProtectedRoute>} />
+            <Route path="/firmwide/change-log" element={<ProtectedRoute allowedRoles={['management', 'admin', 'user']}><LazyPage><ChangeLog /></LazyPage></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><LazyPage><AdminSettings /></LazyPage></ProtectedRoute>} />
           </Route>
           <Route path="/home" element={<Navigate to="/" replace />} />

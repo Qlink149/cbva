@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.baseline import BaselinePlanCreate, BaselinePlanUpdate, BaselinePlanResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -46,6 +47,12 @@ async def create_baseline(body: BaselinePlanCreate, current_user: dict = Depends
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.baseline_plans.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "baseline", doc, current_user,
+        label=f"Baseline — {body.leader_id} FY {body.financial_year_id}",
+        leader_id=body.leader_id,
+        fiscal_year=body.financial_year_id,
+    )
     return _serialize(doc)
 
 
@@ -63,5 +70,11 @@ async def update_baseline(
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.baseline_plans.find_one_and_update(
         {"_id": ObjectId(baseline_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "baseline", existing, updates, current_user,
+        label=f"Baseline — {existing['leader_id']} FY {existing['financial_year_id']}",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["financial_year_id"],
     )
     return _serialize(result)

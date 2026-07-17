@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from app.core import database
+from app.services import audit_service
 from app.services.consolidated_import import (
     COLUMN_CODES,
     default_xlsx_path,
@@ -252,7 +253,9 @@ def _sum_cells(values: dict[str, float | None]) -> float | None:
     return sum(nums) if nums else None
 
 
-async def ensure_imported_matrix(report_fy: str) -> list[dict[str, Any]]:
+async def ensure_imported_matrix(
+    report_fy: str, *, user: dict | None = None
+) -> list[dict[str, Any]]:
     existing = await database.db.consolidated_summaries.find_one({"report_fy": report_fy})
     if existing:
         return existing["rows"]
@@ -267,6 +270,21 @@ async def ensure_imported_matrix(report_fy: str) -> list[dict[str, Any]]:
         {"$set": {"report_fy": report_fy, "rows": rows, "source_file": str(xlsx_path.name)}},
         upsert=True,
     )
+
+    if user is not None:
+        doc = await database.db.consolidated_summaries.find_one({"report_fy": report_fy})
+        data_rows = [r for r in rows if r.get("kind") == "data"]
+        await audit_service.log_event(
+            entity_type="consolidated_summary",
+            entity_id=str(doc["_id"]) if doc else report_fy,
+            entity_label=f"Consolidated FY {report_fy}",
+            action="imported",
+            user=user,
+            changes=[{"field": "rows_created", "label": "Rows Created", "old": None, "new": len(data_rows)}],
+            fiscal_year=report_fy,
+            source="csv_import",
+        )
+
     return rows
 
 

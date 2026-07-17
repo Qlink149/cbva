@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.bluesky import BlueSkyEntryUpdate, BlueSkyEntryResponse, BlueSkyListResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -58,5 +59,11 @@ async def update_bluesky(
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.blue_sky_entries.find_one_and_update(
         {"_id": ObjectId(entry_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "bluesky_entry", existing, updates, current_user,
+        label=existing["month"],
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     return _serialize(result)

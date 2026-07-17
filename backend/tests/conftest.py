@@ -25,6 +25,7 @@ async def client():
             await database.db.users.delete_many({})
             await database.db.engagements.delete_many({})
             await database.db.leaders.delete_many({})
+            await database.db.audit_log.delete_many({})
         except Exception:
             pass
     await database.close_db()

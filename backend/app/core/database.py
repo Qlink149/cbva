@@ -82,3 +82,7 @@ async def _create_indexes() -> None:
     await db.collection_transactions.create_index([("leader_id", 1), ("fiscal_year", 1), ("month", 1)])
     await db.collection_transactions.create_index("engagement_id")
     await db.consolidated_summaries.create_index("report_fy", unique=True)
+    await db.audit_log.create_index([("created_at", -1)])
+    await db.audit_log.create_index([("entity_type", 1), ("entity_id", 1), ("created_at", -1)])
+    await db.audit_log.create_index([("actor_id", 1), ("created_at", -1)])
+    await db.audit_log.create_index([("leader_id", 1), ("fiscal_year", 1), ("created_at", -1)])

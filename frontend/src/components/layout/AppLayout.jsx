@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Wallet, Users, Briefcase, CheckSquare, Building2,
   BookOpen, FileText, Settings, ChevronLeft,
-  ChevronRight, Bell, LogOut, BarChart3
+  ChevronRight, Bell, LogOut, BarChart3, History
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/lib/AuthContext';
@@ -17,6 +17,7 @@ const LEADER_NAV = [
   { label: 'Team', path: '/my-plan/team', icon: Users },
   { label: 'Actions', path: '/my-plan/actions', icon: CheckSquare },
   { label: 'Meetings', path: '/my-plan/meetings', icon: Bell },
+  { label: 'Change Log', path: '/firmwide/change-log', icon: History },
 ];
 
 const FIRMWIDE_NAV = [

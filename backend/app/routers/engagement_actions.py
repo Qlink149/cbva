@@ -8,6 +8,7 @@ from app.schemas.engagement_action import (
 )
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -72,6 +73,12 @@ async def create_engagement_action(
     }
     result = await database.db.engagement_actions.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "engagement_action", doc, current_user,
+        label=doc["description"],
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
     return _serialize(doc)
 
 
@@ -90,6 +97,13 @@ async def update_engagement_action_status(
         {"$set": {"status": body.status, "updated_at": datetime.now(timezone.utc)}},
         return_document=True,
     )
+    await audit_service.log_update(
+        "engagement_action", existing, {"status": body.status}, current_user,
+        label=existing["description"],
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+        action="status_changed",
+    )
     return _serialize(result)
 
 
@@ -103,4 +117,10 @@ async def delete_engagement_action(
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await database.db.engagement_actions.delete_one({"_id": ObjectId(action_id)})
+    await audit_service.log_delete(
+        "engagement_action", existing, current_user,
+        label=existing["description"],
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return None

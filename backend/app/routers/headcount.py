@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from app.schemas.headcount import HeadcountPlanUpsert, HeadcountPlanResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -33,6 +34,9 @@ async def list_headcount(
 async def upsert_headcount(body: HeadcountPlanUpsert, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
     now = datetime.now(timezone.utc)
+    existing = await database.db.headcount_plans.find_one(
+        {"leader_id": body.leader_id, "designation": body.designation}
+    )
     result = await database.db.headcount_plans.find_one_and_update(
         {"leader_id": body.leader_id, "designation": body.designation},
         {
@@ -46,4 +50,16 @@ async def upsert_headcount(body: HeadcountPlanUpsert, current_user: dict = Depen
         upsert=True,
         return_document=True,
     )
+    if existing:
+        await audit_service.log_update(
+            "headcount", existing, {"board_approved": body.board_approved}, current_user,
+            label=body.designation,
+            leader_id=body.leader_id,
+        )
+    else:
+        await audit_service.log_create(
+            "headcount", result, current_user,
+            label=body.designation,
+            leader_id=body.leader_id,
+        )
     return _serialize(result)

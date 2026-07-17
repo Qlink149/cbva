@@ -13,6 +13,7 @@ from app.services.fy_calendar import (
     is_fy_month_elapsed,
 )
 from app.services.engagement_derivation import planned_by_month_from_engagements
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -138,6 +139,12 @@ async def set_monthly_plan(
             {"_id": existing["_id"]},
             {"$set": updates},
         )
+        await audit_service.log_update(
+            "collection", existing, updates, current_user,
+            label=month_label,
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+        )
         return {"entry_id": str(existing["_id"]), "month_key": body.month_key, "planned": body.planned}
     else:
         doc = {
@@ -154,6 +161,13 @@ async def set_monthly_plan(
             "updated_at": now,
         }
         result = await database.db.collection_entries.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        await audit_service.log_create(
+            "collection", doc, current_user,
+            label=month_label,
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+        )
         return {"entry_id": str(result.inserted_id), "month_key": body.month_key, "planned": body.planned}
 
 
@@ -183,6 +197,12 @@ async def update_collection_entry(
             updates["variance"] = collected - planned
         updates["updated_at"] = datetime.now(timezone.utc)
         await database.db.collection_entries.update_one({"_id": ObjectId(entry_id)}, {"$set": updates})
+        await audit_service.log_update(
+            "collection", existing, updates, current_user,
+            label=existing.get("month", entry_id),
+            leader_id=existing["leader_id"],
+            fiscal_year=existing.get("fiscal_year"),
+        )
 
     return {
         "entry_id": entry_id,

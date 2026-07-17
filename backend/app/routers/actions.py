@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.action import ActionUpdate, ActionStatusPatch, ActionResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -61,6 +62,12 @@ async def update_action(
     result = await database.db.actions.find_one_and_update(
         {"_id": ObjectId(action_id)}, {"$set": updates}, return_document=True
     )
+    await audit_service.log_update(
+        "action", existing, updates, current_user,
+        label=f"#{existing.get('num', '')} {existing.get('description', '')}".strip(),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return _serialize(result)
 
 
@@ -74,9 +81,17 @@ async def update_action_status(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    updates = {"status": body.status, "updated_at": datetime.now(timezone.utc)}
     result = await database.db.actions.find_one_and_update(
         {"_id": ObjectId(action_id)},
-        {"$set": {"status": body.status, "updated_at": datetime.now(timezone.utc)}},
+        {"$set": updates},
         return_document=True,
+    )
+    await audit_service.log_update(
+        "action", existing, updates, current_user,
+        label=f"#{existing.get('num', '')} {existing.get('description', '')}".strip(),
+        action="status_changed",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     return _serialize(result)

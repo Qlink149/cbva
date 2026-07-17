@@ -5,6 +5,7 @@ from app.schemas.pipeline import PipelineSnapshotCreate, PipelineSnapshotUpdate,
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope, require_roles
 from app.services.engagement_derivation import materialize_leader_derived_data
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -49,6 +50,12 @@ async def create_snapshot(body: PipelineSnapshotCreate, current_user: dict = Dep
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.pipeline_snapshots.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "pipeline_snapshot", doc, current_user,
+        label=doc["label"],
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
     return _serialize(doc)
 
 
@@ -67,6 +74,12 @@ async def update_snapshot(
     result = await database.db.pipeline_snapshots.find_one_and_update(
         {"_id": ObjectId(snapshot_id)}, {"$set": updates}, return_document=True
     )
+    await audit_service.log_update(
+        "pipeline_snapshot", existing, updates, current_user,
+        label=existing["label"],
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return _serialize(result)
 
 
@@ -77,4 +90,10 @@ async def delete_snapshot(snapshot_id: str, current_user: dict = Depends(require
         raise HTTPException(status_code=404, detail="Snapshot not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await database.db.pipeline_snapshots.delete_one({"_id": ObjectId(snapshot_id)})
+    await audit_service.log_delete(
+        "pipeline_snapshot", existing, current_user,
+        label=existing["label"],
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return None

@@ -4,8 +4,13 @@ import { formatINRFull } from '@/lib/formatCurrency';
 
 function fmt(val) {
   if (val === null || val === undefined) return '—';
-  if (val === 0) return '₹0';
-  return formatINRFull(val);
+  if (typeof val === 'string') return val;
+  if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+  if (typeof val === 'number') {
+    if (val === 0) return '₹0';
+    return formatINRFull(val);
+  }
+  return String(val);
 }
 
 function formatHistoryDate(iso) {

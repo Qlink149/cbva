@@ -3,7 +3,8 @@ from datetime import datetime, timezone, date
 from bson import ObjectId
 from app.schemas.engagement import EngagementCreate, EngagementUpdate, RemarksUpdate, EngagementResponse
 from app.services.engagement_service import compute_totals
-from app.services.engagement_change_service import log_changes, list_changes
+from app.services.engagement_change_service import list_changes
+from app.services import audit_service
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.dependencies.pagination import pagination_params
@@ -80,13 +81,46 @@ def _serialize(doc: dict) -> dict:
     }
 
 
-async def _auto_upsert_pipeline_snapshot(leader_id: str, fiscal_year: str, now: datetime) -> None:
+def _engagement_derived_changes(existing: dict, green: int, amber: int, blue_sky: int, collected: int) -> list[dict]:
+    old_totals = compute_totals(
+        existing.get("green", 0),
+        existing.get("amber", 0),
+        existing.get("blue_sky", 0),
+        existing.get("collected", 0),
+    )
+    new_totals = compute_totals(green, amber, blue_sky, collected)
+    derived: list[dict] = []
+    for field, label in (("total", "Total"), ("balance", "Balance")):
+        if old_totals[field] != new_totals[field]:
+            derived.append(
+                {
+                    "field": field,
+                    "label": label,
+                    "old": old_totals[field],
+                    "new": new_totals[field],
+                    "derived": True,
+                }
+            )
+    return derived
+
+
+async def _auto_upsert_pipeline_snapshot(
+    leader_id: str,
+    fiscal_year: str,
+    now: datetime,
+    user: dict | None = None,
+    triggered_by: ObjectId | None = None,
+) -> None:
     """Auto-upsert a monthly pipeline snapshot whenever any engagement is saved."""
     today = date.today()
     month_key = f"{today.month:02d}"
     cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
     month_label = f"{MONTH_FULL_NAMES.get(month_key, month_key)} {cal_year}"
     sort_order = FY_MONTH_KEYS.index(month_key) + 1 if month_key in FY_MONTH_KEYS else 0
+
+    before_snap = await database.db.pipeline_snapshots.find_one(
+        {"leader_id": leader_id, "fiscal_year": fiscal_year, "label": month_label}
+    )
 
     agg = await database.db.engagements.aggregate([
         {"$match": {"leader_id": leader_id, "fiscal_year": fiscal_year, "is_archived": False}},
@@ -120,6 +154,27 @@ async def _auto_upsert_pipeline_snapshot(leader_id: str, fiscal_year: str, now: 
             upsert=True,
         )
 
+        if user is not None:
+            after_snap = await database.db.pipeline_snapshots.find_one(
+                {"leader_id": leader_id, "fiscal_year": fiscal_year, "label": month_label}
+            )
+            if after_snap:
+                old_total = before_snap.get("total") if before_snap else None
+                new_total = after_snap.get("total")
+                if before_snap is None or old_total != new_total:
+                    await audit_service.log_event(
+                        entity_type="pipeline_snapshot",
+                        entity_id=str(after_snap["_id"]),
+                        entity_label=month_label,
+                        action="updated" if before_snap else "created",
+                        user=user,
+                        changes=[{"field": "total", "label": "Total", "old": old_total, "new": new_total}],
+                        leader_id=leader_id,
+                        fiscal_year=fiscal_year,
+                        source="system",
+                        triggered_by=triggered_by,
+                    )
+
 
 async def _auto_update_bluesky(
     leader_id: str,
@@ -131,6 +186,8 @@ async def _auto_update_bluesky(
     old_amber: int,
     new_amber: int,
     now: datetime,
+    user: dict | None = None,
+    triggered_by: ObjectId | None = None,
 ) -> None:
     """Auto-update blue_sky_entries for the current month when blue_sky changes."""
     if new_blue_sky == old_blue_sky:
@@ -169,6 +226,19 @@ async def _auto_update_bluesky(
                 "updated_at": now,
             }},
         )
+        if user is not None:
+            await audit_service.log_event(
+                entity_type="bluesky_entry",
+                entity_id=str(existing["_id"]),
+                entity_label=month_label,
+                action="updated",
+                user=user,
+                changes=[{"field": "closing", "label": "Closing", "old": existing.get("closing"), "new": closing}],
+                leader_id=leader_id,
+                fiscal_year=fiscal_year,
+                source="system",
+                triggered_by=triggered_by,
+            )
     else:
         # Look up previous month's closing to set opening
         prev_idx = sort_order - 2  # 0-based index
@@ -189,7 +259,7 @@ async def _auto_update_bluesky(
             additional = 0
         closing = opening + additional - converted
 
-        await database.db.blue_sky_entries.insert_one({
+        insert_result = await database.db.blue_sky_entries.insert_one({
             "leader_id": leader_id,
             "fiscal_year": fiscal_year,
             "month": month_label,
@@ -202,6 +272,19 @@ async def _auto_update_bluesky(
             "created_at": now,
             "updated_at": now,
         })
+        if user is not None:
+            await audit_service.log_event(
+                entity_type="bluesky_entry",
+                entity_id=str(insert_result.inserted_id),
+                entity_label=month_label,
+                action="created",
+                user=user,
+                changes=[{"field": "closing", "label": "Closing", "old": None, "new": closing}],
+                leader_id=leader_id,
+                fiscal_year=fiscal_year,
+                source="system",
+                triggered_by=triggered_by,
+            )
 
 
 @router.get("/", response_model=dict)
@@ -243,14 +326,22 @@ async def create_engagement(body: EngagementCreate, current_user: dict = Depends
     result = await database.db.engagements.insert_one(doc)
     doc["_id"] = result.inserted_id
 
+    await audit_service.log_create(
+        "engagement", doc, current_user,
+        label=doc["name"],
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
+
     # Auto-snapshot pipeline for this month
-    await _auto_upsert_pipeline_snapshot(body.leader_id, body.fiscal_year, now)
+    await _auto_upsert_pipeline_snapshot(body.leader_id, body.fiscal_year, now, user=current_user)
 
     # Auto-update blue_sky if any
     if body.blue_sky > 0:
         await _auto_update_bluesky(
             body.leader_id, body.fiscal_year,
             0, body.blue_sky, 0, body.green, 0, body.amber, now,
+            user=current_user,
         )
 
     return _serialize(doc)
@@ -276,12 +367,9 @@ async def update_engagement(
         merged.update({k: v for k, v in body.monthly_plan.items() if v is not None})
         updates["monthly_plan"] = merged
 
-    await log_changes(existing, updates, current_user)
-
     green = updates.get("green", existing["green"])
     amber = updates.get("amber", existing["amber"])
     blue_sky = updates.get("blue_sky", existing.get("blue_sky", 0))
-    # collected is NOT in updates — always use existing (managed by collection_transactions)
     collected = existing.get("collected", 0)
     totals = compute_totals(green, amber, blue_sky, collected)
     updates.update(totals)
@@ -292,8 +380,21 @@ async def update_engagement(
         {"_id": ObjectId(engagement_id)}, {"$set": updates}, return_document=True
     )
 
+    audit_updates = {k: v for k, v in updates.items() if k not in ("total", "balance")}
+    derived = _engagement_derived_changes(existing, green, amber, blue_sky, collected)
+    audit_id = await audit_service.log_update(
+        "engagement", existing, audit_updates, current_user,
+        label=existing["name"],
+        derived=derived,
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
+
     # Auto-snapshot pipeline for this month
-    await _auto_upsert_pipeline_snapshot(existing["leader_id"], existing["fiscal_year"], now)
+    await _auto_upsert_pipeline_snapshot(
+        existing["leader_id"], existing["fiscal_year"], now,
+        user=current_user, triggered_by=audit_id,
+    )
 
     # Auto-update blue_sky_entries if blue_sky field changed
     old_bs = existing.get("blue_sky", 0)
@@ -305,6 +406,7 @@ async def update_engagement(
             existing.get("green", 0), green,
             existing.get("amber", 0), amber,
             now,
+            user=current_user, triggered_by=audit_id,
         )
 
     return _serialize(result)
@@ -335,8 +437,15 @@ async def archive_engagement(engagement_id: str, current_user: dict = Depends(ge
         {"_id": ObjectId(engagement_id)},
         {"$set": {"is_archived": True, "updated_at": now}},
     )
+    await audit_service.log_delete(
+        "engagement", existing, current_user,
+        label=existing["name"],
+        action="archived",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     # Re-snapshot after archiving
-    await _auto_upsert_pipeline_snapshot(existing["leader_id"], existing["fiscal_year"], now)
+    await _auto_upsert_pipeline_snapshot(existing["leader_id"], existing["fiscal_year"], now, user=current_user)
     return None
 
 
@@ -355,6 +464,7 @@ async def update_remarks(
     author = current_user.get("full_name") or current_user.get("email") or "Unknown"
     new_text = body.remarks.strip()
     history = list(existing.get("remarks_history") or [])
+    old_remarks = existing.get("remarks", "")
 
     if body.mode == "add":
         current = (existing.get("remarks") or "").strip()
@@ -370,4 +480,15 @@ async def update_remarks(
         {"$set": {"remarks": remarks, "remarks_history": history, "updated_at": now}},
         return_document=True,
     )
+    if remarks != old_remarks:
+        await audit_service.log_event(
+            entity_type="engagement",
+            entity_id=engagement_id,
+            entity_label=existing["name"],
+            action="updated",
+            user=current_user,
+            changes=[{"field": "remarks", "label": "Remarks", "old": old_remarks, "new": remarks}],
+            leader_id=existing["leader_id"],
+            fiscal_year=existing["fiscal_year"],
+        )
     return _serialize(result)

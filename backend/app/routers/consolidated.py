@@ -10,5 +10,7 @@ async def consolidated_summary(
     fiscal_year: str = Query(..., description="Report fiscal year slug, e.g. 2627"),
     current_user: dict = Depends(require_roles("admin", "management")),
 ):
+    from app.services.consolidated_service import ensure_imported_matrix as _ensure
+    await _ensure(fiscal_year, user=current_user)
     payload = await get_consolidated_summary(fiscal_year)
     return payload

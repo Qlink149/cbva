@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.task import TaskCreate, TaskUpdate, TaskStatusPatch, TaskResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -58,6 +59,11 @@ async def create_task(body: TaskCreate, current_user: dict = Depends(get_current
     }
     result = await database.db.tasks.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "task", doc, current_user,
+        label=doc["title"],
+        leader_id=leader_id,
+    )
     return _serialize(doc)
 
 
@@ -76,6 +82,11 @@ async def update_task(
     result = await database.db.tasks.find_one_and_update(
         {"_id": ObjectId(task_id)}, {"$set": updates}, return_document=True
     )
+    await audit_service.log_update(
+        "task", existing, updates, current_user,
+        label=existing["title"],
+        leader_id=existing["leader_id"],
+    )
     return _serialize(result)
 
 
@@ -86,6 +97,11 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Task not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await database.db.tasks.delete_one({"_id": ObjectId(task_id)})
+    await audit_service.log_delete(
+        "task", existing, current_user,
+        label=existing["title"],
+        leader_id=existing["leader_id"],
+    )
     return None
 
 
@@ -103,5 +119,11 @@ async def update_task_status(
         {"_id": ObjectId(task_id)},
         {"$set": {"status": body.status, "updated_at": datetime.now(timezone.utc)}},
         return_document=True,
+    )
+    await audit_service.log_update(
+        "task", existing, {"status": body.status}, current_user,
+        label=existing["title"],
+        leader_id=existing["leader_id"],
+        action="status_changed",
     )
     return _serialize(result)

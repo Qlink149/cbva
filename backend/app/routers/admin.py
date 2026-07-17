@@ -8,6 +8,7 @@ from app.services.fiscal_year import serialize_financial_year
 from app.core.security import hash_password
 from app.core import database
 from app.dependencies.auth import require_roles
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -52,11 +53,18 @@ async def create_user(body: UserCreate, current_user: dict = Depends(require_rol
     }
     result = await database.db.users.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "user", doc, current_user,
+        label=body.full_name,
+    )
     return _serialize_user(doc)
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
 async def update_user(user_id: str, body: UserUpdate, current_user: dict = Depends(require_roles("admin"))):
+    existing = await database.db.users.find_one({"_id": ObjectId(user_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "password"}
     if body.password:
         updates["password_hash"] = hash_password(body.password)
@@ -64,8 +72,19 @@ async def update_user(user_id: str, body: UserUpdate, current_user: dict = Depen
     result = await database.db.users.find_one_and_update(
         {"_id": ObjectId(user_id)}, {"$set": updates}, return_document=True
     )
-    if not result:
-        raise HTTPException(status_code=404, detail="User not found")
+    audit_updates = {k: v for k, v in updates.items() if k != "password_hash"}
+    derived: list[dict] = []
+    action = "updated"
+    if body.password:
+        derived.append({"field": "password", "label": "Password", "old": "•••", "new": "•••"})
+        if len(audit_updates) == 1 and "updated_at" in audit_updates:
+            action = "password_changed"
+    await audit_service.log_update(
+        "user", existing, audit_updates, current_user,
+        label=existing["full_name"],
+        derived=derived,
+        action=action,
+    )
     return _serialize_user(result)
 
 
@@ -73,13 +92,18 @@ async def update_user(user_id: str, body: UserUpdate, current_user: dict = Depen
 async def deactivate_user(user_id: str, current_user: dict = Depends(require_roles("admin"))):
     if str(current_user["_id"]) == user_id:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
-    result = await database.db.users.find_one_and_update(
+    existing = await database.db.users.find_one({"_id": ObjectId(user_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+    await database.db.users.update_one(
         {"_id": ObjectId(user_id)},
         {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
-        return_document=True,
     )
-    if not result:
-        raise HTTPException(status_code=404, detail="User not found")
+    await audit_service.log_delete(
+        "user", existing, current_user,
+        label=existing["full_name"],
+        action="archived",
+    )
     return None
 
 
@@ -96,10 +120,18 @@ async def get_settings(current_user: dict = Depends(require_roles("admin"))):
 @router.put("/settings", response_model=AppSettingsResponse)
 async def update_settings(body: PublicSettings, current_user: dict = Depends(require_roles("admin"))):
     settings_dict = body.model_dump()
+    existing = await database.db.app_settings.find_one({"_id": "global"})
     await database.db.app_settings.update_one(
         {"_id": "global"},
         {"$set": {"public_settings": settings_dict, "updated_at": datetime.now(timezone.utc)}},
         upsert=True,
+    )
+    await audit_service.log_update(
+        "settings",
+        existing or {},
+        {"public_settings": settings_dict},
+        current_user,
+        label="App Settings",
     )
     return AppSettingsResponse(public_settings=body)
 
@@ -119,6 +151,11 @@ async def create_client(body: dict, current_user: dict = Depends(require_roles("
     now = datetime.now(timezone.utc)
     body["created_at"] = now
     result = await database.db.clients.insert_one(body)
+    body["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "client", body, current_user,
+        label=body.get("name", "Client"),
+    )
     body["id"] = str(result.inserted_id)
     return body
 
@@ -137,6 +174,11 @@ async def list_engagement_types(current_user: dict = Depends(require_roles("admi
 async def create_engagement_type(body: dict, current_user: dict = Depends(require_roles("admin"))):
     body.setdefault("is_active", True)
     result = await database.db.engagement_types.insert_one(body)
+    body["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "engagement_type", body, current_user,
+        label=body.get("name", "Engagement Type"),
+    )
     body["id"] = str(result.inserted_id)
     return body
 
@@ -159,8 +201,20 @@ async def create_financial_year(body: FinancialYearCreate, current_user: dict = 
     doc["updated_at"] = now
     if doc.get("is_current"):
         await database.db.financial_years.update_many({}, {"$set": {"is_current": False}})
+        await audit_service.log_event(
+            entity_type="financial_year",
+            entity_id="all",
+            entity_label=body.slug,
+            action="updated",
+            user=current_user,
+            changes=[{"field": "is_current", "label": "Is Current", "old": True, "new": False, "note": f"Unset by new FY {body.slug}"}],
+        )
     result = await database.db.financial_years.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "financial_year", doc, current_user,
+        label=body.slug,
+    )
     return serialize_financial_year(doc)
 
 
@@ -182,7 +236,19 @@ async def update_financial_year(
             {"_id": {"$ne": ObjectId(fy_id)}},
             {"$set": {"is_current": False, "updated_at": updates["updated_at"]}},
         )
+        await audit_service.log_event(
+            entity_type="financial_year",
+            entity_id="all",
+            entity_label=existing["slug"],
+            action="updated",
+            user=current_user,
+            changes=[{"field": "is_current", "label": "Is Current", "old": True, "new": False, "note": f"Unset by setting {existing['slug']} as current"}],
+        )
     result = await database.db.financial_years.find_one_and_update(
         {"_id": ObjectId(fy_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "financial_year", existing, updates, current_user,
+        label=existing["slug"],
     )
     return serialize_financial_year(result)

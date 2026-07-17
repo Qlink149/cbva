@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.team import TeamMemberCreate, TeamMemberUpdate, TeamMemberResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -95,6 +96,11 @@ async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.team_members.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "team_member", doc, current_user,
+        label=doc["full_name"],
+        leader_id=body.leader_id,
+    )
     return _serialize(doc)
 
 
@@ -117,6 +123,11 @@ async def update_member(
     result = await database.db.team_members.find_one_and_update(
         {"_id": ObjectId(member_id)}, {"$set": updates}, return_document=True
     )
+    await audit_service.log_update(
+        "team_member", existing, updates, current_user,
+        label=existing["full_name"],
+        leader_id=existing["leader_id"],
+    )
     return _serialize(result)
 
 
@@ -127,4 +138,9 @@ async def delete_member(member_id: str, current_user: dict = Depends(get_current
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await database.db.team_members.delete_one({"_id": ObjectId(member_id)})
+    await audit_service.log_delete(
+        "team_member", existing, current_user,
+        label=existing["full_name"],
+        leader_id=existing["leader_id"],
+    )
     return None

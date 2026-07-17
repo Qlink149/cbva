@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.schemas.el_summary import ELSummaryUpdate, ELSummaryResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -133,6 +134,12 @@ async def update_el_summary(
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.el_summaries.find_one_and_update(
         {"_id": ObjectId(summary_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "el_summary", existing, updates, current_user,
+        label=f"{existing['leader_id']} — {existing['fiscal_year']}",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     live = await _compute_live(existing["leader_id"], existing["fiscal_year"])
     merged = _serialize(result)

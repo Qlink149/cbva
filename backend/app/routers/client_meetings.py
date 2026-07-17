@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -104,6 +105,12 @@ async def create_client_meeting(
     doc["updated_at"] = now
     result = await database.db.client_meetings.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "client_meeting", doc, current_user,
+        label=body.client_name,
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
     return _serialize(doc)
 
 
@@ -122,6 +129,12 @@ async def update_client_meeting(
     result = await database.db.client_meetings.find_one_and_update(
         {"_id": ObjectId(meeting_id)}, {"$set": updates}, return_document=True
     )
+    await audit_service.log_update(
+        "client_meeting", existing, updates, current_user,
+        label=existing.get("client_name", ""),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return _serialize(result)
 
 
@@ -135,4 +148,10 @@ async def delete_client_meeting(
         raise HTTPException(status_code=404, detail="Client meeting not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await database.db.client_meetings.delete_one({"_id": ObjectId(meeting_id)})
+    await audit_service.log_delete(
+        "client_meeting", existing, current_user,
+        label=existing.get("client_name", ""),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return None

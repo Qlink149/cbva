@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -8,6 +9,7 @@ import sys
 
 from app.core.config import settings
 from app.core.database import connect_db, close_db, ensure_db_connected
+from app.services.audit_service import request_id_ctx
 from app.core.limiter import limiter
 from app.routers import (
     auth,
@@ -31,6 +33,7 @@ from app.routers import (
     financial_years,
     client_meetings,
     consolidated,
+    audit,
 )
 
 
@@ -55,6 +58,15 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.middleware("http")
+async def audit_request_id_middleware(request: Request, call_next):
+    token = request_id_ctx.set(uuid4().hex)
+    try:
+        return await call_next(request)
+    finally:
+        request_id_ctx.reset(token)
 
 
 @app.middleware("http")
@@ -100,6 +112,7 @@ app.include_router(assessments.router, prefix="/api/assessments",  tags=["Assess
 app.include_router(firmwide.router,    prefix="/api/firmwide",     tags=["Firmwide"])
 app.include_router(consolidated.router, prefix="/api/consolidated-summary", tags=["Consolidated"])
 app.include_router(admin.router,       prefix="/api/admin",        tags=["Admin"])
+app.include_router(audit.router,       prefix="/api/audit-log",    tags=["AuditLog"])
 
 
 @app.get("/health")
