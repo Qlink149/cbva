@@ -24,7 +24,6 @@ import { useTeam } from '@/hooks/useTeam';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { useBaselines } from '@/hooks/useBaselines';
 import { useConsolidated } from '@/hooks/useConsolidated';
-import { hardcodedBlueSky, hardcodedCollections } from '@/lib/consolidatedSummary';
 
 const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
 
@@ -68,12 +67,10 @@ export default function LeaderDashboard({ user }) {
     ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
     : null;
 
-  const blueSkyOverride = hardcodedBlueSky(activeFY, selectedLeaderId);
-  const blueSkyRows = blueSkyOverride?.rows ?? blueSkyRes?.data ?? [];
-  const blueSkyTotals = blueSkyOverride?.totals ?? blueSkyRes?.totals ?? {};
-  const collectionsOverride = hardcodedCollections(activeFY, selectedLeaderId, collectionsRes?.data ?? []);
-  const collectionRows = collectionsOverride?.rows ?? collectionsRes?.data ?? [];
-  const totalCollected = collectionsOverride?.totalCollected ?? collectionsRes?.total_collected ?? 0;
+  const blueSkyRows = blueSkyRes?.data ?? [];
+  const blueSkyTotals = blueSkyRes?.totals ?? {};
+  const collectionRows = collectionsRes?.data ?? [];
+  const totalCollected = collectionsRes?.total_collected ?? 0;
   const clients = engagementsRes ?? [];
   const hasEngagements = clients.length > 0;
 

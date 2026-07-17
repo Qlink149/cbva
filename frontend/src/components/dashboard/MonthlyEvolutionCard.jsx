@@ -8,7 +8,7 @@ import {
   getAvailableFyMonths,
   MONTH_FULL_NAMES,
 } from '@/lib/fyMonths';
-import { priorYearActualRowsForLeader, hardcodedBoardPlan } from '@/lib/consolidatedSummary';
+import { priorYearActualRowsForLeader } from '@/lib/consolidatedSummary';
 
 /** Show em-dash for missing or zero amounts — never hide the cell. */
 function fmt(val, emptyLabel = '—') {
@@ -66,52 +66,20 @@ export default function MonthlyEvolutionCard({
   );
 
   const { planRows, prevMonthRows, currentRow } = useMemo(() => {
-    const boardOverride = hardcodedBoardPlan(fySlug, leaderId);
-
     const plans = (pipelineData || [])
       .filter((r) => {
         const t = (r.snapshot_type || '').toLowerCase();
         const label = (r.label || '').toLowerCase();
         return t === 'initial' || t === 'board' || label.includes('initial plan') || label.includes('board plan');
       })
-      .map((r) => {
-        const isBoard =
-          (r.snapshot_type || '').toLowerCase() === 'board' ||
-          (r.label || '').toLowerCase().includes('board plan');
-        if (isBoard && boardOverride) {
-          return {
-            key: `plan-${boardOverride.label}`,
-            label: boardOverride.label,
-            green: boardOverride.green,
-            amber: boardOverride.amber,
-            blueSky: boardOverride.blueSky,
-            total: boardOverride.total,
-          };
-        }
-        return {
-          key: `plan-${r.label}`,
-          label: r.label,
-          green: r.green,
-          amber: r.amber,
-          blueSky: r.blueSky,
-          total: r.total,
-        };
-      });
-
-    // If pipeline has no board row but we have a hardcode, insert it after initial
-    if (boardOverride && !plans.some((p) => (p.label || '').toLowerCase().includes('board'))) {
-      const boardRow = {
-        key: `plan-${boardOverride.label}`,
-        label: boardOverride.label,
-        green: boardOverride.green,
-        amber: boardOverride.amber,
-        blueSky: boardOverride.blueSky,
-        total: boardOverride.total,
-      };
-      const initialIdx = plans.findIndex((p) => (p.label || '').toLowerCase().includes('initial'));
-      if (initialIdx >= 0) plans.splice(initialIdx + 1, 0, boardRow);
-      else plans.unshift(boardRow);
-    }
+      .map((r) => ({
+        key: `plan-${r.label}`,
+        label: r.label,
+        green: r.green,
+        amber: r.amber,
+        blueSky: r.blueSky,
+        total: r.total,
+      }));
 
     const monthlyByKey = {};
     (pipelineData || []).forEach((r) => {

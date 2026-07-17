@@ -1,6 +1,5 @@
 import React from 'react';
 import { formatINRFull } from '@/lib/formatCurrency';
-import { hardcodedBoardPlan } from '@/lib/consolidatedSummary';
 
 function fmt(val) {
   return formatINRFull(val);
@@ -16,20 +15,9 @@ export default function PipelineBoardChart({
   prevFyTotal = null,
   prevFyLabel = '',
 }) {
-  const boardOverride = hardcodedBoardPlan(fySlug, leaderId);
-  const boardFromPipeline = pipelineData.find(r => r.label?.toLowerCase().includes('board')) ||
+  const board = pipelineData.find(r => r.label?.toLowerCase().includes('board')) ||
     pipelineData.find(r => r.amber != null || r.blueSky != null) ||
     pipelineData[0];
-  const board = boardOverride
-    ? {
-        ...boardFromPipeline,
-        label: boardOverride.label,
-        green: boardOverride.green,
-        amber: boardOverride.amber,
-        blueSky: boardOverride.blueSky,
-        total: boardOverride.total,
-      }
-    : boardFromPipeline;
   const latest = pipelineData[pipelineData.length - 1];
 
   const boardTotal = board ? (board.total || ((board.green || 0) + (board.amber || 0) + (board.blueSky || 0))) : null;
