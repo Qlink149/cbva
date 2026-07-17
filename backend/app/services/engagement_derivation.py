@@ -307,29 +307,8 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
             upsert=True,
         )
 
-    # Blue sky ledger — single current-month row from engagement blue_sky total
-    if totals["blue_sky"] > 0:
-        month_label = _month_label(current_mk, fiscal_year)
-        sort_order = FY_MONTH_KEYS.index(current_mk) + 1 if current_mk in FY_MONTH_KEYS else 12
-        await database.db.blue_sky_entries.update_one(
-            {"leader_id": leader_id, "fiscal_year": fiscal_year, "month": month_label},
-            {
-                "$set": {
-                    "leader_id": leader_id,
-                    "fiscal_year": fiscal_year,
-                    "month": month_label,
-                    "sort_order": sort_order,
-                    "opening": 0,
-                    "additional": totals["blue_sky"],
-                    "converted": 0,
-                    "closing": totals["blue_sky"],
-                    "remarks": "",
-                    "updated_at": now,
-                },
-                "$setOnInsert": {"created_at": now},
-            },
-            upsert=True,
-        )
+    # Blue sky ledger is owned by engagement write cascades (_auto_update_bluesky).
+    # Do NOT overwrite blue_sky_entries here — that destroys Opening/Additional/Converted history.
 
     return True
 

@@ -23,7 +23,9 @@ export default function BlueSkyPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Blue Sky</h1>
-          <p className="text-sm text-muted-foreground mt-1">Pipeline pool tracking & monthly movement</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Monthly Opening / Additional / Converted / Closing — FY start through current month
+          </p>
         </div>
         <LeaderFYSelector />
       </div>

@@ -175,29 +175,79 @@ async def get_firmwide_dashboard_aggregate(fiscal_year: str) -> dict:
     bluesky_docs = await database.db.blue_sky_entries.find(
         {"fiscal_year": fiscal_year, "leader_id": {"$in": leader_ids}}
     ).to_list(length=500)
-    bluesky_totals = {
-        "additional": sum(d.get("additional") or 0 for d in bluesky_docs),
-        "converted": sum(d.get("converted", 0) for d in bluesky_docs),
+
+    MONTH_FULL = {
+        "04": "April", "05": "May", "06": "June", "07": "July",
+        "08": "August", "09": "September", "10": "October", "11": "November",
+        "12": "December", "01": "January", "02": "February", "03": "March",
     }
 
-    bluesky_monthly_map: dict = {}
+    def _mk_from_label(month_str: str) -> str | None:
+        for key, name in MONTH_FULL.items():
+            if month_str.startswith(name):
+                return key
+        return None
+
+    from app.services.fy_calendar import get_fy_month_calendar_year
+    allowed_month_keys = get_available_fy_month_keys(fiscal_year, date.today())
+
+    bluesky_by_key: dict[str, dict] = {}
     for doc in bluesky_docs:
-        month = doc["month"]
-        if month not in bluesky_monthly_map:
-            bluesky_monthly_map[month] = {
-                "month": month,
+        mk = doc.get("month_key") or _mk_from_label(doc.get("month", ""))
+        if not mk or mk not in allowed_month_keys:
+            continue
+        if mk not in bluesky_by_key:
+            bluesky_by_key[mk] = {
                 "opening": 0,
                 "additional": 0,
                 "converted": 0,
                 "closing": 0,
-                "sort_order": doc.get("sort_order", 0),
+                "has_data": False,
             }
-        bluesky_monthly_map[month]["opening"] += doc.get("opening") or 0
-        bluesky_monthly_map[month]["additional"] += doc.get("additional") or 0
-        bluesky_monthly_map[month]["converted"] += doc.get("converted") or 0
-        bluesky_monthly_map[month]["closing"] += doc.get("closing") or 0
+        bluesky_by_key[mk]["opening"] += doc.get("opening") or 0
+        bluesky_by_key[mk]["additional"] += doc.get("additional") or 0
+        bluesky_by_key[mk]["converted"] += doc.get("converted") or 0
+        bluesky_by_key[mk]["closing"] += doc.get("closing") or 0
+        bluesky_by_key[mk]["has_data"] = True
 
-    bluesky_monthly = sorted(bluesky_monthly_map.values(), key=lambda x: x.get("sort_order", 0))
+    bluesky_monthly = []
+    for i, mk in enumerate(allowed_month_keys):
+        cal_year = get_fy_month_calendar_year(mk, fiscal_year)
+        month_label = f"{MONTH_FULL[mk]} {cal_year}"
+        agg = bluesky_by_key.get(mk)
+        if agg and agg["has_data"]:
+            bluesky_monthly.append({
+                "month": month_label,
+                "month_key": mk,
+                "opening": agg["opening"],
+                "additional": agg["additional"],
+                "converted": agg["converted"],
+                "closing": agg["closing"],
+                "has_data": True,
+                "sort_order": i + 1,
+            })
+        else:
+            bluesky_monthly.append({
+                "month": month_label,
+                "month_key": mk,
+                "opening": None,
+                "additional": None,
+                "converted": None,
+                "closing": None,
+                "has_data": False,
+                "sort_order": i + 1,
+            })
+
+    data_months = [m for m in bluesky_monthly if m.get("has_data")]
+    bluesky_totals = {
+        "opening": next((m["opening"] for m in data_months if m.get("opening") is not None), None),
+        "additional": sum(m.get("additional") or 0 for m in data_months) if data_months else None,
+        "converted": sum(m.get("converted") or 0 for m in data_months) if data_months else None,
+        "closing": next(
+            (m["closing"] for m in reversed(data_months) if m.get("closing") is not None),
+            None,
+        ),
+    }
 
     # Planned targets from collection_entries
     ce_docs = await database.db.collection_entries.find(
@@ -215,15 +265,6 @@ async def get_firmwide_dashboard_aggregate(fiscal_year: str) -> dict:
     ]).to_list(length=12)
     actual_by_month_key: dict = {row["_id"]: row["collected"] for row in tx_agg}
 
-    FY_MONTH_KEYS = ["04", "05", "06", "07", "08", "09", "10", "11", "12", "01", "02", "03"]
-    MONTH_FULL = {
-        "04": "April", "05": "May", "06": "June", "07": "July",
-        "08": "August", "09": "September", "10": "October", "11": "November",
-        "12": "December", "01": "January", "02": "February", "03": "March",
-    }
-
-    from app.services.fy_calendar import get_fy_month_calendar_year
-    allowed_month_keys = get_available_fy_month_keys(fiscal_year, date.today())
     monthly_lines = []
     total_collected = 0
     for mk in allowed_month_keys:

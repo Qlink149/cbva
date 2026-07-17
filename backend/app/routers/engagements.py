@@ -189,16 +189,23 @@ async def _auto_update_bluesky(
     user: dict | None = None,
     triggered_by: ObjectId | None = None,
 ) -> None:
-    """Auto-update blue_sky_entries for the current month when blue_sky changes."""
+    """Update Opening/Additional/Converted/Closing for the CURRENT month only.
+
+    Past months are never rewritten — they stay as historical ledger closes.
+    opening for a new month row = previous month's closing when available.
+    """
     if new_blue_sky == old_blue_sky:
         return
 
     delta = new_blue_sky - old_blue_sky
     today = date.today()
     month_key = f"{today.month:02d}"
+    if month_key not in FY_MONTH_KEYS:
+        return
+
     cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
     month_label = f"{MONTH_FULL_NAMES.get(month_key, month_key)} {cal_year}"
-    sort_order = FY_MONTH_KEYS.index(month_key) + 1 if month_key in FY_MONTH_KEYS else 0
+    sort_order = FY_MONTH_KEYS.index(month_key) + 1
 
     is_conversion = (delta < 0) and (new_green > old_green or new_amber > old_amber)
 
@@ -220,6 +227,7 @@ async def _auto_update_bluesky(
         await database.db.blue_sky_entries.update_one(
             {"_id": existing["_id"]},
             {"$set": {
+                "month_key": month_key,
                 "additional": additional,
                 "converted": converted,
                 "closing": closing,
@@ -240,18 +248,18 @@ async def _auto_update_bluesky(
                 triggered_by=triggered_by,
             )
     else:
-        # Look up previous month's closing to set opening
-        prev_idx = sort_order - 2  # 0-based index
+        # Opening = latest prior month's closing in this FY (skip gaps)
         opening = 0
-        if prev_idx >= 0:
-            prev_key = FY_MONTH_KEYS[prev_idx]
+        cur_idx = FY_MONTH_KEYS.index(month_key)
+        for prev_key in reversed(FY_MONTH_KEYS[:cur_idx]):
             prev_cal = get_fy_month_calendar_year(prev_key, fiscal_year)
             prev_label = f"{MONTH_FULL_NAMES.get(prev_key, prev_key)} {prev_cal}"
             prev_entry = await database.db.blue_sky_entries.find_one(
                 {"leader_id": leader_id, "fiscal_year": fiscal_year, "month": prev_label}
             )
-            if prev_entry:
+            if prev_entry and prev_entry.get("closing") is not None:
                 opening = prev_entry.get("closing") or 0
+                break
 
         additional = max(0, delta) if delta > 0 else 0
         converted = abs(delta) if is_conversion else 0
@@ -263,6 +271,7 @@ async def _auto_update_bluesky(
             "leader_id": leader_id,
             "fiscal_year": fiscal_year,
             "month": month_label,
+            "month_key": month_key,
             "sort_order": sort_order,
             "opening": opening,
             "additional": additional,

@@ -5,9 +5,14 @@ import BlueSkyTableReal from '@/components/dashboard/BlueSkyTableReal';
 export default function BlueSkyFunnelCard({ blueskyRows = [], totals = null, baseline = null }) {
   const summary = useMemo(() => {
     if (totals) return totals;
+    const withData = blueskyRows.filter((r) => r.has_data !== false);
     return {
-      additional: blueskyRows.reduce((s, r) => s + (r.additional || 0), 0),
-      converted: blueskyRows.reduce((s, r) => s + (r.converted || 0), 0),
+      additional: withData.length
+        ? withData.reduce((s, r) => s + (r.additional || 0), 0)
+        : null,
+      converted: withData.length
+        ? withData.reduce((s, r) => s + (r.converted || 0), 0)
+        : null,
     };
   }, [blueskyRows, totals]);
 
@@ -24,11 +29,15 @@ export default function BlueSkyFunnelCard({ blueskyRows = [], totals = null, bas
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-card rounded-xl border border-border/60 p-4">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Additional Pipeline</p>
-          <p className="text-xl font-semibold font-tabular mt-1">{formatINR(summary.additional)}</p>
+          <p className="text-xl font-semibold font-tabular mt-1">
+            {summary.additional == null ? '—' : formatINR(summary.additional)}
+          </p>
         </div>
         <div className="bg-card rounded-xl border border-border/60 p-4">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Converted</p>
-          <p className="text-xl font-semibold font-tabular text-emerald-700 mt-1">{formatINR(summary.converted)}</p>
+          <p className="text-xl font-semibold font-tabular text-emerald-700 mt-1">
+            {summary.converted == null ? '—' : formatINR(summary.converted)}
+          </p>
         </div>
       </div>
       {baseline?.baseline_blue_sky != null && (

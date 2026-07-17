@@ -56,6 +56,7 @@ async def _create_indexes() -> None:
         [("leader_id", 1), ("fiscal_year", 1), ("month", 1)],
         unique=True,
     )
+    await db.blue_sky_entries.create_index([("leader_id", 1), ("fiscal_year", 1), ("month_key", 1)])
     await db.collection_entries.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
     await db.collection_entries.create_index(
         [("leader_id", 1), ("fiscal_year", 1), ("month", 1)],

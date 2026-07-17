@@ -20,13 +20,18 @@ function ChartTooltip({ active, payload, label }) {
 
 export default function BlueSkyPoolCard({ openingBlueSky = 0, blueskyRows = [] }) {
   const chartData = useMemo(() =>
-    blueskyRows.map(row => ({
-      label: row.month,
-      amount: row.closing ?? 0,
-    })),
+    blueskyRows
+      .filter((row) => row.has_data !== false && row.closing != null)
+      .map((row) => ({
+        label: row.month,
+        amount: row.closing,
+      })),
   [blueskyRows]);
 
-  const opening = openingBlueSky || blueskyRows[0]?.opening || 0;
+  const firstWithOpening = blueskyRows.find(
+    (row) => row.has_data !== false && row.opening != null,
+  );
+  const opening = openingBlueSky || firstWithOpening?.opening || 0;
   const hero = formatINRHero(opening);
 
   if (!blueskyRows.length) {
