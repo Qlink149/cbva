@@ -40,7 +40,12 @@ ENTITY_COLLECTIONS: dict[str, tuple[str, str | None]] = {
 def _apply_role_filters(current_user: dict, filters: dict) -> dict:
     role = current_user.get("role")
     if role == "user":
-        filters["leader_id"] = current_user.get("leader_id")
+        leader_id = current_user.get("leader_id")
+        if not leader_id:
+            # A leader-role user without a leader_id must never fall through
+            # to an unscoped query (list_audit drops falsy filters).
+            raise HTTPException(status_code=403, detail="No leader scope assigned")
+        filters["leader_id"] = leader_id
         filters["entity_type_nin"] = list(LEADER_EXCLUDED_TYPES)
     elif role == "management":
         filters["entity_type_nin"] = list(MANAGEMENT_EXCLUDED_TYPES)
