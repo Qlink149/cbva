@@ -7,13 +7,43 @@ function fmtCell(val) {
   return formatINRFull(val);
 }
 
-export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '' }) {
-  const [remarks, setRemarks] = useState(() => blueSkyRows.map((r) => r.remarks || ''));
+function RemarkInput({ value = '', onSave, disabled }) {
+  const [draft, setDraft] = useState(value || '');
 
   useEffect(() => {
-    setRemarks(blueSkyRows.map((r) => r.remarks || ''));
-  }, [blueSkyRows]);
+    setDraft(value || '');
+  }, [value]);
 
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== (value || '').trim()) {
+      onSave?.(next);
+    }
+  };
+
+  if (disabled) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+
+  return (
+    <input
+      className={`w-full min-w-[220px] text-xs border border-transparent hover:border-border rounded px-2 py-1.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors placeholder:text-slate-400 ${
+        draft ? 'text-foreground' : 'text-muted-foreground'
+      }`}
+      placeholder="Add remark..."
+      maxLength={120}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      title={draft || undefined}
+    />
+  );
+}
+
+export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '', onUpdateRemarks }) {
   const firstWithData = blueSkyRows.find((r) => r.has_data !== false && r.opening != null);
   const openingChip = firstWithData?.opening ?? totals?.opening;
 
@@ -76,7 +106,7 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
                       )}
                     </span>
                   </td>
-                  <td className={`py-3 text-right font-tabular col-num ${noData ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+                  <td className="py-3 text-right font-tabular text-muted-foreground col-num">
                     {fmtCell(row.opening)}
                   </td>
                   <td className={`py-3 text-right font-tabular col-num ${noData ? 'text-muted-foreground' : 'text-cbva-navy'}`}>
@@ -89,17 +119,11 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
                     {fmtCell(row.closing)}
                   </td>
                   <td className="py-3 px-4 col-remarks">
-                    {noData ? (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    ) : (
-                      <input
-                        className="w-full max-w-[200px] text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground placeholder:text-slate-400"
-                        placeholder="Client converted..."
-                        maxLength={40}
-                        value={remarks[i] || ''}
-                        onChange={e => setRemarks(prev => { const n = [...prev]; n[i] = e.target.value; return n; })}
-                      />
-                    )}
+                    <RemarkInput
+                      value={row.remarks || ''}
+                      disabled={noData || !row.id}
+                      onSave={(remarks) => onUpdateRemarks?.(row, remarks)}
+                    />
                   </td>
                 </tr>
               );

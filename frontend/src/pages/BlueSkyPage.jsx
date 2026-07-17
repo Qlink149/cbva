@@ -3,7 +3,7 @@ import BlueSkyPoolCard from '@/components/bluesky/BlueSkyPoolCard';
 import BlueSkyFunnelCard from '@/components/bluesky/BlueSkyFunnelCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { useBluesky } from '@/hooks/useBluesky';
+import { useBluesky, useUpdateBlueskyRemarks } from '@/hooks/useBluesky';
 import { useBaselines } from '@/hooks/useBaselines';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 
@@ -11,6 +11,7 @@ export default function BlueSkyPage() {
   const { selectedLeaderId, activeFY } = useGlobalSelector();
   const { data: blueskyData, isLoading: blueskyLoading } = useBluesky(selectedLeaderId, activeFY);
   const { data: baselines = [], isLoading: baselineLoading } = useBaselines(selectedLeaderId);
+  const updateRemarks = useUpdateBlueskyRemarks(selectedLeaderId, activeFY);
 
   const baseline = baselines[0];
   const totals = blueskyData?.totals;
@@ -33,7 +34,12 @@ export default function BlueSkyPage() {
         openingBlueSky={baseline?.baseline_blue_sky || totals?.additional || 0}
         blueskyRows={blueskyData?.data ?? []}
       />
-      <BlueSkyFunnelCard blueskyRows={blueskyData?.data ?? []} totals={totals} baseline={baseline} />
+      <BlueSkyFunnelCard
+        blueskyRows={blueskyData?.data ?? []}
+        totals={totals}
+        baseline={baseline}
+        onUpdateRemarks={(row, remarks) => updateRemarks.mutate({ entryId: row.id, remarks })}
+      />
     </div>
   );
 }

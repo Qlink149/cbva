@@ -161,7 +161,7 @@
 
   /* Wide column: Remarks (leaders write full sentences) */
   .col-remarks {
-    @apply min-w-[240px] whitespace-normal align-top;
+    @apply min-w-[280px] w-[28%] whitespace-normal align-middle;
   }
 
   .page-width {

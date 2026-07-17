@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { formatINR } from '@/lib/formatCurrency';
 import BlueSkyTableReal from '@/components/dashboard/BlueSkyTableReal';
 
-export default function BlueSkyFunnelCard({ blueskyRows = [], totals = null, baseline = null }) {
+export default function BlueSkyFunnelCard({ blueskyRows = [], totals = null, baseline = null, onUpdateRemarks }) {
   const summary = useMemo(() => {
     if (totals) return totals;
     const withData = blueskyRows.filter((r) => r.has_data !== false);
@@ -45,7 +45,7 @@ export default function BlueSkyFunnelCard({ blueskyRows = [], totals = null, bas
           Board baseline: {formatINR(baseline.baseline_blue_sky)}
         </p>
       )}
-      <BlueSkyTableReal blueSkyRows={blueskyRows} totals={summary} />
+      <BlueSkyTableReal blueSkyRows={blueskyRows} totals={summary} onUpdateRemarks={onUpdateRemarks} />
     </div>
   );
 }
