@@ -8,7 +8,7 @@ import { useClientActions } from '@/lib/ClientActionsContext';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useTeam } from '@/hooks/useTeam';
 import { useEngagements } from '@/hooks/useEngagements';
-import { useCollectionTransactions } from '@/hooks/useCollectionTransactions';
+import { useCollectionTransactions, useAddTransaction, useDeleteTransaction } from '@/hooks/useCollectionTransactions';
 import MonthSelector from '@/components/clients/MonthSelector';
 import { getDefaultMonthKey, MONTH_SHORT_NAMES } from '@/lib/fyMonths';
 import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth } from '@/lib/collectionsRollup';
@@ -71,12 +71,144 @@ function EngagementColGroup({ collectionsOpen, showScope, monthCount }) {
   );
 }
 
-function ELBadge({ status }) {
-  if (status === 'Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-green-bg text-status-green">Signed</span>;
-  if (status === 'Not Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-red-bg text-status-red">Not Signed</span>;
-  if (status === 'Waived') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600">Waived</span>;
-  if (status && status.includes('/')) return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">{status}</span>;
-  return <span className="text-xs text-muted-foreground">{status || '-'}</span>;
+const EL_STATUS_OPTIONS = ['Signed', 'Not Signed', 'Waived', 'NA', 'DS', '—'];
+
+function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stickyClass, stickyStyle }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit(e) {
+    e.stopPropagation();
+    setDraft(value || '');
+    setEditing(true);
+  }
+
+  function commit() {
+    const next = draft.trim();
+    if (next && next !== (value || '').trim()) onChange(next);
+    setEditing(false);
+  }
+
+  return (
+    <td className={`${stickyClass} py-2 px-2 font-medium text-foreground`} style={stickyStyle}>
+      <div className="flex items-center gap-1.5 w-full">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={isExpanded}
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details`}
+          className="text-muted-foreground hover:text-cbva-navy transition-colors shrink-0 p-0.5 rounded"
+        >
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+        {editing ? (
+          <input
+            autoFocus
+            className="flex-1 min-w-0 text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={startEdit}
+            title="Click to edit name"
+            className={`flex-1 min-w-0 text-left truncate rounded-md px-1 py-0.5 hover:bg-muted/40 hover:text-cbva-navy hover:underline underline-offset-2 transition-colors ${isExpanded ? 'text-cbva-navy' : 'text-foreground'}`}
+          >
+            {value || <span className="text-muted-foreground italic no-underline">Unidentified</span>}
+          </button>
+        )}
+        {actCount > 0 && (
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold shrink-0">
+            {actCount}
+          </span>
+        )}
+      </div>
+    </td>
+  );
+}
+
+function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, suggestions = [] }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const listId = 'engagement-rel-partner-suggestions';
+
+  function startEdit() {
+    setDraft(value || '');
+    setEditing(true);
+  }
+
+  function commit() {
+    const next = draft.trim();
+    if (next !== (value || '').trim()) onChange(next);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
+        <input
+          autoFocus
+          list={listId}
+          className="w-full text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+        <datalist id={listId}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      </td>
+    );
+  }
+
+  const label = relationshipPartnerLabel(value);
+  return (
+    <td
+      className={`${stickyClass} py-3 px-3 text-xs text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors`}
+      style={stickyStyle}
+      onClick={startEdit}
+      title="Click to edit relationship partner"
+    >
+      {label !== '-' ? (
+        <span className="truncate block max-w-[90px]" title={label}>{label}</span>
+      ) : (
+        <span className="text-muted-foreground/60">-</span>
+      )}
+    </td>
+  );
+}
+
+function ELStatusCell({ value, onChange, stickyClass, stickyStyle }) {
+  return (
+    <td className={`${stickyClass} py-2 px-1.5 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ ...stickyStyle, clipPath: 'inset(0 -15px 0 0)' }}>
+      <select
+        aria-label="EL status"
+        title="Change EL status"
+        className="w-full text-[10px] border border-transparent hover:border-border/60 rounded px-1 py-1 bg-transparent cursor-pointer focus:outline-none focus:ring-1 focus:ring-cbva-navy/40"
+        value={value || '—'}
+        onChange={(e) => {
+          if (e.target.value !== (value || '—')) onChange(e.target.value);
+        }}
+      >
+        {EL_STATUS_OPTIONS.map((opt) => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+    </td>
+  );
 }
 
 function ManagerCell({ value, onChange, stickyClass, stickyStyle, listId }) {
@@ -219,6 +351,54 @@ function RemarkCell({ value, onChange }) {
 }
 
 
+function CollectedMonthCell({ value, onSetAmount, pending }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    setDraft(value > 0 ? String(value) : '0');
+    setEditing(true);
+  }
+
+  async function commit() {
+    const parsed = parseFloat(draft);
+    if (!isNaN(parsed) && parsed >= 0) {
+      const next = Math.round(parsed);
+      if (next !== (value || 0)) await onSetAmount(next);
+    }
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className="py-1 px-2 text-right">
+        <input
+          autoFocus
+          disabled={pending}
+          className="w-24 text-right text-xs border border-cbva-navy rounded px-1 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className="py-3 px-3 text-right font-tabular text-emerald-700 text-xs cursor-pointer hover:bg-emerald-50/50 transition-colors"
+      title="Click to set collected amount for this month"
+      onClick={startEdit}
+    >
+      {value > 0 ? formatINRFull(value) : '-'}
+    </td>
+  );
+}
+
 function EditableCell({ value, onChange, color, colVisible = true }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -332,6 +512,9 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   // Per-engagement per-month actual collected (from finance transactions)
   const { data: transactions = [] } = useCollectionTransactions(selectedLeaderId, activeFY);
   const txMap = useMemo(() => groupTxByEngagementMonth(transactions), [transactions]);
+  const addTransaction = useAddTransaction(selectedLeaderId, activeFY);
+  const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
+  const [settingCollectedKey, setSettingCollectedKey] = useState(null);
 
   const managerOptions = useMemo(() => uniqueManagers(clients), [clients]);
   const relPartnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
@@ -370,6 +553,45 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
 
   function updateScope(clientId, val) {
     updateEngagement({ id: clientId, clientScope: val });
+  }
+
+  function updateName(clientId, val) {
+    updateEngagement({ id: clientId, name: val });
+  }
+
+  function updateRelPartner(clientId, val) {
+    updateEngagement({ id: clientId, relPartner: val });
+  }
+
+  function updateElStatus(clientId, val) {
+    updateEngagement({ id: clientId, elStatus: val });
+  }
+
+  async function setMonthCollected(client, monthKey, amount) {
+    if (!selectedLeaderId || !activeFY || !client?.id) return;
+    const key = `${client.id}:${monthKey}`;
+    setSettingCollectedKey(key);
+    try {
+      const existing = transactions.filter(
+        (tx) => tx.engagement_id === client.id && tx.month === monthKey
+      );
+      for (const tx of existing) {
+        await deleteTransaction.mutateAsync(tx.id);
+      }
+      if (amount > 0) {
+        await addTransaction.mutateAsync({
+          leader_id: selectedLeaderId,
+          fiscal_year: activeFY,
+          engagement_id: client.id,
+          month: monthKey,
+          client_name: client.name || '',
+          amount_billed: 0,
+          amount_collected: amount,
+        });
+      }
+    } finally {
+      setSettingCollectedKey(null);
+    }
   }
 
   function updateRemarks(clientId, val, mode = 'edit') {
@@ -459,7 +681,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
             value={filters.name}
             onChange={e => setFilters(prev => ({ ...prev, name: e.target.value }))}
           />
-          <span className="text-xs text-muted-foreground hidden sm:block">Click any number to edit inline ? Click client name to expand details</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">Click name, partner, EL, amounts, or month collected to edit · Chevron expands details</span>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -754,27 +976,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   <React.Fragment key={i}>
                     <tr className={`[&>td]:border-b [&>td]:border-border/50 hover:bg-muted/20 transition-colors ${isExpanded ? 'bg-muted/10' : ''}`}>
                       <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground`} style={{ minWidth: 32 }}>{client.num}</td>
-                      <td className={`${stickyBase} py-3 px-3 font-medium text-foreground`} style={{ left: 32, minWidth: 180 }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleExpandedRow(client.num)}
-                          aria-expanded={isExpanded}
-                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${client.name || 'client'}`}
-                          className="flex items-center gap-1.5 text-left w-full group rounded-md -mx-1 px-1 py-0.5 hover:bg-muted/40 transition-colors"
-                        >
-                          <span className="text-muted-foreground group-hover:text-cbva-navy transition-colors shrink-0">
-                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                          </span>
-                          <span className={`truncate group-hover:text-cbva-navy group-hover:underline underline-offset-2 ${isExpanded ? 'text-cbva-navy' : 'text-foreground'}`}>
-                            {client.name || <span className="text-muted-foreground italic no-underline">Unidentified</span>}
-                          </span>
-                          {actCount > 0 && (
-                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold shrink-0">
-                              {actCount}
-                            </span>
-                          )}
-                        </button>
-                      </td>
+                      <NameCell
+                        value={client.name}
+                        onChange={(v) => updateName(client.id, v)}
+                        isExpanded={isExpanded}
+                        actCount={actCount}
+                        onToggleExpand={() => toggleExpandedRow(client.num)}
+                        stickyClass={stickyBase}
+                        stickyStyle={{ left: stickyLeft.client, minWidth: 180 }}
+                      />
                       {showScopeColumn && (
                         <ScopeCell
                           value={client.clientScope}
@@ -790,8 +1000,19 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
                         listId="engagement-manager-suggestions"
                       />
-                      <td className={`${stickyBase} py-3 px-3 text-xs text-muted-foreground`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}>{relationshipPartnerLabel(client.relPartner)}</td>
-                      <td className={`${stickyBase} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}><ELBadge status={client.elStatus} /></td>
+                      <RelPartnerCell
+                        value={client.relPartner}
+                        onChange={(v) => updateRelPartner(client.id, v)}
+                        stickyClass={stickyBase}
+                        stickyStyle={{ left: stickyLeft.relPartner, minWidth: 100 }}
+                        suggestions={relPartnerOptions}
+                      />
+                      <ELStatusCell
+                        value={client.elStatus}
+                        onChange={(v) => updateElStatus(client.id, v)}
+                        stickyClass={stickyBase}
+                        stickyStyle={{ left: stickyLeft.elStatus, minWidth: 100 }}
+                      />
                       <td className="py-3 px-3 text-right font-tabular text-xs text-emerald-800" title={prevActualCollected == null ? 'No confident prior-year match' : `Actual collected from ${prevFyLabel}`}>
                         {prevActualCollected == null ? <span className="text-muted-foreground/60 italic">TBD</span> : formatINRFull(prevActualCollected)}
                       </td>
@@ -801,7 +1022,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
                       <td
                         className="py-3 px-3 text-right font-tabular text-muted-foreground text-xs"
-                        title="Updated from Collections page"
+                        title="Sum of collection transactions"
                       >
                         {client.collected ? formatINRFull(client.collected) : '-'}
                       </td>
@@ -813,7 +1034,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           return (
                             <React.Fragment key={mk}>
                               <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} />
-                              <td className="py-3 px-3 text-right font-tabular text-emerald-700 text-xs">{collected > 0 ? formatINRFull(collected) : '-'}</td>
+                              <CollectedMonthCell
+                                value={collected}
+                                pending={settingCollectedKey === `${client.id}:${mk}`}
+                                onSetAmount={(amount) => setMonthCollected(client, mk, amount)}
+                              />
                               <td className="py-3 px-3 text-right font-tabular text-xs">
                                 {planned === 0 && collected === 0
                                   ? <span className="text-muted-foreground/50">-</span>

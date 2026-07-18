@@ -328,17 +328,12 @@ function parseAmount(val) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 }
 
-function PlanAmountFields({ title, form, setForm, source }) {
+function PlanAmountFields({ title, form, setForm }) {
   const total = parseAmount(form.green) + parseAmount(form.amber) + parseAmount(form.blue_sky);
   return (
     <div className="bg-card rounded-xl border p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-        {source && (
-          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-muted text-muted-foreground">
-            {source === 'manual' ? 'Manual' : source}
-          </span>
-        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
@@ -450,7 +445,7 @@ function PlansTab() {
       <div>
         <h3 className="text-lg font-medium">Initial & Board Plans</h3>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Set governance targets per leader and financial year. Manual entries are not overwritten by imports.
+          Source of truth for Initial and Board plan targets per leader and financial year.
         </p>
       </div>
 
@@ -491,13 +486,11 @@ function PlansTab() {
             title="Initial Plan"
             form={initialForm}
             setForm={setInitialForm}
-            source={plans?.initial?.source}
           />
           <PlanAmountFields
             title="Board Plan"
             form={boardForm}
             setForm={setBoardForm}
-            source={plans?.board?.source}
           />
           <Button
             className="bg-cbva-navy hover:bg-cbva-navy/90"

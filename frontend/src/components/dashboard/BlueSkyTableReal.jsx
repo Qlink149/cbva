@@ -43,9 +43,66 @@ function RemarkInput({ value = '', onSave, disabled }) {
   );
 }
 
-export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '', onUpdateRemarks }) {
+function AmountCell({ value, onChange, disabled, className = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    if (disabled) return;
+    setDraft(value != null ? String(value) : '0');
+    setEditing(true);
+  }
+
+  function commit() {
+    const parsed = parseFloat(draft);
+    if (!isNaN(parsed) && parsed >= 0) {
+      const next = Math.round(parsed);
+      if (next !== (value ?? 0)) onChange?.(next);
+    }
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className={`py-1 px-2 text-right ${className}`}>
+        <input
+          autoFocus
+          className="w-24 ml-auto text-right text-xs border border-cbva-navy rounded px-1 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className={`py-3 text-right font-tabular col-num ${className} ${
+        disabled ? '' : 'cursor-pointer hover:bg-muted/40 transition-colors'
+      }`}
+      title={disabled ? undefined : 'Click to edit'}
+      onClick={startEdit}
+    >
+      {fmtCell(value)}
+    </td>
+  );
+}
+
+export default function BlueSkyTableReal({
+  blueSkyRows = [],
+  totals,
+  fyLabel = '',
+  onUpdateRemarks,
+  onUpdateAmounts,
+}) {
   const firstWithData = blueSkyRows.find((r) => r.has_data !== false && r.opening != null);
   const openingChip = firstWithData?.opening ?? totals?.opening;
+  const canEditRow = (row) => row.has_data !== false && !!row.id && typeof onUpdateAmounts === 'function';
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
@@ -73,6 +130,11 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
             </>
           )}
         </div>
+        {onUpdateAmounts && (
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Click Opening / Additional / Converted to edit · Closing is auto-calculated
+          </p>
+        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -94,6 +156,7 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
               </tr>
             ) : blueSkyRows.map((row, i) => {
               const noData = row.has_data === false;
+              const editable = canEditRow(row);
               return (
                 <tr key={row.month_key || row.monthKey || row.month || i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                   <td className="py-3 font-medium text-foreground col-num">
@@ -106,16 +169,25 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
                       )}
                     </span>
                   </td>
-                  <td className="py-3 text-right font-tabular text-muted-foreground col-num">
-                    {fmtCell(row.opening)}
-                  </td>
-                  <td className={`py-3 text-right font-tabular col-num ${noData ? 'text-muted-foreground' : 'text-cbva-navy'}`}>
-                    {fmtCell(row.additional)}
-                  </td>
-                  <td className={`py-3 text-right font-tabular font-semibold col-num ${noData ? 'text-muted-foreground' : 'text-emerald-600'}`}>
-                    {fmtCell(row.converted)}
-                  </td>
-                  <td className={`py-3 text-right font-tabular font-semibold col-num ${noData ? 'text-muted-foreground' : 'text-foreground'}`}>
+                  <AmountCell
+                    value={row.opening}
+                    disabled={!editable}
+                    className={noData ? 'text-muted-foreground' : 'text-muted-foreground'}
+                    onChange={(v) => onUpdateAmounts?.(row, { opening: v })}
+                  />
+                  <AmountCell
+                    value={row.additional}
+                    disabled={!editable}
+                    className={noData ? 'text-muted-foreground' : 'text-cbva-navy'}
+                    onChange={(v) => onUpdateAmounts?.(row, { additional: v })}
+                  />
+                  <AmountCell
+                    value={row.converted}
+                    disabled={!editable}
+                    className={`font-semibold ${noData ? 'text-muted-foreground' : 'text-emerald-600'}`}
+                    onChange={(v) => onUpdateAmounts?.(row, { converted: v })}
+                  />
+                  <td className={`py-3 text-right font-tabular font-semibold col-num ${noData ? 'text-muted-foreground' : 'text-foreground'}`} title="Auto-calculated">
                     {fmtCell(row.closing)}
                   </td>
                   <td className="py-3 px-4 col-remarks">

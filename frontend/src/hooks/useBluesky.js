@@ -11,13 +11,25 @@ export const useBluesky = (leaderId, fiscalYear) =>
     staleTime: 3 * 60 * 1000,
   });
 
-export const useUpdateBlueskyRemarks = (leaderId, fiscalYear) => {
+export const useUpdateBluesky = (leaderId, fiscalYear) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ entryId, remarks }) =>
-      apiPut(`/api/bluesky/${entryId}`, { remarks }),
+    mutationFn: ({ entryId, ...body }) => apiPut(`/api/bluesky/${entryId}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: blueskyKey(leaderId, fiscalYear) });
+      if (fiscalYear) {
+        qc.invalidateQueries({ queryKey: ['consolidated-summary', fiscalYear] });
+      }
     },
   });
+};
+
+/** @deprecated Prefer useUpdateBluesky */
+export const useUpdateBlueskyRemarks = (leaderId, fiscalYear) => {
+  const update = useUpdateBluesky(leaderId, fiscalYear);
+  return {
+    ...update,
+    mutate: ({ entryId, remarks }) => update.mutate({ entryId, remarks }),
+    mutateAsync: ({ entryId, remarks }) => update.mutateAsync({ entryId, remarks }),
+  };
 };

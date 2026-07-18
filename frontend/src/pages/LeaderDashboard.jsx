@@ -14,7 +14,7 @@ import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { getFyLabel, getPrevFySlug, getFyRange } from '@/lib/fiscalYear';
 import { usePipeline } from '@/hooks/usePipeline';
-import { useBluesky, useUpdateBlueskyRemarks } from '@/hooks/useBluesky';
+import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
 import { useClientMeetings } from '@/hooks/useClientMeetings';
 import { useActions } from '@/hooks/useActions';
@@ -37,7 +37,7 @@ export default function LeaderDashboard({ user }) {
 
   const { data: pipelineRes, isLoading: pipelineLoading } = usePipeline(selectedLeaderId, activeFY);
   const { data: blueSkyRes, isLoading: bsLoading } = useBluesky(selectedLeaderId, activeFY);
-  const updateBlueskyRemarks = useUpdateBlueskyRemarks(selectedLeaderId, activeFY);
+  const updateBluesky = useUpdateBluesky(selectedLeaderId, activeFY);
   const { data: collectionsRes, isLoading: colLoading } = useCollections(selectedLeaderId, activeFY);
   const updateCollectionRemarks = useUpdateCollectionRemarks(selectedLeaderId, activeFY);
   const { data: engagementsRes, isLoading: engLoading } = useEngagements(selectedLeaderId, activeFY);
@@ -168,7 +168,8 @@ export default function LeaderDashboard({ user }) {
             blueSkyRows={blueSkyRows}
             totals={blueSkyTotals}
             fyLabel={fyLabel}
-            onUpdateRemarks={(row, remarks) => updateBlueskyRemarks.mutate({ entryId: row.id, remarks })}
+            onUpdateRemarks={(row, remarks) => updateBluesky.mutate({ entryId: row.id, remarks })}
+            onUpdateAmounts={(row, amounts) => updateBluesky.mutate({ entryId: row.id, ...amounts })}
           />
         )}
 
