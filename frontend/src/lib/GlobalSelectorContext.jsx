@@ -14,12 +14,7 @@ export function GlobalSelectorProvider({ children }) {
   const [activeFY, setActiveFY] = useState(null);
 
   const leaderList = Array.isArray(leaders) ? leaders : [];
-  // For now only expose FY 2026-27 in the year dropdown
-  const activeFiscalYears = (() => {
-    const only2627 = fiscalYears.filter(fy => fy.slug === '2627');
-    if (only2627.length) return only2627;
-    return fiscalYears.filter(fy => fy.is_active !== false);
-  })();
+  const activeFiscalYears = fiscalYears.filter((fy) => fy.is_active !== false);
 
   const selectedLeaderId = selectedLeaderIdOverride
     ?? user?.leader_id
@@ -32,12 +27,12 @@ export function GlobalSelectorProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
-    if (!fiscalYears.length) return;
-    const slugs = activeFiscalYears.map(fy => fy.slug);
+    if (!activeFiscalYears.length) return;
+    const slugs = activeFiscalYears.map((fy) => fy.slug);
     if (!activeFY || !slugs.includes(activeFY)) {
-      setActiveFY(slugs.includes('2627') ? '2627' : (getCurrentFySlug(activeFiscalYears) ?? slugs[0]));
+      setActiveFY(getCurrentFySlug(activeFiscalYears) ?? slugs[0]);
     }
-  }, [fiscalYears, activeFiscalYears, activeFY]);
+  }, [activeFiscalYears, activeFY]);
 
   const setSelectedLeaderId = (id) => {
     if (user?.role === 'user') return;
