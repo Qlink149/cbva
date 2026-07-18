@@ -38,9 +38,20 @@ export default function BlueSkyPage() {
         blueskyRows={blueskyData?.data ?? []}
         totals={totals}
         baseline={baseline}
-        onUpdateRemarks={(row, remarks) => updateBluesky.mutate({ entryId: row.id, remarks })}
-        onUpdateAmounts={(row, amounts) => updateBluesky.mutate({ entryId: row.id, ...amounts })}
-      />
+        onUpdateRemarks={(row, remarks) =>
+          updateBluesky.mutate({
+            entryId: row.id,
+            monthKey: row.month_key,
+            remarks,
+          })
+        }
+        onUpdateAmounts={(row, amounts) =>
+          updateBluesky.mutate({
+            entryId: row.id,
+            monthKey: row.month_key,
+            ...amounts,
+          })
+        }      />
     </div>
   );
 }

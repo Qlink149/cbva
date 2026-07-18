@@ -102,7 +102,7 @@ export default function BlueSkyTableReal({
 }) {
   const firstWithData = blueSkyRows.find((r) => r.has_data !== false && r.opening != null);
   const openingChip = firstWithData?.opening ?? totals?.opening;
-  const canEditRow = (row) => row.has_data !== false && !!row.id && typeof onUpdateAmounts === 'function';
+  const canEditRow = (row) => !!row.month_key && typeof onUpdateAmounts === 'function';
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
@@ -132,7 +132,7 @@ export default function BlueSkyTableReal({
         </div>
         {onUpdateAmounts && (
           <p className="text-[11px] text-muted-foreground mt-2">
-            Click Opening / Additional / Converted to edit · Closing is auto-calculated
+            Click Opening / Additional / Converted on any month (including prior months) to edit · Closing is auto-calculated
           </p>
         )}
       </div>
@@ -193,7 +193,7 @@ export default function BlueSkyTableReal({
                   <td className="py-3 px-4 col-remarks">
                     <RemarkInput
                       value={row.remarks || ''}
-                      disabled={noData || !row.id}
+                      disabled={!row.month_key || !onUpdateRemarks}
                       onSave={(remarks) => onUpdateRemarks?.(row, remarks)}
                     />
                   </td>

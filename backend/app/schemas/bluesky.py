@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -8,6 +8,16 @@ class BlueSkyEntryUpdate(BaseModel):
     additional: Optional[int] = None
     converted: Optional[int] = None
     closing: Optional[int] = None
+    remarks: Optional[str] = None
+
+
+class BlueSkyEntryUpsert(BaseModel):
+    leader_id: str
+    fiscal_year: str
+    month_key: str = Field(..., min_length=2, max_length=2)
+    opening: Optional[int] = None
+    additional: Optional[int] = None
+    converted: Optional[int] = None
     remarks: Optional[str] = None
 
 

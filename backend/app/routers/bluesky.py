@@ -1,7 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import date, datetime, timezone
 from bson import ObjectId
-from app.schemas.bluesky import BlueSkyEntryUpdate, BlueSkyEntryResponse, BlueSkyListResponse
+from app.schemas.bluesky import (
+    BlueSkyEntryUpdate,
+    BlueSkyEntryUpsert,
+    BlueSkyEntryResponse,
+    BlueSkyListResponse,
+)
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
@@ -80,6 +85,25 @@ def _empty_month_row(
     }
 
 
+async def _prior_closing(leader_id: str, fiscal_year: str, month_key: str) -> int:
+    if month_key not in FY_MONTH_KEYS:
+        return 0
+    cur_idx = FY_MONTH_KEYS.index(month_key)
+    for prev_key in reversed(FY_MONTH_KEYS[:cur_idx]):
+        prev_label = _month_label(prev_key, fiscal_year)
+        prev_entry = await database.db.blue_sky_entries.find_one(
+            {"leader_id": leader_id, "fiscal_year": fiscal_year, "month": prev_label}
+        )
+        if prev_entry and prev_entry.get("closing") is not None:
+            return prev_entry.get("closing") or 0
+        prev_by_key = await database.db.blue_sky_entries.find_one(
+            {"leader_id": leader_id, "fiscal_year": fiscal_year, "month_key": prev_key}
+        )
+        if prev_by_key and prev_by_key.get("closing") is not None:
+            return prev_by_key.get("closing") or 0
+    return 0
+
+
 @router.get("/", response_model=BlueSkyListResponse)
 async def list_bluesky(
     leader_id: str = Query(...),
@@ -137,6 +161,94 @@ async def list_bluesky(
     }
 
     return {"data": rows, "totals": totals}
+
+
+@router.post("/", response_model=BlueSkyEntryResponse, status_code=201)
+async def upsert_bluesky(
+    body: BlueSkyEntryUpsert,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create or update a Blue Sky ledger row for any available FY month (incl. prior months)."""
+    enforce_leader_write_scope(current_user, body.leader_id)
+
+    if body.month_key not in FY_MONTH_KEYS:
+        raise HTTPException(status_code=400, detail="Invalid month_key")
+
+    as_of = date.today()
+    available = get_available_fy_month_keys(body.fiscal_year, as_of)
+    if body.month_key not in available:
+        raise HTTPException(status_code=400, detail="Month is outside the editable FY window")
+
+    month_label = _month_label(body.month_key, body.fiscal_year)
+    sort_order = FY_MONTH_KEYS.index(body.month_key) + 1
+    now = datetime.now(timezone.utc)
+
+    existing = await database.db.blue_sky_entries.find_one(
+        {
+            "$or": [
+                {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year, "month_key": body.month_key},
+                {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year, "month": month_label},
+            ]
+        }
+    )
+
+    if existing:
+        updates = {
+            k: v
+            for k, v in body.model_dump().items()
+            if k not in ("leader_id", "fiscal_year", "month_key") and v is not None
+        }
+        updates["month_key"] = body.month_key
+        updates["month"] = month_label
+        updates["sort_order"] = sort_order
+        updates["updated_at"] = now
+        if any(k in updates for k in ("opening", "additional", "converted")) and "closing" not in updates:
+            opening = updates.get("opening", existing.get("opening") or 0)
+            additional = updates.get("additional", existing.get("additional") or 0)
+            converted = updates.get("converted", existing.get("converted") or 0)
+            updates["closing"] = opening + additional - converted
+        result = await database.db.blue_sky_entries.find_one_and_update(
+            {"_id": existing["_id"]}, {"$set": updates}, return_document=True
+        )
+        await audit_service.log_update(
+            "bluesky_entry", existing, updates, current_user,
+            label=month_label,
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+        )
+        return _serialize(result, month_key=body.month_key)
+
+    opening = body.opening if body.opening is not None else await _prior_closing(
+        body.leader_id, body.fiscal_year, body.month_key
+    )
+    additional = body.additional if body.additional is not None else 0
+    converted = body.converted if body.converted is not None else 0
+    closing = opening + additional - converted
+    remarks = body.remarks if body.remarks is not None else ""
+
+    doc = {
+        "leader_id": body.leader_id,
+        "fiscal_year": body.fiscal_year,
+        "month": month_label,
+        "month_key": body.month_key,
+        "sort_order": sort_order,
+        "opening": opening,
+        "additional": additional,
+        "converted": converted,
+        "closing": closing,
+        "remarks": remarks,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await database.db.blue_sky_entries.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "bluesky_entry", doc, current_user,
+        label=month_label,
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
+    return _serialize(doc, month_key=body.month_key)
 
 
 @router.put("/{entry_id}", response_model=BlueSkyEntryResponse)

@@ -168,10 +168,21 @@ export default function LeaderDashboard({ user }) {
             blueSkyRows={blueSkyRows}
             totals={blueSkyTotals}
             fyLabel={fyLabel}
-            onUpdateRemarks={(row, remarks) => updateBluesky.mutate({ entryId: row.id, remarks })}
-            onUpdateAmounts={(row, amounts) => updateBluesky.mutate({ entryId: row.id, ...amounts })}
-          />
-        )}
+            onUpdateRemarks={(row, remarks) =>
+              updateBluesky.mutate({
+                entryId: row.id,
+                monthKey: row.month_key,
+                remarks,
+              })
+            }
+            onUpdateAmounts={(row, amounts) =>
+              updateBluesky.mutate({
+                entryId: row.id,
+                monthKey: row.month_key,
+                ...amounts,
+              })
+            }
+          />        )}
 
         {colLoading ? <SectionSkeleton className="h-64" /> : (
           <CollectionsTableReal
