@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPut, apiPatch } from '@/api/client';
+import { apiGet, apiPost, apiPut, apiPatch } from '@/api/client';
 
 const actionsKey = (leaderId, fiscalYear) => ['actions', leaderId, fiscalYear];
 
@@ -10,6 +10,14 @@ export const useActions = (leaderId, fiscalYear) =>
     enabled: !!leaderId && !!fiscalYear,
     select: (res) => res.data ?? res,
   });
+
+export const useCreateAction = (leaderId, fiscalYear) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPost('/api/actions/', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: actionsKey(leaderId, fiscalYear) }),
+  });
+};
 
 export const useUpdateAction = (leaderId, fiscalYear) => {
   const qc = useQueryClient();

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timezone
 from bson import ObjectId
-from app.schemas.action import ActionUpdate, ActionStatusPatch, ActionResponse
+from app.schemas.action import ActionCreate, ActionUpdate, ActionStatusPatch, ActionResponse
 from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
@@ -45,6 +45,39 @@ async def list_actions(
     ).sort("num", 1)
     docs = await cursor.to_list(length=100)
     return {"data": [_serialize(d) for d in docs]}
+
+
+@router.post("/", response_model=ActionResponse, status_code=201)
+async def create_action(body: ActionCreate, current_user: dict = Depends(get_current_user)):
+    enforce_leader_write_scope(current_user, body.leader_id)
+    if not (body.description or "").strip():
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    now = datetime.now(timezone.utc)
+    last = await database.db.actions.find_one(
+        {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year},
+        sort=[("num", -1)],
+    )
+    next_num = (last.get("num") or 0) + 1 if last else 1
+
+    doc = {
+        **body.model_dump(exclude={"source"}),
+        "num": next_num,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if body.source is not None:
+        doc["source"] = body.source.model_dump()
+
+    result = await database.db.actions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "action", doc, current_user,
+        label=f"#{next_num} {doc.get('description', '')}".strip(),
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
+    return _serialize(doc)
 
 
 @router.put("/{action_id}", response_model=ActionResponse)

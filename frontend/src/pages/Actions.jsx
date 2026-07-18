@@ -6,7 +6,7 @@ import { useClientActions } from '@/lib/ClientActionsContext';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { getFyLabel } from '@/lib/fiscalYear';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
-import { useActions, usePatchActionStatus } from '@/hooks/useActions';
+import { useActions, useCreateAction, usePatchActionStatus } from '@/hooks/useActions';
 import { useTasks } from '@/hooks/useTasks';
 
 const STATUS_STYLES = {
@@ -29,15 +29,25 @@ const PRIORITY_STYLES = {
 };
 
 const EMPTY_FORM = { title: '', assignee_name: '', client_name: '', priority: 'Medium', deadline: '', notes: '' };
+const EMPTY_ACTION_FORM = {
+  category: '',
+  description: '',
+  status: 'Not Started',
+  notes: '',
+  due_date: '',
+};
 
 export default function Actions({ user }) {
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddAction, setShowAddAction] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [actionForm, setActionForm] = useState(EMPTY_ACTION_FORM);
   const { clientActions, updateActionStatus, deleteAction } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
   const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
+  const createAction = useCreateAction(selectedLeaderId, activeFY);
   const patchActionStatus = usePatchActionStatus(selectedLeaderId, activeFY);
 
   const { tasks, isLoading: tasksLoading, createTask, deleteTask } = useTasks(selectedLeaderId, activeFY);
@@ -50,6 +60,27 @@ export default function Actions({ user }) {
         setForm(EMPTY_FORM);
       },
     });
+  };
+
+  const handleAddAction = () => {
+    if (!actionForm.description.trim() || !selectedLeaderId || !activeFY) return;
+    createAction.mutate(
+      {
+        leader_id: selectedLeaderId,
+        fiscal_year: activeFY,
+        category: actionForm.category.trim(),
+        description: actionForm.description.trim(),
+        status: actionForm.status,
+        notes: actionForm.notes.trim(),
+        due_date: actionForm.due_date || null,
+      },
+      {
+        onSuccess: () => {
+          setShowAddAction(false);
+          setActionForm(EMPTY_ACTION_FORM);
+        },
+      }
+    );
   };
 
   const isLoading = actionsLoading || tasksLoading;
@@ -77,15 +108,81 @@ export default function Actions({ user }) {
 
       {/* Key Actions Table */}
       <div>
-        <h2 className="text-sm font-semibold text-foreground mb-3">
-          Key Actions — Business Plan {fyLabel} · {selectedLeaderId}
-        </h2>
-        {leaderActions.length === 0 ? (
-          <div className="bg-card rounded-xl border border-dashed border-border/60 p-10 text-center">
-            <p className="text-sm text-muted-foreground">No key actions data available for {selectedLeaderId}.</p>
-          </div>
-        ) : (
-          <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <h2 className="text-sm font-semibold text-foreground">
+            Key Actions — Business Plan {fyLabel} · {selectedLeaderId}
+          </h2>
+          <button
+            onClick={() => setShowAddAction(!showAddAction)}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Key Action
+          </button>
+        </div>
+
+        <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          {showAddAction && (
+            <div className="border-b border-border/60 p-4 bg-muted/30">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-foreground">New Key Action</p>
+                <button onClick={() => { setShowAddAction(false); setActionForm(EMPTY_ACTION_FORM); }}>
+                  <X className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                <input
+                  className="text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Category (e.g. Growth, Talent)"
+                  value={actionForm.category}
+                  onChange={(e) => setActionForm((f) => ({ ...f, category: e.target.value }))}
+                />
+                <select
+                  className="text-xs border border-border rounded-lg px-2 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={actionForm.status}
+                  onChange={(e) => setActionForm((f) => ({ ...f, status: e.target.value }))}
+                >
+                  <option value="Not Started">Not Started</option>
+                  <option value="In-Progress">In-Progress</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+              <textarea
+                className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring mb-2 min-h-[64px] resize-none"
+                placeholder="Description *"
+                value={actionForm.description}
+                onChange={(e) => setActionForm((f) => ({ ...f, description: e.target.value }))}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                <input
+                  type="date"
+                  className="text-xs border border-border rounded-lg px-2 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={actionForm.due_date}
+                  onChange={(e) => setActionForm((f) => ({ ...f, due_date: e.target.value }))}
+                />
+                <input
+                  className="text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Remarks (optional)"
+                  value={actionForm.notes}
+                  onChange={(e) => setActionForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+              <button
+                onClick={handleAddAction}
+                disabled={!actionForm.description.trim() || createAction.isPending}
+                className="w-full text-xs font-medium bg-primary text-primary-foreground py-2 rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {createAction.isPending ? 'Adding...' : 'Add Key Action'}
+              </button>
+            </div>
+          )}
+
+          {leaderActions.length === 0 && !showAddAction ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                No key actions yet for {selectedLeaderId}. Click &quot;New Key Action&quot; to add one.
+              </p>
+            </div>
+          ) : leaderActions.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -122,8 +219,8 @@ export default function Actions({ user }) {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
 
       {/* Client Action Points — persisted per engagement */}
