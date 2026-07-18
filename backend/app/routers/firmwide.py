@@ -69,9 +69,10 @@ async def firmwide_clients(
 
 @router.get("/team")
 async def firmwide_team(
+    fiscal_year: str = Query(None),
     current_user: dict = Depends(require_roles("admin", "management")),
 ):
-    docs = await firmwide_service.get_firmwide_team()
+    docs = await firmwide_service.get_firmwide_team(fiscal_year)
     return {"data": _str_ids(docs)}
 
 

@@ -65,9 +65,9 @@ export default function TeamView({ user }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
-  const { teamMembers, isLoading: teamLoading, addMember, updateMember, deleteMember } = useTeam(selectedLeaderId);
-  const { hiringReqs, isLoading: hiringLoading, addHiring, updateHiring, deleteHiring } = useHiring(selectedLeaderId);
-  const { approvedByDesignation, isLoading: headcountLoading } = useHeadcount(selectedLeaderId);
+  const { teamMembers, isLoading: teamLoading, addMember, updateMember, deleteMember } = useTeam(selectedLeaderId, activeFY);
+  const { hiringReqs, isLoading: hiringLoading, addHiring, updateHiring, deleteHiring } = useHiring(selectedLeaderId, activeFY);
+  const { approvedByDesignation, isLoading: headcountLoading } = useHeadcount(selectedLeaderId, activeFY);
 
   const currentHeadcount = teamMembers.length;
   const boardApproved = Object.values(approvedByDesignation).reduce((sum, v) => sum + (v || 0), 0);
@@ -90,10 +90,12 @@ export default function TeamView({ user }) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Team</h1>
-          <p className="text-sm text-muted-foreground mt-1">{selectedLeaderId} · {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {selectedLeaderId} · {fyLabel} · {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <LeaderFYSelector showFY={false} />
+          <LeaderFYSelector />
           <Button onClick={() => setDrawerOpen(true)} className="bg-cbva-navy hover:bg-cbva-navy/90">
             <Plus className="w-4 h-4 mr-2" /> Add
           </Button>
@@ -113,7 +115,12 @@ export default function TeamView({ user }) {
       </div>
 
       {/* Headcount Table */}
-      <HeadcountTable teamMembers={teamMembers} leaderId={selectedLeaderId} fyLabel={fyLabel} />
+      <HeadcountTable
+        teamMembers={teamMembers}
+        leaderId={selectedLeaderId}
+        fiscalYear={activeFY}
+        fyLabel={fyLabel}
+      />
 
       {/* Hiring Requirements */}
       {hiringReqs.length > 0 && (

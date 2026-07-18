@@ -463,7 +463,7 @@ function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction,
 function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
-  const { teamMembers } = useTeam(selectedLeaderId);
+  const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const managerSuggestions = useMemo(
     () => [...new Set(teamMembers.map(m => m.full_name).filter(Boolean))].sort(),
     [teamMembers]

@@ -12,9 +12,12 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFirmwideTeam } from '@/hooks/useFirmwide';
 import { useLeaders } from '@/hooks/useLeaders';
+import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
+import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import OrgChart from '@/components/team/OrgChart';
 import ReportsToSelect from '@/components/team/ReportsToSelect';
 import { DESIGNATION_ORDER, LEADER_DESIGNATIONS, sortByDesignation } from '@/lib/designations';
+import { getFyLabel } from '@/lib/fiscalYear';
 
 const DESIGNATIONS = DESIGNATION_ORDER;
 
@@ -116,17 +119,19 @@ function MemberForm({ member, leaders, members = [], onSave, onClose }) {
 
 export default function FirmwideTeam() {
   const qc = useQueryClient();
+  const { activeFY, fiscalYears } = useGlobalSelector();
+  const fyLabel = getFyLabel(activeFY, fiscalYears);
   const [addOpen, setAddOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
   const [filterDesig, setFilterDesig] = useState('all');
 
-  const { data: members = [], isLoading: membersLoading } = useFirmwideTeam();
+  const { data: members = [], isLoading: membersLoading } = useFirmwideTeam(activeFY);
   const { data: leaders = [] } = useLeaders();
 
   const addMember = useMutation({
-    mutationFn: (body) => apiPost('/api/team', body),
+    mutationFn: (body) => apiPost('/api/team', { ...body, fiscal_year: activeFY }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['firmwide-team'] });
+      qc.invalidateQueries({ queryKey: ['firmwide-team', activeFY] });
       setAddOpen(false);
       toast.success('Team member added');
     },
@@ -136,7 +141,7 @@ export default function FirmwideTeam() {
   const updateMember = useMutation({
     mutationFn: ({ id, ...body }) => apiPut(`/api/team/${id}`, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['firmwide-team'] });
+      qc.invalidateQueries({ queryKey: ['firmwide-team', activeFY] });
       setEditMember(null);
       toast.success('Member updated');
     },
@@ -175,11 +180,16 @@ export default function FirmwideTeam() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Firm Team</h1>
-          <p className="text-sm text-muted-foreground mt-1">{members.length} members across the firm</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {members.length} members · {fyLabel || 'Select FY'}
+          </p>
         </div>
-        <Button className="bg-cbva-navy hover:bg-cbva-navy/90 gap-2" onClick={() => setAddOpen(true)}>
-          <Plus className="w-4 h-4" /> Add Member
-        </Button>
+        <div className="flex items-center gap-2">
+          <LeaderFYSelector showLeader={false} />
+          <Button className="bg-cbva-navy hover:bg-cbva-navy/90 gap-2" onClick={() => setAddOpen(true)} disabled={!activeFY}>
+            <Plus className="w-4 h-4" /> Add Member
+          </Button>
+        </div>
       </div>
 
       <OrgChart mode="firmwide" leaders={leaders} teamMembers={members} />

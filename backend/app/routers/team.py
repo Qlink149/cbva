@@ -76,11 +76,12 @@ async def _validate_reports_to(
 @router.get("/", response_model=dict)
 async def list_team(
     leader_id: str = Query(...),
+    fiscal_year: str = Query(...),
     managers_only: bool = Query(False),
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_scope(current_user, leader_id)
-    query: dict = {"leader_id": leader_id}
+    query: dict = {"leader_id": leader_id, "fiscal_year": fiscal_year}
     if managers_only:
         query["is_manager"] = True
     cursor = database.db.team_members.find(query).sort([("sort_order", 1), ("full_name", 1)])
@@ -91,6 +92,8 @@ async def list_team(
 @router.post("/", response_model=TeamMemberResponse, status_code=201)
 async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    if not (body.fiscal_year or "").strip():
+        raise HTTPException(status_code=400, detail="fiscal_year is required")
     await _validate_reports_to(body.leader_id, None, body.reports_to_member_id)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
@@ -100,6 +103,7 @@ async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get
         "team_member", doc, current_user,
         label=doc["full_name"],
         leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
     )
     return _serialize(doc)
 

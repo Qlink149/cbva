@@ -150,8 +150,11 @@ async def get_firmwide_clients(fiscal_year: str, skip: int = 0, limit: int = 200
     return docs, total
 
 
-async def get_firmwide_team() -> list:
-    cursor = database.db.team_members.find({"status": "Active"}, sort=[("leader_id", 1)])
+async def get_firmwide_team(fiscal_year: str | None = None) -> list:
+    query: dict = {"status": "Active"}
+    if fiscal_year:
+        query["fiscal_year"] = fiscal_year
+    cursor = database.db.team_members.find(query, sort=[("leader_id", 1)])
     return await cursor.to_list(length=1000)
 
 

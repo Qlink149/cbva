@@ -34,7 +34,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
   const [partnerDropdownOpen, setPartnerDropdownOpen] = useState(false);
   const partnerDropdownRef = useRef(null);
   const { selectedLeaderId, activeFY } = useGlobalSelector();
-  const { teamMembers } = useTeam(selectedLeaderId);
+  const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const createMutation = useCreateEngagement();
 
   const managerSuggestions = [...new Set(teamMembers.map(m => m.full_name).filter(Boolean))].sort();

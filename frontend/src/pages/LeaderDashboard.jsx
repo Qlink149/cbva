@@ -41,9 +41,9 @@ export default function LeaderDashboard({ user }) {
   const { data: collectionsRes, isLoading: colLoading } = useCollections(selectedLeaderId, activeFY);
   const updateCollectionRemarks = useUpdateCollectionRemarks(selectedLeaderId, activeFY);
   const { data: engagementsRes, isLoading: engLoading } = useEngagements(selectedLeaderId, activeFY);
-  const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId);
-  const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId);
-  const { approvedByDesignation } = useHeadcount(selectedLeaderId);
+  const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId, activeFY);
+  const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId, activeFY);
+  const { approvedByDesignation } = useHeadcount(selectedLeaderId, activeFY);
   const { data: meetings = [] } = useClientMeetings(selectedLeaderId, activeFY);
   const { data: leaderActions = [] } = useActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);

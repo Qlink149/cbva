@@ -65,11 +65,14 @@ async def _create_indexes() -> None:
     await db.actions.create_index([("leader_id", 1), ("fiscal_year", 1), ("num", 1)])
     await db.tasks.create_index([("leader_id", 1), ("status", 1), ("deadline", 1)])
     await db.tasks.create_index("created_by_id")
-    await db.team_members.create_index([("leader_id", 1), ("status", 1)])
-    await db.team_members.create_index([("leader_id", 1), ("is_manager", 1)])
-    await db.team_members.create_index([("leader_id", 1), ("sort_order", 1)])
-    await db.hiring_requirements.create_index([("leader_id", 1), ("status", 1)])
-    await db.headcount_plans.create_index([("leader_id", 1), ("designation", 1)], unique=True)
+    await db.team_members.create_index([("leader_id", 1), ("fiscal_year", 1), ("status", 1)])
+    await db.team_members.create_index([("leader_id", 1), ("fiscal_year", 1), ("is_manager", 1)])
+    await db.team_members.create_index([("leader_id", 1), ("fiscal_year", 1), ("sort_order", 1)])
+    await db.hiring_requirements.create_index([("leader_id", 1), ("fiscal_year", 1), ("status", 1)])
+    await db.headcount_plans.create_index(
+        [("leader_id", 1), ("fiscal_year", 1), ("designation", 1)],
+        unique=True,
+    )
     await db.baseline_plans.create_index([("leader_id", 1), ("financial_year_id", 1)], unique=True)
     await db.el_summaries.create_index(
         [("leader_id", 1), ("fiscal_year", 1)],

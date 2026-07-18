@@ -5,8 +5,8 @@ import { TEAM_DESIGNATIONS, sortByDesignation } from '@/lib/designations';
 
 const CORE_DESIGNATIONS = TEAM_DESIGNATIONS.filter(d => d !== 'Other');
 
-export default function HeadcountTable({ teamMembers = [], leaderId, fyLabel = '' }) {
-  const { approvedByDesignation, setApproved } = useHeadcount(leaderId);
+export default function HeadcountTable({ teamMembers = [], leaderId, fiscalYear, fyLabel = '' }) {
+  const { approvedByDesignation, setApproved } = useHeadcount(leaderId, fiscalYear);
 
   const currentByDesignation = useMemo(() => {
     const groups = {};

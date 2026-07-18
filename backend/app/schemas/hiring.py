@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 class HiringRequirementCreate(BaseModel):
     leader_id: str
+    fiscal_year: str
     role_title: str
     level: Literal["Analyst", "Associate", "Manager", "Senior Manager", "Director", "Partner", "Other"] = "Analyst"
     expected_joining_date: Optional[date] = None
@@ -20,11 +21,13 @@ class HiringRequirementUpdate(BaseModel):
     status: Optional[Literal["Open", "In Progress", "Filled", "On Hold"]] = None
     expected_cost: Optional[int] = None
     remarks: Optional[str] = None
+    fiscal_year: Optional[str] = None
 
 
 class HiringRequirementResponse(BaseModel):
     id: str
     leader_id: str
+    fiscal_year: str
     role_title: str
     level: str
     expected_joining_date: Optional[date]
