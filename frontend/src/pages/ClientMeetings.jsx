@@ -194,9 +194,14 @@ export default function ClientMeetings() {
         <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">Meeting Schedule</h2>
           <button
-            onClick={() => canEdit ? setShowAdd(true) : toast.error(lockedMessage)}
-            disabled={!canEdit}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => {
+              if (!canEdit) {
+                toast.error(lockedMessage);
+                return;
+              }
+              setShowAdd(true);
+            }}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium ${!canEdit ? 'opacity-50' : ''}`}
           >
             <Plus className="w-3.5 h-3.5" /> Add Client
           </button>

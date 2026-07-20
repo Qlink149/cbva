@@ -21,9 +21,13 @@ export function getCurrentFySlug(fiscalYears = []) {
 /** Whether the selected FY allows edits (admins always can). */
 export function isFyEditable(fySlug, fiscalYears = [], userRole = 'user') {
   if (userRole === 'admin') return true;
+  if (!fySlug || !Array.isArray(fiscalYears) || fiscalYears.length === 0) return false;
   const fy = fiscalYears.find((item) => item.slug === fySlug);
   if (!fy) return false;
-  if (typeof fy.is_editable === 'boolean') return fy.is_editable;
+  // Explicit admin toggle always wins (true or false)
+  if (fy.is_editable === true || fy.is_editable === false) return fy.is_editable;
+  if (fy.is_editable === 'true' || fy.is_editable === 1) return true;
+  if (fy.is_editable === 'false' || fy.is_editable === 0) return false;
   return !!fy.is_current;
 }
 

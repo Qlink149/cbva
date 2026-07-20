@@ -297,7 +297,14 @@ function FYTab() {
                 <Label className="text-xs">Editable</Label>
                 <Switch
                   checked={!!fy.is_editable}
-                  onCheckedChange={v => update.mutate({ id: fy.id, is_editable: v })}
+                  onCheckedChange={v => update.mutate(
+                    { id: fy.id, is_editable: v },
+                    {
+                      onSuccess: () => {
+                        /* cache patched in hook */
+                      },
+                    },
+                  )}
                 />
               </div>
               <Button variant="ghost" size="sm" onClick={() => setEditing(fy)}>Edit</Button>

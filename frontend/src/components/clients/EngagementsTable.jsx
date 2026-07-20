@@ -681,9 +681,14 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           <span className="text-xs text-muted-foreground hidden sm:block">Click name, partner, EL, amounts, or month collected to edit · Chevron expands details</span>
         </div>
         <button
-          onClick={() => canEdit ? setShowAddModal(true) : toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.')}
-          disabled={!canEdit}
-          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => {
+            if (!canEdit) {
+              toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+              return;
+            }
+            setShowAddModal(true);
+          }}
+          className={`flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium ${!canEdit ? 'opacity-50' : ''}`}
         >
           <Plus className="w-4 h-4" />
           Add Engagement

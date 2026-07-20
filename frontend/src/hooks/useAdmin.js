@@ -106,9 +106,19 @@ export const useUpdateFinancialYear = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }) => apiPut(`/api/admin/financial-years/${id}`, body),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      // Patch public FY list immediately so unlocks apply without waiting
+      qc.setQueryData(['financial-years'], (old) => {
+        const list = Array.isArray(old) ? old : old?.data;
+        if (!Array.isArray(list)) return old;
+        const next = list.map((fy) => {
+          if (fy.id !== vars.id && fy.slug !== vars.slug) return fy;
+          return { ...fy, ...vars, id: fy.id };
+        });
+        return Array.isArray(old) ? next : { ...old, data: next };
+      });
       qc.invalidateQueries({ queryKey: ['admin-financial-years'] });
-      qc.invalidateQueries({ queryKey: ['financial-years'] });
+      qc.invalidateQueries({ queryKey: ['financial-years'], refetchType: 'all' });
     },
   });
 };

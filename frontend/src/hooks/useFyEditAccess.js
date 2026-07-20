@@ -6,7 +6,7 @@ import { isFyEditable } from '@/lib/fiscalYear';
 /** Shared FY edit gate — admins always editable; others follow Admin "Editable" toggle. */
 export function useFyEditAccess() {
   const { user } = useAuth();
-  const { activeFY, fiscalYears } = useGlobalSelector();
+  const { activeFY, fiscalYears, fyLoading } = useGlobalSelector();
 
   const canEdit = useMemo(
     () => isFyEditable(activeFY, fiscalYears, user?.role),
@@ -15,5 +15,5 @@ export function useFyEditAccess() {
 
   const lockedMessage = 'This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.';
 
-  return { canEdit, activeFY, lockedMessage };
+  return { canEdit, activeFY, fyLoading, lockedMessage };
 }

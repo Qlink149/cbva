@@ -269,7 +269,8 @@ async def update_financial_year(
     existing = await database.db.financial_years.find_one({"_id": ObjectId(fy_id)})
     if not existing:
         raise HTTPException(status_code=404, detail="Financial year not found")
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    # exclude_unset so boolean False for is_editable is preserved
+    updates = body.model_dump(exclude_unset=True)
     if not updates:
         return serialize_financial_year(existing)
     updates["updated_at"] = datetime.now(timezone.utc)
