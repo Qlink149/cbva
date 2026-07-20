@@ -12,8 +12,8 @@ import PlaceholderCard from '@/components/dashboard/PlaceholderCard';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { getFyLabel, getPrevFySlug, getFyRange } from '@/lib/fiscalYear';
-import { usePipeline } from '@/hooks/usePipeline';
+import { getFyLabel, getPrevFySlug, getFyRange, isFyEditable } from '@/lib/fiscalYear';
+import { usePipeline, useFyActuals, useUpsertFyActual } from '@/hooks/usePipeline';
 import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
 import { useClientMeetings } from '@/hooks/useClientMeetings';
@@ -23,8 +23,7 @@ import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { useBaselines } from '@/hooks/useBaselines';
-import { useConsolidated } from '@/hooks/useConsolidated';
-
+import { useAuth } from '@/lib/AuthContext';
 const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
 
 function SectionSkeleton({ className = 'h-48' }) {
@@ -33,9 +32,12 @@ function SectionSkeleton({ className = 'h-48' }) {
 
 export default function LeaderDashboard({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { user: authUser } = useAuth();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
   const { data: pipelineRes, isLoading: pipelineLoading } = usePipeline(selectedLeaderId, activeFY);
+  const { data: fyActualsRes } = useFyActuals(selectedLeaderId, activeFY);
+  const upsertFyActual = useUpsertFyActual(selectedLeaderId, activeFY);
   const { data: blueSkyRes, isLoading: bsLoading } = useBluesky(selectedLeaderId, activeFY);
   const updateBluesky = useUpdateBluesky(selectedLeaderId, activeFY);
   const { data: collectionsRes, isLoading: colLoading } = useCollections(selectedLeaderId, activeFY);
@@ -48,25 +50,27 @@ export default function LeaderDashboard({ user }) {
   const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);
   const activeBaseline = baselines[0] ?? null;
-  const { rows: consolidatedRows, columns: consolidatedColumns } = useConsolidated(activeFY);
 
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
   const prevFyLabel = getFyLabel(prevFySlug, fiscalYears);
+  const canEditFyActual = isFyEditable(activeFY, fiscalYears, authUser?.role || user?.role);
 
   const coreLoading = pipelineLoading || bsLoading || colLoading;
 
   const pipelineData = pipelineRes?.data ?? [];
-  // Previous-FY actuals come from the labelled reference row embedded in the
-  // current FY's pipeline snapshots (same source as the Monthly Plan Evolution),
-  // matched dynamically to the previous FY so it works for any year.
+  const fyActualRows = fyActualsRes?.data ?? [];
+  // Prefer DB-backed fy_actual for chart prior-FY totals; fall back to labelled snapshot row.
+  const prevFyActual = fyActualRows.find((r) => r.fiscal_year === prevFySlug);
   const prevFyRange = getFyRange(prevFySlug);
   const prevFyRow = prevFyRange
     ? pipelineData.find((r) => (r.label || '').replace(/–/g, '-').includes(prevFyRange))
     : null;
-  const prevFyBlueSky = prevFyRow?.blueSky ?? null;
-  const prevFyTotal = prevFyRow
-    ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
-    : null;
+  const prevFyBlueSky = prevFyActual?.blueSky ?? prevFyRow?.blueSky ?? null;
+  const prevFyTotal = prevFyActual?.total != null
+    ? prevFyActual.total
+    : prevFyRow
+      ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
+      : null;
 
   const blueSkyRows = blueSkyRes?.data ?? [];
   const blueSkyTotals = blueSkyRes?.totals ?? {};
@@ -155,9 +159,11 @@ export default function LeaderDashboard({ user }) {
                 pipelineData={pipelineData}
                 fyLabel={fyLabel}
                 fySlug={activeFY}
-                leaderId={selectedLeaderId}
-                consolidatedRows={consolidatedRows}
-                consolidatedColumns={consolidatedColumns}
+                fyActualRows={fyActualRows}
+                canEditFyActual={canEditFyActual}
+                onSaveFyActual={(fiscalYear, total) =>
+                  upsertFyActual.mutate({ fiscalYear, total })
+                }
               />
             )}
           </div>

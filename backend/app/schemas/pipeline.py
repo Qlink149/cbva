@@ -45,3 +45,13 @@ class PipelineSnapshotResponse(BaseModel):
     as_of_date: Optional[date] = None
     created_at: datetime
     updated_at: datetime
+
+
+class FyActualUpsert(BaseModel):
+    """Manual prior-year actual total for Monthly Plan Evolution (not from consolidated)."""
+    leader_id: str
+    fiscal_year: str
+    total: int = 0
+    green: Optional[int] = None
+    amber: Optional[int] = None
+    blue_sky: Optional[int] = None

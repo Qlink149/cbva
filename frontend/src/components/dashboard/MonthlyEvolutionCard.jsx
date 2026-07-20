@@ -8,7 +8,6 @@ import {
   getAvailableFyMonths,
   MONTH_FULL_NAMES,
 } from '@/lib/fyMonths';
-import { priorYearActualRowsForLeader } from '@/lib/consolidatedSummary';
 
 /** Show em-dash for missing or zero amounts — never hide the cell. */
 function fmt(val, emptyLabel = '—') {
@@ -27,6 +26,7 @@ function matchMonthKey(label) {
   for (const m of FY_MONTHS) {
     const full = (MONTH_FULL_NAMES[m.key] || m.full || '').toLowerCase();
     if (full && lower.includes(full)) return m.key;
+    if (lower.includes(m.key)) return m.key;
   }
   return null;
 }
@@ -42,9 +42,69 @@ function AmountCells({ row, emphasize = false, emptyLabel = '—' }) {
   );
 }
 
+function EditableTotalCell({ value, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    if (disabled) return;
+    setDraft(value != null && value !== '' ? String(value) : '');
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim().replace(/,/g, '');
+    if (trimmed === '') {
+      setEditing(false);
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      const next = Math.round(parsed);
+      if (value == null || next !== Number(value)) onSave?.(next);
+    }
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className="py-1.5 text-right col-num">
+        <input
+          autoFocus
+          className="w-28 ml-auto block text-right text-xs border border-cbva-navy rounded px-1.5 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className={`py-2.5 text-right col-num font-tabular font-semibold whitespace-nowrap ${
+        disabled
+          ? 'text-slate-700'
+          : 'text-slate-700 cursor-pointer hover:bg-sky-50/80 rounded'
+      }`}
+      onClick={startEdit}
+      title={disabled ? undefined : 'Click to edit'}
+    >
+      {fmt(value)}
+      {!disabled && (
+        <span className="ml-1 text-[9px] font-normal text-muted-foreground">✎</span>
+      )}
+    </td>
+  );
+}
+
 /**
  * Monthly Plan Evolution:
- * - Prior-year actual YTD (from consolidated) at top
+ * - Prior-year actuals (editable, stored as pipeline fy_actual — not consolidated)
  * - Initial / Board plan rows when present
  * - Current month always visible with live Green/Amber/Blue Sky/Total
  * - Prior months hidden behind header arrow; expand to show "TBD"
@@ -53,16 +113,26 @@ export default function MonthlyEvolutionCard({
   pipelineData = [],
   fyLabel = '',
   fySlug = '',
-  leaderId = '',
-  consolidatedRows = [],
-  consolidatedColumns = [],
+  fyActualRows = [],
+  onSaveFyActual,
+  canEditFyActual = true,
 }) {
   const [prevOpen, setPrevOpen] = useState(false);
   const currentMonthKey = getCurrentMonthKey();
 
   const actualYtdRows = useMemo(
-    () => priorYearActualRowsForLeader(consolidatedRows, consolidatedColumns, leaderId, fySlug),
-    [consolidatedRows, consolidatedColumns, leaderId, fySlug]
+    () =>
+      (fyActualRows || []).map((r) => ({
+        key: `actual-${r.fiscal_year}`,
+        fiscalYear: r.fiscal_year,
+        label: r.label || `FY ${r.fiscal_year}`,
+        green: null,
+        amber: null,
+        blueSky: null,
+        total: r.total == null || r.total === '' ? null : Number(r.total),
+        isActualYtd: true,
+      })),
+    [fyActualRows]
   );
 
   const { planRows, prevMonthRows, currentRow } = useMemo(() => {
@@ -83,6 +153,7 @@ export default function MonthlyEvolutionCard({
 
     const monthlyByKey = {};
     (pipelineData || []).forEach((r) => {
+      if ((r.snapshot_type || '').toLowerCase() === 'fy_actual') return;
       const mk = matchMonthKey(r.label);
       if (mk) monthlyByKey[mk] = r;
     });
@@ -119,10 +190,10 @@ export default function MonthlyEvolutionCard({
     });
 
     return { planRows: plans, prevMonthRows: prev, currentRow: current };
-  }, [pipelineData, fySlug, currentMonthKey, leaderId]);
+  }, [pipelineData, fySlug, currentMonthKey]);
 
   const hasAny =
-    actualYtdRows.some((r) => r.total != null) ||
+    actualYtdRows.length > 0 ||
     planRows.length > 0 ||
     currentRow ||
     prevMonthRows.length > 0;
@@ -162,7 +233,14 @@ export default function MonthlyEvolutionCard({
             {actualYtdRows.map((row) => (
               <tr key={row.key} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                 <td className="py-2.5 font-medium text-slate-700 col-num">{row.label}</td>
-                <AmountCells row={row} />
+                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
+                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
+                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
+                <EditableTotalCell
+                  value={row.total}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) => onSaveFyActual?.(row.fiscalYear, next)}
+                />
               </tr>
             ))}
 

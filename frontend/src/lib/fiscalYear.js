@@ -67,3 +67,16 @@ export function getPrevFySlug(slug, fiscalYears = []) {
   }
   return null;
 }
+
+/** Prior FYs oldest-first, e.g. viewing 2627 → ["2425", "2526"]. */
+export function getPriorFySlugs(slug, fiscalYears = [], count = 2) {
+  const newerFirst = [];
+  let cur = slug;
+  for (let i = 0; i < count; i += 1) {
+    const prev = getPrevFySlug(cur, fiscalYears);
+    if (!prev) break;
+    newerFirst.push(prev);
+    cur = prev;
+  }
+  return newerFirst.reverse();
+}
