@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 from app.core import database
+from app.core.serialization import serialize_datetime
 
 TRACKED_FIELDS = (
     "green",
@@ -29,7 +30,7 @@ def _serialize_change_from_audit(
         "new_value": change.get("new"),
         "changed_by": audit_doc.get("actor_id", ""),
         "changed_by_name": audit_doc.get("actor_name", ""),
-        "changed_at": audit_doc["created_at"],
+        "changed_at": serialize_datetime(audit_doc["created_at"]),
     }
 
 

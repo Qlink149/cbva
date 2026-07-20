@@ -10,6 +10,7 @@ from app.dependencies.auth import get_current_user, enforce_leader_scope
 from app.schemas.audit import AuditLogListResponse
 from app.services import audit_service
 from app.core import database
+from app.core.serialization import parse_ist_date_end, parse_ist_date_start, serialize_datetime
 from bson import ObjectId
 
 router = APIRouter()
@@ -53,12 +54,21 @@ def _apply_role_filters(current_user: dict, filters: dict) -> dict:
 
 
 def _parse_date(value: str | None) -> datetime | None:
+    """Legacy helper — prefer parse_ist_date_start/end for range filters."""
     if not value:
         return None
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _parse_date_from(value: str | None) -> datetime | None:
+    return parse_ist_date_start(value)
+
+
+def _parse_date_to(value: str | None) -> datetime | None:
+    return parse_ist_date_end(value)
 
 
 async def _entity_leader_id(entity_type: str, entity_id: str) -> str | None:
@@ -100,8 +110,8 @@ def _build_filters(
             "source": source,
             "leader_id": leader_id,
             "fiscal_year": fiscal_year,
-            "date_from": _parse_date(date_from),
-            "date_to": _parse_date(date_to),
+            "date_from": _parse_date_from(date_from),
+            "date_to": _parse_date_to(date_to),
             "q": q,
         }.items()
         if v is not None
@@ -245,7 +255,7 @@ async def export_audit_log(
     for row in _csv_rows(data):
         ts = row["timestamp"]
         if hasattr(ts, "isoformat"):
-            row["timestamp"] = ts.isoformat()
+            row["timestamp"] = serialize_datetime(ts) if isinstance(ts, datetime) else ts.isoformat()
         writer.writerow(row)
 
     output.seek(0)

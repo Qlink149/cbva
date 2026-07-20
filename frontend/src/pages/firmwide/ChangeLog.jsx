@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
 import { ChevronDown, ChevronRight, Download, History, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { formatIstRelative } from '@/lib/datetime';
 import { useAuditLog, exportAuditLog } from '@/hooks/useAuditLog';
 
 const ENTITY_TYPES = [
@@ -230,7 +230,7 @@ export default function ChangeLog() {
                       </TableCell>
                       <TableCell className="text-xs whitespace-nowrap">
                         {entry.created_at
-                          ? formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })
+                          ? formatIstRelative(entry.created_at)
                           : '—'}
                       </TableCell>
                       <TableCell className="text-sm">{entry.actor_name || '—'}</TableCell>

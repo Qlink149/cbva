@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.task import TaskCreate, TaskUpdate, TaskStatusPatch, TaskResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 
@@ -22,8 +23,8 @@ def _serialize(doc: dict) -> dict:
         "notes": doc.get("notes", ""),
         "status": doc.get("status", "Pending"),
         "fiscal_year": doc.get("fiscal_year"),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

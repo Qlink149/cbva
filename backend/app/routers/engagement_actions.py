@@ -7,6 +7,7 @@ from app.schemas.engagement_action import (
     EngagementActionResponse,
 )
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 
@@ -25,8 +26,8 @@ def _serialize(doc: dict) -> dict:
         "status": doc.get("status", "Pending"),
         "created_by": str(doc["created_by"]),
         "created_by_name": doc.get("created_by_name", ""),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

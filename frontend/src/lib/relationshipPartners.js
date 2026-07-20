@@ -1,3 +1,5 @@
+import { firstName } from '@/lib/personNames';
+
 export function relationshipPartnerList(value) {
   if (Array.isArray(value)) {
     return value.map(String).map(v => v.trim()).filter(Boolean);
@@ -14,6 +16,12 @@ export function relationshipPartnerList(value) {
 export function relationshipPartnerLabel(value) {
   const partners = relationshipPartnerList(value);
   return partners.length > 0 ? partners.join(', ') : '-';
+}
+
+export function displayPartnerNames(value) {
+  const partners = relationshipPartnerList(value);
+  if (partners.length === 0) return '-';
+  return partners.map(firstName).join(', ');
 }
 
 export function hasAnyRelationshipPartner(value, selectedPartners) {

@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useCreateEngagement } from '@/hooks/useEngagements';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useTeam } from '@/hooks/useTeam';
-import { relationshipPartnerList } from '@/lib/relationshipPartners';
+import { useFirmwideTeam } from '@/hooks/useFirmwide';
+import { useLeaders } from '@/hooks/useLeaders';
+import PersonSelect from '@/components/clients/PersonSelect';
+import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
+import { normalizePersonOptions, otherPersonOptions } from '@/lib/personNames';
 
 const L = 100000;
 
@@ -31,25 +35,39 @@ function parseNum(val) {
 export default function AddEngagementModal({ onClose, nextNum, partnerOptions = [], showScopeField = false }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [error, setError] = useState('');
-  const [partnerDropdownOpen, setPartnerDropdownOpen] = useState(false);
-  const partnerDropdownRef = useRef(null);
   const { selectedLeaderId, activeFY } = useGlobalSelector();
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
+  const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
+  const { data: leaders = [] } = useLeaders();
   const createMutation = useCreateEngagement();
 
-  const managerSuggestions = [...new Set(teamMembers.map(m => m.full_name).filter(Boolean))].sort();
+  const managerPrimaryOptions = useMemo(
+    () => normalizePersonOptions(teamMembers.map((m) => m.full_name)),
+    [teamMembers],
+  );
 
-  const selectedPartners = relationshipPartnerList(form.relPartner);
+  const firmwideNames = useMemo(
+    () => normalizePersonOptions(firmwideTeam.map((m) => m.full_name)),
+    [firmwideTeam],
+  );
 
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (partnerDropdownRef.current && !partnerDropdownRef.current.contains(event.target)) {
-        setPartnerDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const managerOtherOptions = useMemo(
+    () => otherPersonOptions(firmwideNames, managerPrimaryOptions),
+    [firmwideNames, managerPrimaryOptions],
+  );
+
+  const relPartnerPrimaryOptions = useMemo(
+    () => normalizePersonOptions([
+      ...partnerOptions,
+      ...leaders.map((l) => l.name),
+    ]),
+    [partnerOptions, leaders],
+  );
+
+  const relPartnerOtherOptions = useMemo(
+    () => otherPersonOptions(firmwideNames, relPartnerPrimaryOptions),
+    [firmwideNames, relPartnerPrimaryOptions],
+  );
 
   function set(field, val) {
     setForm(prev => {
@@ -100,13 +118,6 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
     });
   }
 
-  function togglePartner(partner) {
-    const next = selectedPartners.includes(partner)
-      ? selectedPartners.filter(p => p !== partner)
-      : [...selectedPartners, partner];
-    set('relPartner', next.join(', '));
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
@@ -130,57 +141,23 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
           </Field>
 
           <Field label="Manager">
-            <input
-              className="input-base"
-              list="add-engagement-manager-suggestions"
+            <PersonSelect
               value={form.manager}
-              onChange={e => set('manager', e.target.value)}
-              placeholder="Name of manager"
+              onChange={(val) => set('manager', val)}
+              primaryOptions={managerPrimaryOptions}
+              otherOptions={managerOtherOptions}
+              placeholder="Select manager"
             />
-            {managerSuggestions.length > 0 && (
-              <datalist id="add-engagement-manager-suggestions">
-                {managerSuggestions.map(name => <option key={name} value={name} />)}
-              </datalist>
-            )}
           </Field>
 
           <Field label="Rel. Partner">
-            <div className="relative" ref={partnerDropdownRef}>
-              <button
-                type="button"
-                className="input-base flex items-center justify-between text-left"
-                onClick={() => setPartnerDropdownOpen(open => !open)}
-              >
-                <span className={`truncate ${selectedPartners.length ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  {selectedPartners.length === 0 ? 'Select relationship partners' : selectedPartners.join(', ')}
-                </span>
-                <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${partnerDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {partnerDropdownOpen && (
-                <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-white shadow-xl">
-                  {partnerOptions.length === 0 && (
-                    <div className="px-3 py-2.5 text-xs italic text-muted-foreground">
-                      No partners available yet.
-                    </div>
-                  )}
-                  {partnerOptions.map(partner => {
-                    const active = selectedPartners.includes(partner);
-                    return (
-                      <label key={partner} className="flex cursor-pointer items-center gap-2.5 border-b border-border/40 px-3 py-2.5 text-xs last:border-0 hover:bg-muted/50">
-                        <input
-                          type="checkbox"
-                          checked={active}
-                          onChange={() => togglePartner(partner)}
-                          className="h-3.5 w-3.5 rounded border-gray-300 text-cbva-navy focus:ring-cbva-navy/30"
-                        />
-                        <span className="truncate">{partner}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <PersonMultiSelect
+              value={form.relPartner}
+              onChange={(val) => set('relPartner', val)}
+              primaryOptions={relPartnerPrimaryOptions}
+              otherOptions={relPartnerOtherOptions}
+              placeholder="Select relationship partners"
+            />
           </Field>
 
           {showScopeField && (
@@ -236,46 +213,27 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
           </Field>
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-muted/10">
-          <button
-            onClick={onClose}
-            className="text-sm px-4 py-2 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground"
-          >
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-muted/20">
+          <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg border border-border hover:bg-muted transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={createMutation.isPending}
-            className="text-sm px-5 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium disabled:opacity-60"
+            className="text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors disabled:opacity-60"
           >
-            {createMutation.isPending ? 'Saving…' : 'Save'}
+            {createMutation.isPending ? 'Saving…' : 'Save Engagement'}
           </button>
         </div>
       </div>
-
-      <style>{`
-        .input-base {
-          width: 100%;
-          font-size: 13px;
-          border: 1px solid hsl(var(--border));
-          border-radius: 0.5rem;
-          padding: 6px 10px;
-          background: white;
-          outline: none;
-          transition: border-color 0.15s;
-        }
-        .input-base:focus {
-          border-color: hsl(var(--ring));
-        }
-      `}</style>
     </div>
   );
 }
 
 function Field({ label, children }) {
   return (
-    <div className="space-y-1">
-      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</label>
+    <div>
+      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label>
       {children}
     </div>
   );

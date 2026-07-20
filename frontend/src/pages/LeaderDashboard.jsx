@@ -44,8 +44,8 @@ export default function LeaderDashboard({ user }) {
   const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId, activeFY);
   const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId, activeFY);
   const { approvedByDesignation } = useHeadcount(selectedLeaderId, activeFY);
-  const { data: meetings = [] } = useClientMeetings(selectedLeaderId, activeFY);
-  const { data: leaderActions = [] } = useActions(selectedLeaderId, activeFY);
+  const { data: meetings = [], isLoading: meetingsLoading } = useClientMeetings(selectedLeaderId, activeFY);
+  const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);
   const activeBaseline = baselines[0] ?? null;
   const { rows: consolidatedRows, columns: consolidatedColumns } = useConsolidated(activeFY);
@@ -195,8 +195,8 @@ export default function LeaderDashboard({ user }) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <MeetingsCard meetings={meetings} fyLabel={fyLabel} />
-          <ActionsCard actions={leaderActions} fyLabel={fyLabel} />
+          <MeetingsCard meetings={meetings} fyLabel={fyLabel} isLoading={meetingsLoading} />
+          <ActionsCard actions={leaderActions} fyLabel={fyLabel} isLoading={actionsLoading} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timezone, date
 from bson import ObjectId
 from app.schemas.engagement import EngagementCreate, EngagementUpdate, RemarksUpdate, EngagementResponse
+from app.core.serialization import serialize_datetime
 from app.services.engagement_service import compute_totals
 from app.services.engagement_change_service import list_changes
 from app.services import audit_service
@@ -26,7 +27,7 @@ def _serialize_remarks_history(entries: list | None) -> list[dict]:
     return [
         {
             "text": e.get("text", ""),
-            "at": e.get("at"),
+            "at": serialize_datetime(e.get("at")),
             "by": e.get("by", ""),
         }
         for e in entries
@@ -76,8 +77,8 @@ def _serialize(doc: dict) -> dict:
         "remarks": doc.get("remarks", ""),
         "remarks_history": _serialize_remarks_history(doc.get("remarks_history")),
         "is_archived": doc.get("is_archived", False),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

@@ -5,11 +5,12 @@ import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useLeader } from '@/hooks/useLeaders';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import { getFyLabel } from '@/lib/fiscalYear';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Clients({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const { data: leader } = useLeader(selectedLeaderId);
-  const { clients } = useClientActions();
+  const { clients, isLoading } = useClientActions();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
   return (
@@ -17,9 +18,13 @@ export default function Clients({ user }) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Engagements</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {fyLabel} · {clients.length} clients{leader?.name ? ` · ${leader.name}` : ''}
-          </p>
+          {isLoading ? (
+            <Skeleton className="h-4 w-48 mt-2" />
+          ) : (
+            <p className="text-sm text-muted-foreground mt-1">
+              {fyLabel} · {clients.length} clients{leader?.name ? ` · ${leader.name}` : ''}
+            </p>
+          )}
         </div>
         <LeaderFYSelector />
       </div>

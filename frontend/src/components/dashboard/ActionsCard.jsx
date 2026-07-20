@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ListChecks, AlertCircle } from 'lucide-react';
 
 function parseDueDate(value) {
@@ -7,19 +7,32 @@ function parseDueDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export default function ActionsCard({ actions = [], fyLabel = '' }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+export default function ActionsCard({ actions = [], fyLabel = '', isLoading = false }) {
+  const { overdue, upcoming } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const open = actions.filter((a) => a.status !== 'Closed');
+    const overdueItems = [];
+    const upcomingItems = [];
+    open.forEach((a) => {
+      const due = parseDueDate(a.due_date);
+      if (due && due < today) overdueItems.push(a);
+      else upcomingItems.push(a);
+    });
+    return { overdue: overdueItems, upcoming: upcomingItems };
+  }, [actions]);
 
-  const open = actions.filter((a) => a.status !== 'Closed');
-  const overdue = [];
-  const upcoming = [];
-
-  open.forEach((a) => {
-    const due = parseDueDate(a.due_date);
-    if (due && due < today) overdue.push(a);
-    else upcoming.push(a);
-  });
+  if (isLoading) {
+    return (
+      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 animate-pulse">
+        <div className="h-4 w-32 bg-slate-200 rounded mb-4" />
+        <div className="space-y-2">
+          <div className="h-8 bg-slate-200 rounded" />
+          <div className="h-8 bg-slate-200 rounded" />
+        </div>
+      </div>
+    );
+  }
 
   const label = (a) => a.description || a.category || 'Untitled action';
   const isEmpty = overdue.length === 0 && upcoming.length === 0;

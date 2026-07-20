@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useLeaders } from '@/hooks/useLeaders';
 import { useFinancialYears } from '@/hooks/useFinancialYears';
@@ -13,8 +13,15 @@ export function GlobalSelectorProvider({ children }) {
   const [selectedLeaderIdOverride, setSelectedLeaderIdOverride] = useState(null);
   const [activeFY, setActiveFY] = useState(null);
 
-  const leaderList = Array.isArray(leaders) ? leaders : [];
-  const activeFiscalYears = fiscalYears.filter((fy) => fy.is_active !== false);
+  const leaderList = useMemo(
+    () => (Array.isArray(leaders) ? leaders : []),
+    [leaders],
+  );
+
+  const activeFiscalYears = useMemo(
+    () => fiscalYears.filter((fy) => fy.is_active !== false),
+    [fiscalYears],
+  );
 
   const selectedLeaderId = selectedLeaderIdOverride
     ?? user?.leader_id
@@ -34,21 +41,29 @@ export function GlobalSelectorProvider({ children }) {
     }
   }, [activeFiscalYears, activeFY]);
 
-  const setSelectedLeaderId = (id) => {
+  const setSelectedLeaderId = useCallback((id) => {
     if (user?.role === 'user') return;
     setSelectedLeaderIdOverride(id);
-  };
+  }, [user?.role]);
+
+  const value = useMemo(() => ({
+    selectedLeaderId,
+    setSelectedLeaderId,
+    activeFY,
+    setActiveFY,
+    fiscalYears: activeFiscalYears,
+    activeFiscalYears,
+    fyLoading,
+  }), [
+    selectedLeaderId,
+    setSelectedLeaderId,
+    activeFY,
+    activeFiscalYears,
+    fyLoading,
+  ]);
 
   return (
-    <GlobalSelectorContext.Provider value={{
-      selectedLeaderId,
-      setSelectedLeaderId,
-      activeFY,
-      setActiveFY,
-      fiscalYears: activeFiscalYears,
-      activeFiscalYears: activeFiscalYears,
-      fyLoading,
-    }}>
+    <GlobalSelectorContext.Provider value={value}>
       {children}
     </GlobalSelectorContext.Provider>
   );

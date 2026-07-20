@@ -9,6 +9,7 @@ from app.schemas.financial_year import FinancialYearCreate, FinancialYearUpdate
 from app.services.fiscal_year import serialize_financial_year
 from app.core.security import hash_password
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import require_roles
 from app.services import audit_service
 
@@ -35,7 +36,7 @@ def _serialize_plan_snapshot(doc: dict | None, snapshot_type: str) -> dict | Non
         "blue_sky": doc.get("blue_sky") or 0,
         "total": doc.get("total", 0),
         "source": doc.get("source"),
-        "updated_at": doc.get("updated_at"),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 
@@ -63,8 +64,8 @@ def _serialize_user(doc: dict) -> dict:
         "role": doc["role"],
         "leader_id": doc.get("leader_id"),
         "is_active": doc.get("is_active", True),
-        "created_at": doc["created_at"],
-        "last_login": doc.get("last_login"),
+        "created_at": serialize_datetime(doc["created_at"]),
+        "last_login": serialize_datetime(doc.get("last_login")),
     }
 
 

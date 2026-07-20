@@ -4,6 +4,7 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 from typing import Optional
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 
@@ -74,8 +75,8 @@ def _serialize(doc: dict) -> dict:
         "q3_date": doc.get("q3_date", ""),
         "q4_date": doc.get("q4_date", ""),
         "sort_order": doc.get("sort_order", 0),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_at": serialize_datetime(doc.get("created_at")),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 

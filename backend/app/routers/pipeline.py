@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.pipeline import PipelineSnapshotCreate, PipelineSnapshotUpdate, PipelineSnapshotResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope, require_roles
 from app.services.engagement_derivation import materialize_leader_derived_data
 from app.services import audit_service
@@ -23,8 +24,8 @@ def _serialize(doc: dict) -> dict:
         "total": doc["total"],
         "snapshot_type": doc.get("snapshot_type"),
         "as_of_date": doc.get("as_of_date"),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

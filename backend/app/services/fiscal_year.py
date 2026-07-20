@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException
 from app.core import database
+from app.core.serialization import serialize_datetime
 
 
 def serialize_financial_year(doc: dict) -> dict:
@@ -12,8 +13,8 @@ def serialize_financial_year(doc: dict) -> dict:
         "is_current": doc.get("is_current", False),
         "is_active": doc.get("is_active", True),
         "sort_order": doc.get("sort_order", 0),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_at": serialize_datetime(doc.get("created_at")),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 

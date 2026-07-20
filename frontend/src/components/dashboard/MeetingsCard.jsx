@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { CalendarClock, AlertCircle } from 'lucide-react';
 
 const QUARTERS = [
@@ -8,19 +8,33 @@ const QUARTERS = [
   { key: 'q4', label: 'Q4 (Jan–Mar)' },
 ];
 
-export default function MeetingsCard({ meetings = [], fyLabel = '' }) {
-  const overdue = [];
-  const upcoming = [];
-
-  meetings.forEach((m) => {
-    if (m.frequency === 'Waiver') return;
-    QUARTERS.forEach((q) => {
-      const status = m[q.key];
-      const date = m[`${q.key}Date`] || '';
-      if (status === 'Overdue') overdue.push({ client: m.client, quarter: q.label, date });
-      else if (status === 'Planned') upcoming.push({ client: m.client, quarter: q.label, date });
+export default function MeetingsCard({ meetings = [], fyLabel = '', isLoading = false }) {
+  const { overdue, upcoming } = useMemo(() => {
+    const overdueItems = [];
+    const upcomingItems = [];
+    meetings.forEach((m) => {
+      if (m.frequency === 'Waiver') return;
+      QUARTERS.forEach((q) => {
+        const status = m[q.key];
+        const date = m[`${q.key}Date`] || '';
+        if (status === 'Overdue') overdueItems.push({ client: m.client, quarter: q.label, date });
+        else if (status === 'Planned') upcomingItems.push({ client: m.client, quarter: q.label, date });
+      });
     });
-  });
+    return { overdue: overdueItems, upcoming: upcomingItems };
+  }, [meetings]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 animate-pulse">
+        <div className="h-4 w-40 bg-slate-200 rounded mb-4" />
+        <div className="space-y-2">
+          <div className="h-8 bg-slate-200 rounded" />
+          <div className="h-8 bg-slate-200 rounded" />
+        </div>
+      </div>
+    );
+  }
 
   const isEmpty = overdue.length === 0 && upcoming.length === 0;
 

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.action import ActionCreate, ActionUpdate, ActionStatusPatch, ActionResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 
@@ -28,8 +29,8 @@ def _serialize(doc: dict) -> dict:
         "cross_ref_risks": doc.get("cross_ref_risks"),
         "cross_ref_issues": doc.get("cross_ref_issues"),
         "cross_ref_decisions": doc.get("cross_ref_decisions"),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

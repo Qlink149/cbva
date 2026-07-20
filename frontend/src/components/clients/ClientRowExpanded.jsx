@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Calendar, Pencil } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { formatIstDate } from '@/lib/datetime';
 
 function fmt(val) {
   if (val === null || val === undefined) return '—';
@@ -15,7 +16,7 @@ function fmt(val) {
 
 function formatHistoryDate(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return formatIstDate(iso, 'd MMM yyyy');
 }
 
 function ChangeLog({ changes, loading }) {

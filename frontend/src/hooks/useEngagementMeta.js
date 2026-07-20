@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiDelete, apiPatch } from '@/api/client';
+import { formatIstDate } from '@/lib/datetime';
 
 const changesKey = (engagementId) => ['engagement-changes', engagementId];
 const actionsKey = (leaderId, fiscalYear) => ['engagement-actions', leaderId, fiscalYear];
@@ -13,7 +14,7 @@ export function useEngagementChanges(engagementId, enabled = false) {
       const rows = res.data ?? res ?? [];
       return rows.map((c) => ({
         date: c.changed_at
-          ? new Date(c.changed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+          ? formatIstDate(c.changed_at, 'd MMM yyyy')
           : '',
         field: c.field,
         from: c.old_value,

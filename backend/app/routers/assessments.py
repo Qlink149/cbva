@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope
 
 router = APIRouter()
@@ -25,8 +26,8 @@ def _serialize(doc: dict) -> dict:
         "sort_order": doc.get("sort_order", 0),
         "is_shared_template": doc.get("is_shared_template", False),
         "content_hash": doc.get("content_hash", ""),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

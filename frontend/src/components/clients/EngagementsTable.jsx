@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useDeferredValue, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2 } from 'lucide-react';
 import ClientRowExpanded from '@/components/clients/ClientRowExpanded';
 import AddEngagementModal from '@/components/clients/AddEngagementModal';
@@ -21,9 +22,15 @@ import {
   uniqueManagers,
   pruneMonthlyFilters,
 } from '@/lib/engagementFilters';
-import { uniqueRelationshipPartners, relationshipPartnerLabel } from '@/lib/relationshipPartners';
+import PersonSelect from '@/components/clients/PersonSelect';
+import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
+import { useFirmwideTeam } from '@/hooks/useFirmwide';
+import { useLeaders } from '@/hooks/useLeaders';
+import { normalizePersonOptions, otherPersonOptions } from '@/lib/personNames';
+import { displayPartnerNames, uniqueRelationshipPartners } from '@/lib/relationshipPartners';
 import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 import { useEngagementChanges } from '@/hooks/useEngagementMeta';
+import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/components/ui/LoadingState';
 
 const L = 100000;
 const BLUE_SKY_BG = '#00CCFF';
@@ -72,6 +79,13 @@ function EngagementColGroup({ collectionsOpen, showScope, monthCount }) {
 }
 
 const EL_STATUS_OPTIONS = ['Signed', 'Not Signed', 'Waived', 'NA', 'DS', '—'];
+
+function SortIcon({ field, sortField, sortDir }) {
+  if (sortField !== field) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />;
+  return sortDir === 'desc'
+    ? <ArrowDown className="w-3 h-3 inline ml-1 text-cbva-navy" />
+    : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
+}
 
 function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stickyClass, stickyStyle }) {
   const [editing, setEditing] = useState(false);
@@ -134,59 +148,17 @@ function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stick
   );
 }
 
-function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, suggestions = [] }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const listId = 'engagement-rel-partner-suggestions';
-
-  function startEdit() {
-    setDraft(value || '');
-    setEditing(true);
-  }
-
-  function commit() {
-    const next = draft.trim();
-    if (next !== (value || '').trim()) onChange(next);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
-        <input
-          autoFocus
-          list={listId}
-          className="w-full text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-        />
-        <datalist id={listId}>
-          {suggestions.map((s) => (
-            <option key={s} value={s} />
-          ))}
-        </datalist>
-      </td>
-    );
-  }
-
-  const label = relationshipPartnerLabel(value);
+function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, primaryOptions = [], otherOptions = [] }) {
   return (
-    <td
-      className={`${stickyClass} py-3 px-3 text-xs text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors`}
-      style={stickyStyle}
-      onClick={startEdit}
-      title="Click to edit relationship partner"
-    >
-      {label !== '-' ? (
-        <span className="truncate block max-w-[90px]" title={label}>{label}</span>
-      ) : (
-        <span className="text-muted-foreground/60">-</span>
-      )}
+    <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
+      <PersonMultiSelect
+        value={value}
+        onChange={onChange}
+        primaryOptions={primaryOptions}
+        otherOptions={otherOptions}
+        compact
+        title={value ? displayPartnerNames(value) : 'Select relationship partner'}
+      />
     </td>
   );
 }
@@ -211,52 +183,17 @@ function ELStatusCell({ value, onChange, stickyClass, stickyStyle }) {
   );
 }
 
-function ManagerCell({ value, onChange, stickyClass, stickyStyle, listId }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  function startEdit() {
-    setDraft(value || '');
-    setEditing(true);
-  }
-
-  function commit() {
-    const next = draft.trim();
-    if (next !== (value || '').trim()) onChange(next);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
-        <input
-          autoFocus
-          list={listId}
-          className="w-full text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-        />
-      </td>
-    );
-  }
-
+function ManagerCell({ value, onChange, stickyClass, stickyStyle, primaryOptions = [], otherOptions = [] }) {
   return (
-    <td
-      className={`${stickyClass} py-3 px-3 text-xs text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors group`}
-      style={stickyStyle}
-      onClick={startEdit}
-      title="Click to edit manager"
-    >
-      {value ? (
-        <span className="truncate block max-w-[90px]" title={value}>{value}</span>
-      ) : (
-        <span className="text-muted-foreground/60">-</span>
-      )}
+    <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
+      <PersonSelect
+        value={value}
+        onChange={onChange}
+        primaryOptions={primaryOptions}
+        otherOptions={otherOptions}
+        compact
+        title={value || 'Select manager'}
+      />
     </td>
   );
 }
@@ -461,12 +398,38 @@ function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction,
 
 // Unified engagements table - same layout for all fiscal years
 function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
-  const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi } = useClientActions();
+  const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi, isUpdating } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
-  const managerSuggestions = useMemo(
-    () => [...new Set(teamMembers.map(m => m.full_name).filter(Boolean))].sort(),
-    [teamMembers]
+  const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
+  const { data: leaders = [] } = useLeaders();
+
+  const managerPrimaryOptions = useMemo(
+    () => normalizePersonOptions(teamMembers.map((m) => m.full_name)),
+    [teamMembers],
+  );
+
+  const firmwideNames = useMemo(
+    () => normalizePersonOptions(firmwideTeam.map((m) => m.full_name)),
+    [firmwideTeam],
+  );
+
+  const managerOtherOptions = useMemo(
+    () => otherPersonOptions(firmwideNames, managerPrimaryOptions),
+    [firmwideNames, managerPrimaryOptions],
+  );
+
+  const relPartnerPrimaryOptions = useMemo(
+    () => normalizePersonOptions([
+      ...uniqueRelationshipPartners(clients),
+      ...leaders.map((l) => l.name),
+    ]),
+    [clients, leaders],
+  );
+
+  const relPartnerOtherOptions = useMemo(
+    () => otherPersonOptions(firmwideNames, relPartnerPrimaryOptions),
+    [firmwideNames, relPartnerPrimaryOptions],
   );
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
@@ -475,6 +438,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState(DEFAULT_ENGAGEMENT_FILTERS);
+  const deferredFilters = useDeferredValue(filters);
 
   // Selected months for the Planned vs Collected section (default: previous month)
   const [selectedMonths, setSelectedMonths] = useState(() => [getDefaultMonthKey(activeFY)]);
@@ -510,7 +474,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   // Per-engagement per-month actual collected (from finance transactions)
-  const { data: transactions = [] } = useCollectionTransactions(selectedLeaderId, activeFY);
+  const { data: transactions = [], isLoading: txLoading, isFetching: txFetching } = useCollectionTransactions(selectedLeaderId, activeFY);
   const txMap = useMemo(() => groupTxByEngagementMonth(transactions), [transactions]);
   const addTransaction = useAddTransaction(selectedLeaderId, activeFY);
   const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
@@ -528,11 +492,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     else { setSortField(field); setSortDir('desc'); }
   }
 
-  function SortIcon({ field }) {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />;
-    return sortDir === 'desc'
-      ? <ArrowDown className="w-3 h-3 inline ml-1 text-cbva-navy" />
-      : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
+  function SortIconCell({ field }) {
+    return <SortIcon field={field} sortField={sortField} sortDir={sortDir} />;
   }
 
   function toggleExpandedRow(num) {
@@ -599,7 +560,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   const filtered = useMemo(() => {
-    let list = applyEngagementFilters(clients, filters, { txMap, selectedMonths });
+    let list = applyEngagementFilters(clients, deferredFilters, { txMap, selectedMonths });
 
     if (sortField) {
       list = [...list].sort((a, b) => {
@@ -613,7 +574,17 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       });
     }
     return list;
-  }, [clients, sortField, sortDir, filters, txMap, selectedMonths]);
+  }, [clients, sortField, sortDir, deferredFilters, txMap, selectedMonths]);
+
+  const actCountByClientNum = useMemo(() => {
+    const map = new Map();
+    clientActions.forEach((a) => {
+      if (a.status !== 'Done') {
+        map.set(a.clientNum, (map.get(a.clientNum) || 0) + 1);
+      }
+    });
+    return map;
+  }, [clientActions]);
 
   const totals = useMemo(() => {
     const acc = {
@@ -658,6 +629,24 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const thStyle = { top: 36, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
   const activeFilterCount = countActiveEngagementFilters(filters, selectedMonths);
+
+  const scrollRef = useRef(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (expandedRow === filtered[index]?.num ? 320 : 52),
+    overscan: 8,
+  });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [expandedRow, filtered.length, collectionsOpen, rowVirtualizer]);
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -720,13 +709,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
         />
       )}
 
-      {isLoading && (
-        <div className="space-y-3 py-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-10 bg-muted/40 rounded-lg animate-pulse" />
-          ))}
-        </div>
-      )}
+      {isLoading && <TableSkeleton rows={6} />}
+
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Failed to load engagements. Try refreshing the page.
@@ -734,13 +718,19 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       )}
 
       {!isLoading && !isError && (
-      <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-        {managerSuggestions.length > 0 && (
+      <div className="relative bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+        <div className="flex items-center justify-end px-3 py-1 border-b border-border/40 bg-muted/20">
+          <RefreshingBadge show={txFetching && !txLoading} label="Refreshing collections…" />
+          {isUpdating && <RefreshingBadge show label="Saving…" />}
+        </div>
+        <SectionLoadingOverlay show={txLoading && collectionsOpen} label="Loading collection data…" />
+        {managerPrimaryOptions.length > 0 && (
           <datalist id="engagement-manager-suggestions">
-            {managerSuggestions.map(name => <option key={name} value={name} />)}
+            {managerPrimaryOptions.map(name => <option key={name} value={name} />)}
           </datalist>
         )}
         <div
+          ref={scrollRef}
           className="scrollbar-x-none overflow-auto"
           style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 230px)', minHeight: '500px' }}
         >
@@ -848,7 +838,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   className="text-emerald-700 cursor-pointer select-none"
                   style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
                   onSort={() => handleSort('green')}
-                  sortIcon={<SortIcon field="green" />}
+                  sortIcon={<SortIconCell field="green" />}
                 />
                 <ColumnHeaderFilter
                   label="Amber (?)"
@@ -860,7 +850,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   className="text-amber-600 cursor-pointer select-none"
                   style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
                   onSort={() => handleSort('amber')}
-                  sortIcon={<SortIcon field="amber" />}
+                  sortIcon={<SortIconCell field="amber" />}
                 />
                 <ColumnHeaderFilter
                   label="Blue Sky (?)"
@@ -872,7 +862,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   className="text-cbva-navy cursor-pointer select-none"
                   style={{ minWidth: 120, width: 120, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
                   onSort={() => handleSort('blueSky')}
-                  sortIcon={<SortIcon field="blueSky" />}
+                  sortIcon={<SortIconCell field="blueSky" />}
                 />
                 <ColumnHeaderFilter
                   label="Total (?)"
@@ -968,12 +958,18 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((client, i) => {
+              {paddingTop > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={bodyColSpan} style={{ height: paddingTop, padding: 0, border: 'none' }} />
+                </tr>
+              )}
+              {virtualRows.map((virtualRow) => {
+                const client = filtered[virtualRow.index];
                 const isExpanded = expandedRow === client.num;
-                const actCount = clientActions.filter(a => a.clientNum === client.num && a.status !== 'Done').length;
+                const actCount = actCountByClientNum.get(client.num) || 0;
                 const prevActualCollected = prevActualCollectedFor(client);
                 return (
-                  <React.Fragment key={i}>
+                  <React.Fragment key={client.id}>
                     <tr className={`[&>td]:border-b [&>td]:border-border/50 hover:bg-muted/20 transition-colors ${isExpanded ? 'bg-muted/10' : ''}`}>
                       <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground`} style={{ minWidth: 32 }}>{client.num}</td>
                       <NameCell
@@ -998,14 +994,16 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         onChange={v => updateManager(client.id, v)}
                         stickyClass={stickyBase}
                         stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
-                        listId="engagement-manager-suggestions"
+                        primaryOptions={managerPrimaryOptions}
+                        otherOptions={managerOtherOptions}
                       />
                       <RelPartnerCell
                         value={client.relPartner}
                         onChange={(v) => updateRelPartner(client.id, v)}
                         stickyClass={stickyBase}
                         stickyStyle={{ left: stickyLeft.relPartner, minWidth: 100 }}
-                        suggestions={relPartnerOptions}
+                        primaryOptions={relPartnerPrimaryOptions}
+                        otherOptions={relPartnerOtherOptions}
                       />
                       <ELStatusCell
                         value={client.elStatus}
@@ -1087,6 +1085,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   </React.Fragment>
                 );
               })}
+              {paddingBottom > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={bodyColSpan} style={{ height: paddingBottom, padding: 0, border: 'none' }} />
+                </tr>
+              )}
             </tbody>
             <tfoot>
               <tr className="bg-muted [&>td]:border-t-2 [&>td]:border-border">

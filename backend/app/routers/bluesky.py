@@ -8,6 +8,7 @@ from app.schemas.bluesky import (
     BlueSkyListResponse,
 )
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 from app.services.fy_calendar import (
@@ -53,8 +54,8 @@ def _serialize(doc: dict, *, month_key: str | None = None, is_current_month: boo
         "remarks": doc.get("remarks", ""),
         "has_data": True,
         "is_current_month": is_current_month,
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_at": serialize_datetime(doc.get("created_at")),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 

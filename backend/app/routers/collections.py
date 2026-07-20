@@ -6,6 +6,7 @@ from app.schemas.collection import (
     MonthCollectionResponse, CollectionListResponse,
 )
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services.fy_calendar import (
     get_fy_month_calendar_year,
@@ -97,7 +98,7 @@ async def list_collections(
                     "client_name": tx["client_name"],
                     "amount_billed": tx.get("amount_billed", 0),
                     "amount_collected": tx["amount_collected"],
-                    "created_at": tx["created_at"],
+                    "created_at": serialize_datetime(tx["created_at"]),
                 }
                 for tx in txs
             ],

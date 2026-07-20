@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from datetime import datetime, timezone
 from app.schemas.headcount import HeadcountPlanUpsert, HeadcountPlanResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 
@@ -15,8 +16,8 @@ def _serialize(doc: dict) -> dict:
         "fiscal_year": doc.get("fiscal_year", ""),
         "designation": doc["designation"],
         "board_approved": doc.get("board_approved", 0),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 

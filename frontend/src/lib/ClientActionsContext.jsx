@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useCallback } from 'react';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useEngagements, useUpdateEngagement, useDeleteEngagement, useUpdateRemarks } from '@/hooks/useEngagements';
 import { useEngagementActions } from '@/hooks/useEngagementMeta';
@@ -33,7 +33,7 @@ export function ClientActionsProvider({ children }) {
     [clientActions, clientNameByNum],
   );
 
-  function addAction({ clientNum, clientName, description, deadline, engagementId }) {
+  const addAction = useCallback(({ clientNum, clientName, description, deadline, engagementId }) => {
     if (!engagementId || !selectedLeaderId || !activeFY) return;
     createAction.mutate({
       engagement_id: engagementId,
@@ -43,29 +43,56 @@ export function ClientActionsProvider({ children }) {
       description,
       deadline: deadline || null,
     });
-  }
+  }, [createAction, selectedLeaderId, activeFY]);
 
-  function removeAction(id) {
+  const removeAction = useCallback((id) => {
     deleteAction.mutate(id);
-  }
+  }, [deleteAction]);
 
-  function updateActionStatus(id, status) {
+  const updateActionStatus = useCallback((id, status) => {
     patchActionStatus.mutate({ id, status });
-  }
+  }, [patchActionStatus]);
+
+  const updateEngagement = useCallback((vars) => {
+    updateMutation.mutate(vars);
+  }, [updateMutation]);
+
+  const deleteEngagement = useCallback((id) => {
+    deleteMutation.mutate(id);
+  }, [deleteMutation]);
+
+  const updateRemarks = useCallback((vars) => {
+    remarksMutation.mutate(vars);
+  }, [remarksMutation]);
+
+  const value = useMemo(() => ({
+    clients,
+    isLoading,
+    isError,
+    clientActions: clientActionsWithNames,
+    addAction,
+    deleteAction: removeAction,
+    updateActionStatus,
+    updateEngagement,
+    deleteEngagement,
+    updateRemarks,
+    isUpdating: updateMutation.isPending,
+  }), [
+    clients,
+    isLoading,
+    isError,
+    clientActionsWithNames,
+    addAction,
+    removeAction,
+    updateActionStatus,
+    updateEngagement,
+    deleteEngagement,
+    updateRemarks,
+    updateMutation.isPending,
+  ]);
 
   return (
-    <ClientActionsContext.Provider value={{
-      clients,
-      isLoading,
-      isError,
-      clientActions: clientActionsWithNames,
-      addAction,
-      deleteAction: removeAction,
-      updateActionStatus,
-      updateEngagement: updateMutation.mutate,
-      deleteEngagement: deleteMutation.mutate,
-      updateRemarks: remarksMutation.mutate,
-    }}>
+    <ClientActionsContext.Provider value={value}>
       {children}
     </ClientActionsContext.Provider>
   );

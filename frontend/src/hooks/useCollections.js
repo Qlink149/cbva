@@ -6,8 +6,7 @@ export const useCollections = (leaderId, fiscalYear) =>
     queryKey: ['collections', leaderId, fiscalYear],
     queryFn: () => apiGet('/api/collections', { leader_id: leaderId, fiscal_year: fiscalYear }),
     enabled: !!leaderId && !!fiscalYear,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    staleTime: 60_000,
   });
 
 /** Upsert planned target for a month (creates the collection_entries row if absent). */

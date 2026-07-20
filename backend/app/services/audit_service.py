@@ -9,6 +9,7 @@ from bson import ObjectId
 from loguru import logger
 
 from app.core import database
+from app.core.serialization import serialize_datetime
 
 REDACTED_FIELDS = frozenset({"password", "password_hash", "refresh_token_hashes"})
 REDACTED_VALUE = "•••"
@@ -111,7 +112,7 @@ def _serialize_audit_doc(doc: dict) -> dict:
         "source": doc.get("source", "ui"),
         "triggered_by": str(doc["triggered_by"]) if doc.get("triggered_by") else None,
         "request_id": doc.get("request_id"),
-        "created_at": doc["created_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
     }
     return out
 

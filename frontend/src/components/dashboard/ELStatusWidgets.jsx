@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatINRFull } from '@/lib/formatCurrency';
 
@@ -68,34 +68,36 @@ function DonutChart({ data, label }) {
 }
 
 export default function ELStatusWidgets({ clients }) {
-  const signed = clients.filter(c => c.elStatus === 'Signed');
-  const notSigned = clients.filter(c => c.elStatus === 'Not Signed');
-  const waived = clients.filter(c => c.elStatus === 'DS');
-  const na = clients.filter(c => c.elStatus === 'NA' || c.elStatus === '—' || !c.elStatus);
+  const { volumeData, valueData } = useMemo(() => {
+    const signed = clients.filter(c => c.elStatus === 'Signed');
+    const notSigned = clients.filter(c => c.elStatus === 'Not Signed');
+    const waived = clients.filter(c => c.elStatus === 'DS');
+    const na = clients.filter(c => c.elStatus === 'NA' || c.elStatus === '—' || !c.elStatus);
 
-  const total = clients.length;
+    const total = clients.length;
 
-  // Volume data — N clients (X%)
-  const volumeData = [
-    { name: 'Signed', value: signed.length, display: `${signed.length} clients (${pct(signed.length, total)})` },
-    { name: 'Not Signed', value: notSigned.length, display: `${notSigned.length} clients (${pct(notSigned.length, total)})` },
-    { name: 'Waived', value: waived.length, display: `${waived.length} clients (${pct(waived.length, total)})` },
-    { name: 'NA', value: na.length, display: `${na.length} clients (${pct(na.length, total)})` },
-  ].filter(d => d.value > 0);
+    const volume = [
+      { name: 'Signed', value: signed.length, display: `${signed.length} clients (${pct(signed.length, total)})` },
+      { name: 'Not Signed', value: notSigned.length, display: `${notSigned.length} clients (${pct(notSigned.length, total)})` },
+      { name: 'Waived', value: waived.length, display: `${waived.length} clients (${pct(waived.length, total)})` },
+      { name: 'NA', value: na.length, display: `${na.length} clients (${pct(na.length, total)})` },
+    ].filter(d => d.value > 0);
 
-  // Value data — always in Crores, with percentage
-  const signedVal = signed.reduce((s, c) => s + (c.green || 0), 0);
-  const notSignedVal = notSigned.reduce((s, c) => s + (c.green || 0), 0);
-  const waivedVal = waived.reduce((s, c) => s + (c.green || 0), 0);
-  const naVal = na.reduce((s, c) => s + (c.green || 0), 0);
-  const totalVal = signedVal + notSignedVal + waivedVal + naVal;
+    const signedVal = signed.reduce((s, c) => s + (c.green || 0), 0);
+    const notSignedVal = notSigned.reduce((s, c) => s + (c.green || 0), 0);
+    const waivedVal = waived.reduce((s, c) => s + (c.green || 0), 0);
+    const naVal = na.reduce((s, c) => s + (c.green || 0), 0);
+    const totalVal = signedVal + notSignedVal + waivedVal + naVal;
 
-  const valueData = [
-    { name: 'Signed',     value: signedVal,    display: `${formatINRFull(signedVal)} (${pct(signedVal, totalVal)})` },
-    { name: 'Not Signed', value: notSignedVal,  display: `${formatINRFull(notSignedVal)} (${pct(notSignedVal, totalVal)})` },
-    { name: 'Waived',     value: waivedVal,     display: `${formatINRFull(waivedVal)} (${pct(waivedVal, totalVal)})` },
-    { name: 'NA',         value: naVal,         display: `${formatINRFull(naVal)} (${pct(naVal, totalVal)})` },
-  ].filter(d => d.value > 0);
+    const value = [
+      { name: 'Signed',     value: signedVal,    display: `${formatINRFull(signedVal)} (${pct(signedVal, totalVal)})` },
+      { name: 'Not Signed', value: notSignedVal,  display: `${formatINRFull(notSignedVal)} (${pct(notSignedVal, totalVal)})` },
+      { name: 'Waived',     value: waivedVal,     display: `${formatINRFull(waivedVal)} (${pct(waivedVal, totalVal)})` },
+      { name: 'NA',         value: naVal,         display: `${formatINRFull(naVal)} (${pct(naVal, totalVal)})` },
+    ].filter(d => d.value > 0);
+
+    return { volumeData: volume, valueData: value };
+  }, [clients]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
