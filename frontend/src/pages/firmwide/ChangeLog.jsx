@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { formatINRFull } from '@/lib/formatCurrency';
-import { formatIstRelative } from '@/lib/datetime';
+import { formatIstDateTime } from '@/lib/datetime';
 import { useAuditLog, exportAuditLog } from '@/hooks/useAuditLog';
 
 const ENTITY_TYPES = [
@@ -125,7 +125,7 @@ export default function ChangeLog() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 min-w-0 max-w-full overflow-x-hidden">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
@@ -136,52 +136,54 @@ export default function ChangeLog() {
             Who changed what, when — across the entire platform.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport} className="gap-2">
+        <Button variant="outline" size="sm" onClick={handleExport} className="gap-2 shrink-0">
           <Download className="h-4 w-4" />
           Export CSV
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="relative lg:col-span-2">
+      <div className="space-y-3 min-w-0">
+        <div className="relative max-w-xl">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search records..."
             value={filters.q}
             onChange={(e) => { setFilters((f) => ({ ...f, q: e.target.value })); setSkip(0); }}
-            className="pl-9"
+            className="pl-9 w-full"
           />
         </div>
-        <select
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          value={filters.entity_type}
-          onChange={(e) => { setFilters((f) => ({ ...f, entity_type: e.target.value })); setSkip(0); }}
-        >
-          {ENTITY_TYPES.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <select
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          value={filters.action}
-          onChange={(e) => { setFilters((f) => ({ ...f, action: e.target.value })); setSkip(0); }}
-        >
-          {ACTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 min-w-0">
+          <select
+            className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+            value={filters.entity_type}
+            onChange={(e) => { setFilters((f) => ({ ...f, entity_type: e.target.value })); setSkip(0); }}
+          >
+            {ENTITY_TYPES.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <select
+            className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+            value={filters.action}
+            onChange={(e) => { setFilters((f) => ({ ...f, action: e.target.value })); setSkip(0); }}
+          >
+            {ACTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
           <Input
             type="date"
             value={filters.date_from}
             onChange={(e) => { setFilters((f) => ({ ...f, date_from: e.target.value })); setSkip(0); }}
-            className="text-sm"
+            className="text-sm w-full min-w-0"
+            aria-label="From date"
           />
           <Input
             type="date"
             value={filters.date_to}
             onChange={(e) => { setFilters((f) => ({ ...f, date_to: e.target.value })); setSkip(0); }}
-            className="text-sm"
+            className="text-sm w-full min-w-0"
+            aria-label="To date"
           />
         </div>
       </div>
@@ -194,16 +196,25 @@ export default function ChangeLog() {
             <Skeleton className="h-10 w-full" />
           </div>
         ) : (
-          <Table>
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '2rem' }} />
+              <col style={{ width: '11.5rem' }} />
+              <col style={{ width: '6rem' }} />
+              <col style={{ width: '5rem' }} />
+              <col style={{ width: '5.5rem' }} />
+              <col />
+              <col style={{ width: '5rem' }} />
+            </colgroup>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>When</TableHead>
-                <TableHead>Actor</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Module</TableHead>
-                <TableHead>Record</TableHead>
-                <TableHead>Changes</TableHead>
+                <TableHead className="w-8 px-1" />
+                <TableHead className="px-2">When</TableHead>
+                <TableHead className="px-2">Actor</TableHead>
+                <TableHead className="px-2">Action</TableHead>
+                <TableHead className="px-2">Module</TableHead>
+                <TableHead className="px-2">Record</TableHead>
+                <TableHead className="px-2">Changes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -217,37 +228,39 @@ export default function ChangeLog() {
               {entries.map((entry) => {
                 const isOpen = expanded[entry.id];
                 const changeCount = entry.changes?.length ?? 0;
+                const whenLabel = formatIstDateTime(entry.created_at, 'dd MMM yyyy · h:mm a');
+                const whenTitle = formatIstDateTime(entry.created_at, 'dd MMM yyyy, h:mm:ss a');
                 return (
                   <React.Fragment key={entry.id}>
                     <TableRow
                       className="cursor-pointer hover:bg-muted/40"
                       onClick={() => toggleRow(entry.id)}
                     >
-                      <TableCell>
+                      <TableCell className="px-1">
                         {isOpen
                           ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {entry.created_at
-                          ? formatIstRelative(entry.created_at)
-                          : '—'}
+                      <TableCell className="text-xs px-2" title={whenTitle}>
+                        <span className="block truncate tabular-nums text-foreground">{whenLabel}</span>
                       </TableCell>
-                      <TableCell className="text-sm">{entry.actor_name || '—'}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className={actionBadgeClass(entry.action)}>
+                      <TableCell className="text-xs px-2 truncate" title={entry.actor_name || ''}>
+                        {entry.actor_name || '—'}
+                      </TableCell>
+                      <TableCell className="px-2">
+                        <Badge variant="secondary" className={`${actionBadgeClass(entry.action)} text-[10px] px-1.5`}>
                           {entry.action?.replace(/_/g, ' ')}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs capitalize">
+                      <TableCell className="text-[10px] capitalize px-2 truncate" title={entry.entity_type}>
                         {entry.entity_type?.replace(/_/g, ' ')}
                       </TableCell>
-                      <TableCell className="text-sm max-w-[200px] truncate" title={entry.entity_label}>
+                      <TableCell className="text-xs px-2 truncate" title={entry.entity_label}>
                         {entry.entity_label || '—'}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-2">
                         {changeCount > 0 ? (
-                          <Badge variant="outline">{changeCount} field{changeCount !== 1 ? 's' : ''}</Badge>
+                          <Badge variant="outline" className="text-[10px] px-1.5">{changeCount}</Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -255,7 +268,7 @@ export default function ChangeLog() {
                     </TableRow>
                     {isOpen && (
                       <TableRow className="bg-muted/20">
-                        <TableCell colSpan={7} className="px-8">
+                        <TableCell colSpan={7} className="px-4 sm:px-8">
                           <AuditRowDetails entry={entry} />
                           {entry.source === 'system' && (
                             <p className="text-[10px] text-muted-foreground mt-1">System-generated cascade</p>
@@ -267,16 +280,16 @@ export default function ChangeLog() {
                 );
               })}
             </TableBody>
-          </Table>
+          </table>
         )}
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span className="min-w-0">
           {total} total · page {page} of {totalPages}
           {isFetching && !isLoading ? ' · refreshing…' : ''}
         </span>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"

@@ -23,6 +23,23 @@ export function formatIstDate(value, pattern = 'dd MMM yyyy') {
   return d ? formatInTimeZone(d, TZ, pattern) : '—';
 }
 
+/** Date + time in IST, e.g. "20 Jul 2026, 11:49 AM". */
+export function formatIstDateTime(value, pattern = 'dd MMM yyyy, h:mm a') {
+  const d = parseApiDate(value);
+  return d ? formatInTimeZone(d, TZ, pattern) : '—';
+}
+
+/** Split date/time for stacked UI (Change Log, audit tables). */
+export function formatIstDateTimeParts(value) {
+  const d = parseApiDate(value);
+  if (!d) return null;
+  return {
+    date: formatInTimeZone(d, TZ, 'dd MMM yyyy'),
+    time: formatInTimeZone(d, TZ, 'h:mm a'),
+    title: formatInTimeZone(d, TZ, 'dd MMM yyyy, h:mm:ss a'),
+  };
+}
+
 /** Relative time (e.g. "5 minutes ago") with correct UTC parse. */
 export function formatIstRelative(value, options = { addSuffix: true }) {
   const d = parseApiDate(value);
