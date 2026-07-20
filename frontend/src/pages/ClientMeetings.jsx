@@ -92,7 +92,10 @@ export default function ClientMeetings() {
       toast.error(lockedMessage);
       return;
     }
-    if (!newRow.client.trim()) return;
+    if (!newRow.client.trim()) {
+      toast.error('Client name is required.');
+      return;
+    }
     createMeeting.mutate({
       leader_id: selectedLeaderId,
       fiscal_year: activeFY,
@@ -104,9 +107,16 @@ export default function ClientMeetings() {
       q3_status: newRow.q3,
       q4_status: newRow.q4,
       sort_order: meetings.length + 1,
+    }, {
+      onSuccess: () => {
+        setNewRow({ client: '', frequency: 'Quarterly', q1: '', q2: '', q3: '', q4: '', remarks: '' });
+        setShowAdd(false);
+        toast.success('Client meeting added');
+      },
+      onError: (err) => {
+        toast.error(err?.response?.data?.detail || err?.message || 'Failed to add client meeting');
+      },
     });
-    setNewRow({ client: '', frequency: 'Quarterly', q1: '', q2: '', q3: '', q4: '', remarks: '' });
-    setShowAdd(false);
   }
 
   function removeRow(id) {
@@ -206,7 +216,7 @@ export default function ClientMeetings() {
             <Plus className="w-3.5 h-3.5" /> Add Client
           </button>
         </div>
-        {meetings.length === 0 ? (
+        {meetings.length === 0 && !showAdd ? (
           <p className="p-8 text-center text-sm text-muted-foreground">No client meetings for {fyLabel}.</p>
         ) : (
           <div className="overflow-x-auto">
