@@ -6,6 +6,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -95,6 +96,7 @@ async def create_collection_transaction(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
 
     engagement = await database.db.engagements.find_one({"_id": ObjectId(body.engagement_id)})
     if not engagement:
@@ -153,6 +155,7 @@ async def delete_collection_transaction(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     enforce_leader_write_scope(current_user, tx["leader_id"])
+    await assert_fy_editable(tx["fiscal_year"], current_user)
 
     engagement = await database.db.engagements.find_one({"_id": ObjectId(tx["engagement_id"])})
     old_collected = engagement.get("collected", 0) if engagement else 0

@@ -14,7 +14,22 @@ export function normalizePersonOptions(options = []) {
   );
 }
 
+/** Merge option lists and ensure current value(s) appear. */
+export function mergePersonOptions(...lists) {
+  return normalizePersonOptions(
+    lists.flatMap((list) => {
+      if (Array.isArray(list)) return list;
+      if (list == null || list === '') return [];
+      return [list];
+    }),
+  );
+}
+
 export function otherPersonOptions(allOptions = [], primaryOptions = []) {
   const primary = new Set(primaryOptions.map((p) => p.toLowerCase()));
   return normalizePersonOptions(allOptions.filter((name) => !primary.has(name.toLowerCase())));
+}
+
+export function namesMatch(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 }

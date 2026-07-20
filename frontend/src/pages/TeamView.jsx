@@ -14,6 +14,8 @@ import { useHiring } from '@/hooks/useHiring';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { getFyLabel } from '@/lib/fiscalYear';
 import { sortByDesignation } from '@/lib/designations';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { toast } from 'sonner';
 
 function InitialsAvatar({ name, size = 'md' }) {
   const initials = name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -62,6 +64,7 @@ function HiringRemarks({ req, onSave }) {
 
 export default function TeamView({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit, lockedMessage } = useFyEditAccess();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
@@ -96,11 +99,21 @@ export default function TeamView({ user }) {
         </div>
         <div className="flex items-center gap-2">
           <LeaderFYSelector />
-          <Button onClick={() => setDrawerOpen(true)} className="bg-cbva-navy hover:bg-cbva-navy/90">
+          <Button
+            onClick={() => canEdit ? setDrawerOpen(true) : toast.error(lockedMessage)}
+            disabled={!canEdit}
+            className="bg-cbva-navy hover:bg-cbva-navy/90"
+          >
             <Plus className="w-4 h-4 mr-2" /> Add
           </Button>
         </div>
       </div>
+
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {fyLabel} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4">

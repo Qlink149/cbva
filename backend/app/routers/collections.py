@@ -15,6 +15,7 @@ from app.services.fy_calendar import (
 )
 from app.services.engagement_derivation import planned_by_month_from_engagements
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -114,6 +115,7 @@ async def set_monthly_plan(
 ):
     """Upsert the planned (target) amount for a month. Creates the row if it doesn't exist."""
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
 
     as_of = date.today()
     if not is_fy_month_elapsed(body.month_key, body.fiscal_year, as_of):
@@ -182,6 +184,8 @@ async def update_collection_entry(
     if not existing:
         raise HTTPException(status_code=404, detail="Collection entry not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
 
     updates: dict = {}
     planned = body.planned if body.planned is not None else existing.get("planned", 0)

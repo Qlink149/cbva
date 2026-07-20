@@ -237,6 +237,8 @@ async def create_financial_year(body: FinancialYearCreate, current_user: dict = 
         raise HTTPException(status_code=409, detail="Fiscal year slug already exists")
     now = datetime.now(timezone.utc)
     doc = body.model_dump()
+    if doc.get("is_editable") is None:
+        doc["is_editable"] = bool(doc.get("is_current"))
     doc["created_at"] = now
     doc["updated_at"] = now
     if doc.get("is_current"):
@@ -272,6 +274,8 @@ async def update_financial_year(
         return serialize_financial_year(existing)
     updates["updated_at"] = datetime.now(timezone.utc)
     if updates.get("is_current"):
+        if "is_editable" not in updates:
+            updates["is_editable"] = True
         await database.db.financial_years.update_many(
             {"_id": {"$ne": ObjectId(fy_id)}},
             {"$set": {"is_current": False, "updated_at": updates["updated_at"]}},

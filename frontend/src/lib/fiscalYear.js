@@ -18,6 +18,15 @@ export function getCurrentFySlug(fiscalYears = []) {
   return fiscalYears[0]?.slug ?? null;
 }
 
+/** Whether the selected FY allows edits (admins always can). */
+export function isFyEditable(fySlug, fiscalYears = [], userRole = 'user') {
+  if (userRole === 'admin') return true;
+  const fy = fiscalYears.find((item) => item.slug === fySlug);
+  if (!fy) return false;
+  if (typeof fy.is_editable === 'boolean') return fy.is_editable;
+  return !!fy.is_current;
+}
+
 /**
  * Return the bare year-range portion of a standard 4-char slug,
  * e.g. "2526" -> "25-26". Used to match labelled reference rows

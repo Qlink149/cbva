@@ -46,6 +46,11 @@ from slowapi import _rate_limit_exceeded_handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    try:
+        from app.services.fiscal_year import ensure_current_fy_matches_calendar
+        await ensure_current_fy_matches_calendar()
+    except Exception as exc:
+        logger.warning(f"FY calendar sync skipped: {exc}")
     yield
     await close_db()
 

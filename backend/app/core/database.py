@@ -25,10 +25,21 @@ async def connect_db() -> None:
         )
 
 
+_fy_synced = False
+
+
 async def ensure_db_connected() -> None:
     """Idempotent connect — used by Vercel serverless when lifespan may not run."""
+    global _fy_synced
     if db is None:
         await connect_db()
+    if not _fy_synced and db is not None:
+        try:
+            from app.services.fiscal_year import ensure_current_fy_matches_calendar
+            await ensure_current_fy_matches_calendar()
+            _fy_synced = True
+        except Exception as exc:
+            logger.warning("FY calendar sync skipped: %s", exc)
 
 
 async def close_db() -> None:

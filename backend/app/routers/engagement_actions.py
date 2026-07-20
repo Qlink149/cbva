@@ -10,6 +10,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -51,6 +52,7 @@ async def create_engagement_action(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
 
     engagement = await database.db.engagements.find_one({"_id": ObjectId(body.engagement_id)})
     if not engagement:
@@ -93,6 +95,7 @@ async def update_engagement_action_status(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     result = await database.db.engagement_actions.find_one_and_update(
         {"_id": ObjectId(action_id)},
         {"$set": {"status": body.status, "updated_at": datetime.now(timezone.utc)}},
@@ -117,6 +120,7 @@ async def delete_engagement_action(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.engagement_actions.delete_one({"_id": ObjectId(action_id)})
     await audit_service.log_delete(
         "engagement_action", existing, current_user,

@@ -8,6 +8,8 @@ import { getFyLabel } from '@/lib/fiscalYear';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import { useActions, useCreateAction, usePatchActionStatus } from '@/hooks/useActions';
 import { useTasks } from '@/hooks/useTasks';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { toast } from 'sonner';
 
 const STATUS_STYLES = {
   'In-Progress': 'bg-status-amber-bg text-status-amber',
@@ -44,6 +46,7 @@ export default function Actions({ user }) {
   const [actionForm, setActionForm] = useState(EMPTY_ACTION_FORM);
   const { clientActions, updateActionStatus, deleteAction } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit, lockedMessage } = useFyEditAccess();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
   const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
@@ -106,6 +109,12 @@ export default function Actions({ user }) {
         <LeaderFYSelector />
       </div>
 
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {fyLabel} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
+
       {/* Key Actions Table */}
       <div>
         <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -113,8 +122,12 @@ export default function Actions({ user }) {
             Key Actions — Business Plan {fyLabel} · {selectedLeaderId}
           </h2>
           <button
-            onClick={() => setShowAddAction(!showAddAction)}
-            className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            onClick={() => {
+              if (!canEdit) { toast.error(lockedMessage); return; }
+              setShowAddAction(!showAddAction);
+            }}
+            disabled={!canEdit}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" /> New Key Action
           </button>
@@ -278,8 +291,12 @@ export default function Actions({ user }) {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-foreground">Day-to-Day Tasks</h2>
           <button
-            onClick={() => setShowAddTask(!showAddTask)}
-            className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            onClick={() => {
+              if (!canEdit) { toast.error(lockedMessage); return; }
+              setShowAddTask(!showAddTask);
+            }}
+            disabled={!canEdit}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" /> New Task
           </button>

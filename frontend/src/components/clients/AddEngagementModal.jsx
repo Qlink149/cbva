@@ -7,7 +7,9 @@ import { useFirmwideTeam } from '@/hooks/useFirmwide';
 import { useLeaders } from '@/hooks/useLeaders';
 import PersonSelect from '@/components/clients/PersonSelect';
 import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
-import { normalizePersonOptions, otherPersonOptions } from '@/lib/personNames';
+import { mergePersonOptions } from '@/lib/personNames';
+import { isFyEditable } from '@/lib/fiscalYear';
+import { useAuth } from '@/lib/AuthContext';
 
 const L = 100000;
 
@@ -27,46 +29,38 @@ const DEFAULT_FORM = {
   remarks: '',
 };
 
-function parseNum(val) {
-  const n = parseFloat(String(val).replace(/[^0-9.]/g, ''));
-  return isNaN(n) ? 0 : Math.round(n * L);
-}
-
 export default function AddEngagementModal({ onClose, nextNum, partnerOptions = [], showScopeField = false }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [error, setError] = useState('');
-  const { selectedLeaderId, activeFY } = useGlobalSelector();
+  const { user } = useAuth();
+  const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const canEdit = isFyEditable(activeFY, fiscalYears, user?.role);
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
   const { data: leaders = [] } = useLeaders();
   const createMutation = useCreateEngagement();
 
-  const managerPrimaryOptions = useMemo(
-    () => normalizePersonOptions(teamMembers.map((m) => m.full_name)),
-    [teamMembers],
-  );
-
   const firmwideNames = useMemo(
-    () => normalizePersonOptions(firmwideTeam.map((m) => m.full_name)),
+    () => mergePersonOptions(firmwideTeam.map((m) => m.full_name)),
     [firmwideTeam],
   );
 
-  const managerOtherOptions = useMemo(
-    () => otherPersonOptions(firmwideNames, managerPrimaryOptions),
-    [firmwideNames, managerPrimaryOptions],
+  const managerOptions = useMemo(
+    () => mergePersonOptions(
+      teamMembers.map((m) => m.full_name),
+      firmwideNames,
+      leaders.map((l) => l.name),
+    ),
+    [teamMembers, firmwideNames, leaders],
   );
 
-  const relPartnerPrimaryOptions = useMemo(
-    () => normalizePersonOptions([
-      ...partnerOptions,
-      ...leaders.map((l) => l.name),
-    ]),
-    [partnerOptions, leaders],
-  );
-
-  const relPartnerOtherOptions = useMemo(
-    () => otherPersonOptions(firmwideNames, relPartnerPrimaryOptions),
-    [firmwideNames, relPartnerPrimaryOptions],
+  const relPartnerOptions = useMemo(
+    () => mergePersonOptions(
+      partnerOptions,
+      leaders.map((l) => l.name),
+      firmwideNames,
+    ),
+    [partnerOptions, leaders, firmwideNames],
   );
 
   function set(field, val) {
@@ -90,6 +84,10 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
   }
 
   function handleSave() {
+    if (!canEdit) {
+      setError('This fiscal year is locked for editing.');
+      return;
+    }
     if (!form.name.trim()) {
       setError('Client Name is required.');
       return;
@@ -114,7 +112,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
       remarks: form.remarks.trim(),
     }, {
       onSuccess: () => onClose(),
-      onError: () => setError('Failed to save. Please try again.'),
+      onError: (err) => setError(err?.response?.data?.detail || 'Failed to save. Please try again.'),
     });
   }
 
@@ -144,8 +142,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
             <PersonSelect
               value={form.manager}
               onChange={(val) => set('manager', val)}
-              primaryOptions={managerPrimaryOptions}
-              otherOptions={managerOtherOptions}
+              options={managerOptions}
               placeholder="Select manager"
             />
           </Field>
@@ -154,8 +151,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
             <PersonMultiSelect
               value={form.relPartner}
               onChange={(val) => set('relPartner', val)}
-              primaryOptions={relPartnerPrimaryOptions}
-              otherOptions={relPartnerOtherOptions}
+              options={relPartnerOptions}
               placeholder="Select relationship partners"
             />
           </Field>
@@ -219,7 +215,7 @@ export default function AddEngagementModal({ onClose, nextNum, partnerOptions = 
           </button>
           <button
             onClick={handleSave}
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || !canEdit}
             className="text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors disabled:opacity-60"
           >
             {createMutation.isPending ? 'Saving…' : 'Save Engagement'}

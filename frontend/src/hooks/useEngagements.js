@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from '@/api/client';
+import { toast } from 'sonner';
 
 const engKey = (leaderId, fiscalYear) => ['engagements', leaderId, fiscalYear];
 
@@ -110,10 +111,11 @@ export const useUpdateEngagement = (leaderId, fiscalYear) => {
       }
       return { previous };
     },
-    onError: (_err, _vars, context) => {
+    onError: (err, _vars, context) => {
       if (context?.previous) {
         qc.setQueryData(engKey(leaderId, fiscalYear), context.previous);
       }
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to save engagement');
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) });

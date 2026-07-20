@@ -275,6 +275,7 @@ function FYTab() {
               <span className="font-medium">{fy.label}</span>
               {fy.is_current && <span className="ml-2 text-xs bg-cbva-navy text-white px-2 py-0.5 rounded-full">Current</span>}
               {!fy.is_active && <span className="ml-2 text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">Inactive</span>}
+              {!fy.is_editable && <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Locked</span>}
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">{fy.slug}</span>
@@ -290,6 +291,13 @@ function FYTab() {
                 <Switch
                   checked={!!fy.is_current}
                   onCheckedChange={v => v && update.mutate({ id: fy.id, is_current: true })}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">Editable</Label>
+                <Switch
+                  checked={!!fy.is_editable}
+                  onCheckedChange={v => update.mutate({ id: fy.id, is_editable: v })}
                 />
               </div>
               <Button variant="ghost" size="sm" onClick={() => setEditing(fy)}>Edit</Button>

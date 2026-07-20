@@ -10,6 +10,7 @@ from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.dependencies.pagination import pagination_params
 from app.services.fy_calendar import get_fy_month_calendar_year
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -316,6 +317,7 @@ async def list_engagements(
 @router.post("/", response_model=EngagementResponse, status_code=201)
 async def create_engagement(body: EngagementCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
     last = await database.db.engagements.find_one(
         {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year},
         sort=[("num", -1)],
@@ -367,6 +369,7 @@ async def update_engagement(
     if not existing:
         raise HTTPException(status_code=404, detail="Engagement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates.pop("remarks", None)
@@ -442,6 +445,7 @@ async def archive_engagement(engagement_id: str, current_user: dict = Depends(ge
     if not existing:
         raise HTTPException(status_code=404, detail="Engagement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     now = datetime.now(timezone.utc)
     await database.db.engagements.update_one(
         {"_id": ObjectId(engagement_id)},
@@ -469,6 +473,7 @@ async def update_remarks(
     if not existing:
         raise HTTPException(status_code=404, detail="Engagement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
 
     now = datetime.now(timezone.utc)
     author = current_user.get("full_name") or current_user.get("email") or "Unknown"

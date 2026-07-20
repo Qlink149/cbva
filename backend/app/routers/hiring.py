@@ -6,6 +6,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ async def create_hiring(body: HiringRequirementCreate, current_user: dict = Depe
     enforce_leader_write_scope(current_user, body.leader_id)
     if not (body.fiscal_year or "").strip():
         raise HTTPException(status_code=400, detail="fiscal_year is required")
+    await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.hiring_requirements.insert_one(doc)
@@ -68,6 +70,8 @@ async def update_hiring(
     if not existing:
         raise HTTPException(status_code=404, detail="Hiring requirement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.hiring_requirements.find_one_and_update(
@@ -88,6 +92,8 @@ async def delete_hiring(req_id: str, current_user: dict = Depends(get_current_us
     if not existing:
         raise HTTPException(status_code=404, detail="Hiring requirement not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.hiring_requirements.delete_one({"_id": ObjectId(req_id)})
     await audit_service.log_delete(
         "hiring", existing, current_user,

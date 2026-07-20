@@ -1,124 +1,149 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { displayPersonName } from '@/lib/personNames';
-
-const OTHER_VALUE = '__other__';
+import { displayPersonName, mergePersonOptions, namesMatch } from '@/lib/personNames';
 
 export default function PersonSelect({
   value = '',
   onChange,
   primaryOptions = [],
   otherOptions = [],
+  options: optionsProp,
   placeholder = 'Select person',
   compact = false,
   className = '',
   title,
+  disabled = false,
+  allowCustom = true,
 }) {
   const [open, setOpen] = useState(false);
-  const [showOther, setShowOther] = useState(false);
   const [search, setSearch] = useState('');
+  const [customDraft, setCustomDraft] = useState('');
+
+  const allOptions = useMemo(
+    () => mergePersonOptions(
+      optionsProp,
+      primaryOptions,
+      otherOptions,
+      value,
+    ),
+    [optionsProp, primaryOptions, otherOptions, value],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allOptions;
+    return allOptions.filter((name) => name.toLowerCase().includes(q));
+  }, [allOptions, search]);
 
   const displayLabel = displayPersonName(value, 'short');
   const fullTitle = title || value || placeholder;
+  const trimmedCustom = customDraft.trim();
+  const canUseCustom = allowCustom
+    && trimmedCustom
+    && !allOptions.some((name) => namesMatch(name, trimmedCustom));
 
-  const filteredOther = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return otherOptions;
-    return otherOptions.filter((name) => name.toLowerCase().includes(q));
-  }, [otherOptions, search]);
+  function closePopover() {
+    setOpen(false);
+    setSearch('');
+    setCustomDraft('');
+  }
 
   function selectPerson(name) {
     onChange(name);
-    setOpen(false);
-    setShowOther(false);
-    setSearch('');
+    closePopover();
   }
 
   function clearSelection() {
     onChange('');
-    setOpen(false);
-    setShowOther(false);
-    setSearch('');
+    closePopover();
   }
 
   return (
     <Popover open={open} onOpenChange={(next) => {
+      if (disabled) return;
       setOpen(next);
       if (!next) {
-        setShowOther(false);
         setSearch('');
+        setCustomDraft('');
       }
     }}>
-      <PopoverTrigger asChild>
+      <PopoverTrigger asChild disabled={disabled}>
         <button
           type="button"
           title={fullTitle}
-          className={`inline-flex items-center gap-1 text-left w-full ${compact ? 'text-xs text-muted-foreground hover:bg-muted/30 rounded px-1 py-0.5' : 'text-sm border border-border rounded-lg px-2.5 py-1.5 bg-background hover:bg-muted/40'} ${className}`}
+          disabled={disabled}
+          onPointerDown={(e) => e.stopPropagation()}
+          className={`inline-flex items-center gap-1 text-left w-full ${compact ? 'text-xs text-muted-foreground hover:bg-muted/30 rounded px-1 py-0.5' : 'text-sm border border-border rounded-lg px-2.5 py-1.5 bg-background hover:bg-muted/40'} ${disabled ? 'opacity-60 cursor-not-allowed' : ''} ${className}`}
         >
           <span className="truncate flex-1">
             {value ? displayLabel : <span className="text-muted-foreground/60">-</span>}
           </span>
-          <ChevronDown className="w-3 h-3 shrink-0 opacity-50" />
+          {!disabled && <ChevronDown className="w-3 h-3 shrink-0 opacity-50" />}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2" align="start">
-        <div className="max-h-56 overflow-y-auto space-y-0.5">
-          {primaryOptions.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => selectPerson(name)}
-              className={`w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${value === name ? 'bg-cbva-navy/10 text-cbva-navy font-medium' : ''}`}
-            >
-              {name}
-            </button>
-          ))}
-          {otherOptions.length > 0 && (
-            <>
-              {!showOther ? (
+      <PopoverContent
+        className="w-72 p-2 z-[200]"
+        align="start"
+        onPointerDown={(e) => e.stopPropagation()}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 px-1">
+            <Search className="w-3 h-3 text-muted-foreground shrink-0" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search or type a name…"
+              className="flex-1 text-xs bg-transparent outline-none"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto space-y-0.5">
+            {filtered.length === 0 && !canUseCustom && (
+              <p className="text-[10px] text-muted-foreground px-2 py-1">No people found</p>
+            )}
+            {filtered.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => selectPerson(name)}
+                className={`w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${namesMatch(value, name) ? 'bg-cbva-navy/10 text-cbva-navy font-medium' : ''}`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          {allowCustom && (
+            <div className="border-t border-border/50 pt-2 space-y-1">
+              <input
+                value={customDraft}
+                onChange={(e) => setCustomDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canUseCustom) {
+                    e.preventDefault();
+                    selectPerson(trimmedCustom);
+                  }
+                }}
+                placeholder="Add custom name…"
+                className="w-full text-xs border border-border rounded px-2 py-1.5 bg-background"
+              />
+              {canUseCustom && (
                 <button
                   type="button"
-                  onClick={() => setShowOther(true)}
-                  className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-cbva-navy font-medium border-t border-border/50 mt-1 pt-2"
+                  onClick={() => selectPerson(trimmedCustom)}
+                  className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-cbva-navy font-medium"
                 >
-                  Other…
+                  Use &ldquo;{trimmedCustom}&rdquo;
                 </button>
-              ) : (
-                <div className="border-t border-border/50 mt-1 pt-2 space-y-1">
-                  <div className="flex items-center gap-1.5 px-1">
-                    <Search className="w-3 h-3 text-muted-foreground" />
-                    <input
-                      autoFocus
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search people…"
-                      className="flex-1 text-xs bg-transparent outline-none"
-                    />
-                  </div>
-                  {filteredOther.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground px-2 py-1">No matches</p>
-                  ) : (
-                    filteredOther.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => selectPerson(name)}
-                        className={`w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted ${value === name ? 'bg-cbva-navy/10 text-cbva-navy font-medium' : ''}`}
-                      >
-                        {name}
-                      </button>
-                    ))
-                  )}
-                </div>
               )}
-            </>
+            </div>
           )}
           {value && (
             <button
               type="button"
               onClick={clearSelection}
-              className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-muted-foreground border-t border-border/50 mt-1 pt-2"
+              className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-muted-foreground border-t border-border/50 pt-2"
             >
               Clear
             </button>
@@ -128,5 +153,3 @@ export default function PersonSelect({
     </Popover>
   );
 }
-
-export { OTHER_VALUE };

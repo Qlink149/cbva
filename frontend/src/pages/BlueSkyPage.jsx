@@ -6,9 +6,13 @@ import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useBaselines } from '@/hooks/useBaselines';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { getFyLabel } from '@/lib/fiscalYear';
 
 export default function BlueSkyPage() {
-  const { selectedLeaderId, activeFY } = useGlobalSelector();
+  const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit } = useFyEditAccess();
+  const fyLabel = getFyLabel(activeFY, fiscalYears);
   const { data: blueskyData, isLoading: blueskyLoading } = useBluesky(selectedLeaderId, activeFY);
   const { data: baselines = [], isLoading: baselineLoading } = useBaselines(selectedLeaderId);
   const updateBluesky = useUpdateBluesky(selectedLeaderId, activeFY);
@@ -30,6 +34,11 @@ export default function BlueSkyPage() {
         </div>
         <LeaderFYSelector />
       </div>
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {fyLabel} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
       <BlueSkyPoolCard
         openingBlueSky={baseline?.baseline_blue_sky || totals?.additional || 0}
         blueskyRows={blueskyData?.data ?? []}
@@ -38,20 +47,21 @@ export default function BlueSkyPage() {
         blueskyRows={blueskyData?.data ?? []}
         totals={totals}
         baseline={baseline}
-        onUpdateRemarks={(row, remarks) =>
+        onUpdateRemarks={canEdit ? ((row, remarks) =>
           updateBluesky.mutate({
             entryId: row.id,
             monthKey: row.month_key,
             remarks,
           })
-        }
-        onUpdateAmounts={(row, amounts) =>
+        ) : undefined}
+        onUpdateAmounts={canEdit ? ((row, amounts) =>
           updateBluesky.mutate({
             entryId: row.id,
             monthKey: row.month_key,
             ...amounts,
           })
-        }      />
+        ) : undefined}
+      />
     </div>
   );
 }

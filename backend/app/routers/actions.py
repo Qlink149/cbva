@@ -6,6 +6,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -51,6 +52,7 @@ async def list_actions(
 @router.post("/", response_model=ActionResponse, status_code=201)
 async def create_action(body: ActionCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
     if not (body.description or "").strip():
         raise HTTPException(status_code=400, detail="Description is required")
 
@@ -91,6 +93,7 @@ async def update_action(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.actions.find_one_and_update(
@@ -115,6 +118,7 @@ async def update_action_status(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {"status": body.status, "updated_at": datetime.now(timezone.utc)}
     result = await database.db.actions.find_one_and_update(
         {"_id": ObjectId(action_id)},

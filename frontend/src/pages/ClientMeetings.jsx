@@ -11,6 +11,8 @@ import {
   useDeleteClientMeeting,
 } from '@/hooks/useClientMeetings';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { toast } from 'sonner';
 
 const QUARTERS = [
   { key: 'q1', label: 'Q1 (Apr–Jun)' },
@@ -56,6 +58,7 @@ function StatusCell({ value, onChange, disabled }) {
 
 export default function ClientMeetings() {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit, lockedMessage } = useFyEditAccess();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
   const { data: leader } = useLeader(selectedLeaderId);
   const { data: meetings = [], isLoading } = useClientMeetings(selectedLeaderId, activeFY);
@@ -77,10 +80,18 @@ export default function ClientMeetings() {
   }
 
   function updateField(id, field, val) {
+    if (!canEdit) {
+      toast.error(lockedMessage);
+      return;
+    }
     updateMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY, [field]: val });
   }
 
   function addRow() {
+    if (!canEdit) {
+      toast.error(lockedMessage);
+      return;
+    }
     if (!newRow.client.trim()) return;
     createMeeting.mutate({
       leader_id: selectedLeaderId,
@@ -99,6 +110,10 @@ export default function ClientMeetings() {
   }
 
   function removeRow(id) {
+    if (!canEdit) {
+      toast.error(lockedMessage);
+      return;
+    }
     deleteMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY });
   }
 
@@ -129,6 +144,12 @@ export default function ClientMeetings() {
         </div>
         <LeaderFYSelector />
       </div>
+
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {fyLabel} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-card rounded-xl border border-border/60 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex items-center gap-3">
@@ -172,7 +193,11 @@ export default function ClientMeetings() {
       <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
         <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">Meeting Schedule</h2>
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium">
+          <button
+            onClick={() => canEdit ? setShowAdd(true) : toast.error(lockedMessage)}
+            disabled={!canEdit}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Plus className="w-3.5 h-3.5" /> Add Client
           </button>
         </div>
@@ -209,7 +234,7 @@ export default function ClientMeetings() {
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <select className="text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground" value={m.frequency} onChange={e => updateField(m.id, 'frequency', e.target.value)}>
+                      <select disabled={!canEdit} className="text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:opacity-60 disabled:cursor-not-allowed" value={m.frequency} onChange={e => updateField(m.id, 'frequency', e.target.value)}>
                         {FREQ_OPTIONS.map(f => <option key={f}>{f}</option>)}
                       </select>
                     </td>
@@ -218,20 +243,22 @@ export default function ClientMeetings() {
                         <div className="flex flex-col items-center gap-1">
                           <input
                             type="date"
-                            disabled={isWaived}
+                            disabled={isWaived || !canEdit}
                             className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed"
                             value={m[`${q.key}Date`] || ''}
                             onChange={e => updateField(m.id, `${q.key}Date`, e.target.value)}
                           />
-                          <StatusCell value={m[q.key]} onChange={v => updateField(m.id, q.key, v)} disabled={isWaived} />
+                          <StatusCell value={m[q.key]} onChange={v => updateField(m.id, q.key, v)} disabled={isWaived || !canEdit} />
                         </div>
                       </td>
                     ))}
                     <td className="py-3 px-4">
-                      <input className="w-full text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground" placeholder="Add remark..." maxLength={60} value={m.remarks} onChange={e => updateField(m.id, 'remarks', e.target.value)} />
+                      <input disabled={!canEdit} className="w-full text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground disabled:opacity-60" placeholder="Add remark..." maxLength={60} value={m.remarks} onChange={e => updateField(m.id, 'remarks', e.target.value)} />
                     </td>
                     <td className="py-3 px-3">
-                      <button onClick={() => removeRow(m.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                      {canEdit && (
+                        <button onClick={() => removeRow(m.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                      )}
                     </td>
                   </tr>
                   {isExpanded && (
@@ -242,10 +269,11 @@ export default function ClientMeetings() {
                           <div className="flex-1">
                             <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Meeting Minutes</label>
                             <textarea
-                              className="mt-1 w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px] resize-y"
+                              disabled={!canEdit}
+                              className="mt-1 w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px] resize-y disabled:opacity-60"
                               placeholder="Record meeting minutes, key decisions and action items..."
                               defaultValue={m.minutes}
-                              onBlur={e => { if (e.target.value !== m.minutes) updateField(m.id, 'minutes', e.target.value); }}
+                              onBlur={e => { if (canEdit && e.target.value !== m.minutes) updateField(m.id, 'minutes', e.target.value); }}
                             />
                           </div>
                         </div>

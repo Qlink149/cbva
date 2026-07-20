@@ -13,7 +13,7 @@ import { useCollectionTransactions, useAddTransaction, useDeleteTransaction } fr
 import MonthSelector from '@/components/clients/MonthSelector';
 import { getDefaultMonthKey, MONTH_SHORT_NAMES } from '@/lib/fyMonths';
 import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth } from '@/lib/collectionsRollup';
-import { getPrevFySlug, getFyLabel } from '@/lib/fiscalYear';
+import { getPrevFySlug, getFyLabel, isFyEditable } from '@/lib/fiscalYear';
 import { formatINRFull } from '@/lib/formatCurrency';
 import {
   DEFAULT_ENGAGEMENT_FILTERS,
@@ -26,10 +26,12 @@ import PersonSelect from '@/components/clients/PersonSelect';
 import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
 import { useFirmwideTeam } from '@/hooks/useFirmwide';
 import { useLeaders } from '@/hooks/useLeaders';
-import { normalizePersonOptions, otherPersonOptions } from '@/lib/personNames';
+import { mergePersonOptions } from '@/lib/personNames';
 import { displayPartnerNames, uniqueRelationshipPartners } from '@/lib/relationshipPartners';
 import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 import { useEngagementChanges } from '@/hooks/useEngagementMeta';
+import { useAuth } from '@/lib/AuthContext';
+import { toast } from 'sonner';
 import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/components/ui/LoadingState';
 
 const L = 100000;
@@ -148,14 +150,14 @@ function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stick
   );
 }
 
-function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, primaryOptions = [], otherOptions = [] }) {
+function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
   return (
     <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
       <PersonMultiSelect
         value={value}
         onChange={onChange}
-        primaryOptions={primaryOptions}
-        otherOptions={otherOptions}
+        options={options}
+        disabled={disabled}
         compact
         title={value ? displayPartnerNames(value) : 'Select relationship partner'}
       />
@@ -163,13 +165,14 @@ function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, primaryOpti
   );
 }
 
-function ELStatusCell({ value, onChange, stickyClass, stickyStyle }) {
+function ELStatusCell({ value, onChange, stickyClass, stickyStyle, disabled = false }) {
   return (
     <td className={`${stickyClass} py-2 px-1.5 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ ...stickyStyle, clipPath: 'inset(0 -15px 0 0)' }}>
       <select
         aria-label="EL status"
-        title="Change EL status"
-        className="w-full text-[10px] border border-transparent hover:border-border/60 rounded px-1 py-1 bg-transparent cursor-pointer focus:outline-none focus:ring-1 focus:ring-cbva-navy/40"
+        title={disabled ? 'Fiscal year is locked' : 'Change EL status'}
+        disabled={disabled}
+        className={`w-full text-[10px] border border-transparent rounded px-1 py-1 bg-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-border/60 cursor-pointer'}`}
         value={value || '—'}
         onChange={(e) => {
           if (e.target.value !== (value || '—')) onChange(e.target.value);
@@ -183,14 +186,14 @@ function ELStatusCell({ value, onChange, stickyClass, stickyStyle }) {
   );
 }
 
-function ManagerCell({ value, onChange, stickyClass, stickyStyle, primaryOptions = [], otherOptions = [] }) {
+function ManagerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
   return (
     <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
       <PersonSelect
         value={value}
         onChange={onChange}
-        primaryOptions={primaryOptions}
-        otherOptions={otherOptions}
+        options={options}
+        disabled={disabled}
         compact
         title={value || 'Select manager'}
       />
@@ -198,7 +201,7 @@ function ManagerCell({ value, onChange, stickyClass, stickyStyle, primaryOptions
   );
 }
 
-function ScopeCell({ value, onChange, stickyClass, stickyStyle }) {
+function ScopeCell({ value, onChange, stickyClass, stickyStyle, disabled = false }) {
   const scope = value || 'Domestic';
   const isIntl = scope === 'International';
   return (
@@ -206,10 +209,11 @@ function ScopeCell({ value, onChange, stickyClass, stickyStyle }) {
       <div className="relative w-full">
         <select
           aria-label="Client scope"
-          title={scope}
-          className={`appearance-none w-full text-[10px] font-medium rounded-full pl-2.5 pr-6 py-1 cursor-pointer border border-transparent hover:border-border/60 focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 transition-colors ${
-            isIntl ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-800'
-          }`}
+          title={disabled ? 'Fiscal year is locked' : scope}
+          disabled={disabled}
+          className={`appearance-none w-full text-[10px] font-medium rounded-full pl-2.5 pr-6 py-1 border border-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 transition-colors ${
+            disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-border/60'
+          } ${isIntl ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-800'}`}
           value={scope}
           onChange={e => onChange(e.target.value)}
         >
@@ -398,38 +402,36 @@ function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction,
 
 // Unified engagements table - same layout for all fiscal years
 function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
+  const { user } = useAuth();
   const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi, isUpdating } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const canEdit = isFyEditable(activeFY, fiscalYears, user?.role);
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
   const { data: leaders = [] } = useLeaders();
 
-  const managerPrimaryOptions = useMemo(
-    () => normalizePersonOptions(teamMembers.map((m) => m.full_name)),
-    [teamMembers],
-  );
-
   const firmwideNames = useMemo(
-    () => normalizePersonOptions(firmwideTeam.map((m) => m.full_name)),
+    () => mergePersonOptions(firmwideTeam.map((m) => m.full_name)),
     [firmwideTeam],
   );
 
-  const managerOtherOptions = useMemo(
-    () => otherPersonOptions(firmwideNames, managerPrimaryOptions),
-    [firmwideNames, managerPrimaryOptions],
+  const managerOptions = useMemo(
+    () => mergePersonOptions(
+      teamMembers.map((m) => m.full_name),
+      firmwideNames,
+      uniqueManagers(clients),
+      leaders.map((l) => l.name),
+    ),
+    [teamMembers, firmwideNames, clients, leaders],
   );
 
-  const relPartnerPrimaryOptions = useMemo(
-    () => normalizePersonOptions([
-      ...uniqueRelationshipPartners(clients),
-      ...leaders.map((l) => l.name),
-    ]),
-    [clients, leaders],
-  );
-
-  const relPartnerOtherOptions = useMemo(
-    () => otherPersonOptions(firmwideNames, relPartnerPrimaryOptions),
-    [firmwideNames, relPartnerPrimaryOptions],
+  const relPartnerOptions = useMemo(
+    () => mergePersonOptions(
+      uniqueRelationshipPartners(clients),
+      leaders.map((l) => l.name),
+      firmwideNames,
+    ),
+    [clients, leaders, firmwideNames],
   );
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
@@ -480,8 +482,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
   const [settingCollectedKey, setSettingCollectedKey] = useState(null);
 
-  const managerOptions = useMemo(() => uniqueManagers(clients), [clients]);
-  const relPartnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const elStatusOptions = useMemo(() => {
     const s = new Set(clients.map(c => c.elStatus).filter(Boolean));
     return Array.from(s).sort();
@@ -500,32 +500,40 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     setExpandedRow((current) => (current === num ? null : num));
   }
 
+  function guardEdit(action) {
+    if (!canEdit) {
+      toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
+    action();
+  }
+
   function updateField(clientId, field, newVal) {
-    updateEngagement({ id: clientId, [field]: newVal });
+    guardEdit(() => updateEngagement({ id: clientId, [field]: newVal }));
   }
 
   function updateMonthPlan(clientId, monthKey, newVal) {
-    updateEngagement({ id: clientId, monthlyPlan: { [monthKey]: newVal } });
+    guardEdit(() => updateEngagement({ id: clientId, monthlyPlan: { [monthKey]: newVal } }));
   }
 
   function updateManager(clientId, val) {
-    updateEngagement({ id: clientId, manager: val });
+    guardEdit(() => updateEngagement({ id: clientId, manager: val }));
   }
 
   function updateScope(clientId, val) {
-    updateEngagement({ id: clientId, clientScope: val });
+    guardEdit(() => updateEngagement({ id: clientId, clientScope: val }));
   }
 
   function updateName(clientId, val) {
-    updateEngagement({ id: clientId, name: val });
+    guardEdit(() => updateEngagement({ id: clientId, name: val }));
   }
 
   function updateRelPartner(clientId, val) {
-    updateEngagement({ id: clientId, relPartner: val });
+    guardEdit(() => updateEngagement({ id: clientId, relPartner: val }));
   }
 
   function updateElStatus(clientId, val) {
-    updateEngagement({ id: clientId, elStatus: val });
+    guardEdit(() => updateEngagement({ id: clientId, elStatus: val }));
   }
 
   async function setMonthCollected(client, monthKey, amount) {
@@ -613,7 +621,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, selectedMonths, txMap, prevCollectedByName]);
 
-  const partnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
+  const partnerOptions = relPartnerOptions;
   const showScopeColumn = leaderHasClientScope(selectedLeaderId);
   const stickyLeft = stickyLeftOffsets(showScopeColumn);
   const monthCount = selectedMonths.length;
@@ -673,13 +681,20 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           <span className="text-xs text-muted-foreground hidden sm:block">Click name, partner, EL, amounts, or month collected to edit · Chevron expands details</span>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium"
+          onClick={() => canEdit ? setShowAddModal(true) : toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.')}
+          disabled={!canEdit}
+          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4" />
           Add Engagement
         </button>
       </div>
+
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {getFyLabel(activeFY, fiscalYears)} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
 
       {collectionsOpen && (
         <div className="flex items-center gap-2 flex-wrap rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
@@ -724,11 +739,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           {isUpdating && <RefreshingBadge show label="Saving…" />}
         </div>
         <SectionLoadingOverlay show={txLoading && collectionsOpen} label="Loading collection data…" />
-        {managerPrimaryOptions.length > 0 && (
-          <datalist id="engagement-manager-suggestions">
-            {managerPrimaryOptions.map(name => <option key={name} value={name} />)}
-          </datalist>
-        )}
         <div
           ref={scrollRef}
           className="scrollbar-x-none overflow-auto"
@@ -987,6 +997,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           onChange={v => updateScope(client.id, v)}
                           stickyClass={stickyBase}
                           stickyStyle={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}
+                          disabled={!canEdit}
                         />
                       )}
                       <ManagerCell
@@ -994,22 +1005,23 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         onChange={v => updateManager(client.id, v)}
                         stickyClass={stickyBase}
                         stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
-                        primaryOptions={managerPrimaryOptions}
-                        otherOptions={managerOtherOptions}
+                        options={managerOptions}
+                        disabled={!canEdit}
                       />
                       <RelPartnerCell
                         value={client.relPartner}
                         onChange={(v) => updateRelPartner(client.id, v)}
                         stickyClass={stickyBase}
                         stickyStyle={{ left: stickyLeft.relPartner, minWidth: 100 }}
-                        primaryOptions={relPartnerPrimaryOptions}
-                        otherOptions={relPartnerOtherOptions}
+                        options={relPartnerOptions}
+                        disabled={!canEdit}
                       />
                       <ELStatusCell
                         value={client.elStatus}
                         onChange={(v) => updateElStatus(client.id, v)}
                         stickyClass={stickyBase}
                         stickyStyle={{ left: stickyLeft.elStatus, minWidth: 100 }}
+                        disabled={!canEdit}
                       />
                       <td className="py-3 px-3 text-right font-tabular text-xs text-emerald-800" title={prevActualCollected == null ? 'No confident prior-year match' : `Actual collected from ${prevFyLabel}`}>
                         {prevActualCollected == null ? <span className="text-muted-foreground/60 italic">TBD</span> : formatINRFull(prevActualCollected)}

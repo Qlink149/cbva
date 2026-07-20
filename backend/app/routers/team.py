@@ -6,6 +6,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -95,6 +96,7 @@ async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get
     enforce_leader_write_scope(current_user, body.leader_id)
     if not (body.fiscal_year or "").strip():
         raise HTTPException(status_code=400, detail="fiscal_year is required")
+    await assert_fy_editable(body.fiscal_year, current_user)
     await _validate_reports_to(body.leader_id, None, body.reports_to_member_id)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
@@ -119,6 +121,8 @@ async def update_member(
     if not existing:
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if "reports_to_member_id" in body.model_dump(exclude_unset=True):
         reports_to = body.reports_to_member_id
@@ -142,6 +146,8 @@ async def delete_member(member_id: str, current_user: dict = Depends(get_current
     if not existing:
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.team_members.delete_one({"_id": ObjectId(member_id)})
     await audit_service.log_delete(
         "team_member", existing, current_user,

@@ -7,6 +7,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -100,6 +101,7 @@ async def create_client_meeting(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
     doc = body.model_dump()
     doc["created_at"] = now
@@ -125,6 +127,7 @@ async def update_client_meeting(
     if not existing:
         raise HTTPException(status_code=404, detail="Client meeting not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.client_meetings.find_one_and_update(
@@ -148,6 +151,7 @@ async def delete_client_meeting(
     if not existing:
         raise HTTPException(status_code=404, detail="Client meeting not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.client_meetings.delete_one({"_id": ObjectId(meeting_id)})
     await audit_service.log_delete(
         "client_meeting", existing, current_user,

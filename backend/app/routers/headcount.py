@@ -5,6 +5,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -40,6 +41,7 @@ async def upsert_headcount(body: HeadcountPlanUpsert, current_user: dict = Depen
     enforce_leader_write_scope(current_user, body.leader_id)
     if not (body.fiscal_year or "").strip():
         raise HTTPException(status_code=400, detail="fiscal_year is required")
+    await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
     filt = {
         "leader_id": body.leader_id,
