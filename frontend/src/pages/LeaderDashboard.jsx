@@ -161,8 +161,8 @@ export default function LeaderDashboard({ user }) {
                 fySlug={activeFY}
                 fyActualRows={fyActualRows}
                 canEditFyActual={canEditFyActual}
-                onSaveFyActual={(fiscalYear, total) =>
-                  upsertFyActual.mutate({ fiscalYear, total })
+                onSaveFyActual={(fiscalYear, amounts) =>
+                  upsertFyActual.mutate({ fiscalYear, ...amounts })
                 }
               />
             )}

@@ -42,7 +42,7 @@ function AmountCells({ row, emphasize = false, emptyLabel = '—' }) {
   );
 }
 
-function EditableTotalCell({ value, onSave, disabled }) {
+function EditableAmountCell({ value, onSave, disabled, className = '' }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -68,7 +68,7 @@ function EditableTotalCell({ value, onSave, disabled }) {
 
   if (editing) {
     return (
-      <td className="py-1.5 text-right col-num">
+      <td className={`py-1.5 text-right col-num ${className}`}>
         <input
           autoFocus
           className="w-28 ml-auto block text-right text-xs border border-cbva-navy rounded px-1.5 py-0.5 font-tabular focus:outline-none bg-white"
@@ -86,10 +86,8 @@ function EditableTotalCell({ value, onSave, disabled }) {
 
   return (
     <td
-      className={`py-2.5 text-right col-num font-tabular font-semibold whitespace-nowrap ${
-        disabled
-          ? 'text-slate-700'
-          : 'text-slate-700 cursor-pointer hover:bg-sky-50/80 rounded'
+      className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${className} ${
+        disabled ? '' : 'cursor-pointer hover:bg-sky-50/80 rounded'
       }`}
       onClick={startEdit}
       title={disabled ? undefined : 'Click to edit'}
@@ -122,16 +120,25 @@ export default function MonthlyEvolutionCard({
 
   const actualYtdRows = useMemo(
     () =>
-      (fyActualRows || []).map((r) => ({
-        key: `actual-${r.fiscal_year}`,
-        fiscalYear: r.fiscal_year,
-        label: r.label || `FY ${r.fiscal_year}`,
-        green: null,
-        amber: null,
-        blueSky: null,
-        total: r.total == null || r.total === '' ? null : Number(r.total),
-        isActualYtd: true,
-      })),
+      (fyActualRows || []).map((r) => {
+        const green = r.green == null || r.green === '' ? null : Number(r.green);
+        const amber = r.amber == null || r.amber === '' ? null : Number(r.amber);
+        const blueSky = r.blueSky == null || r.blueSky === '' ? null : Number(r.blueSky);
+        const hasAny = green != null || amber != null || blueSky != null || (r.id != null);
+        const total = hasAny
+          ? (green || 0) + (amber || 0) + (blueSky || 0)
+          : null;
+        return {
+          key: `actual-${r.fiscal_year}`,
+          fiscalYear: r.fiscal_year,
+          label: r.label || `FY ${r.fiscal_year}`,
+          green,
+          amber,
+          blueSky,
+          total,
+          isActualYtd: true,
+        };
+      }),
     [fyActualRows]
   );
 
@@ -233,14 +240,42 @@ export default function MonthlyEvolutionCard({
             {actualYtdRows.map((row) => (
               <tr key={row.key} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                 <td className="py-2.5 font-medium text-slate-700 col-num">{row.label}</td>
-                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
-                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
-                <td className="py-2.5 text-right col-num font-tabular text-slate-600">—</td>
-                <EditableTotalCell
-                  value={row.total}
+                <EditableAmountCell
+                  value={row.green}
                   disabled={!canEditFyActual || !onSaveFyActual}
-                  onSave={(next) => onSaveFyActual?.(row.fiscalYear, next)}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: next,
+                      amber: row.amber ?? 0,
+                      blueSky: row.blueSky ?? 0,
+                    })
+                  }
                 />
+                <EditableAmountCell
+                  value={row.amber}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: row.green ?? 0,
+                      amber: next,
+                      blueSky: row.blueSky ?? 0,
+                    })
+                  }
+                />
+                <EditableAmountCell
+                  value={row.blueSky}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: row.green ?? 0,
+                      amber: row.amber ?? 0,
+                      blueSky: next,
+                    })
+                  }
+                />
+                <td className="py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap">
+                  {fmt(row.total)}
+                </td>
               </tr>
             ))}
 

@@ -38,15 +38,19 @@ export const useFyActuals = (leaderId, fiscalYear) =>
 export const useUpsertFyActual = (leaderId, viewingFy) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ fiscalYear, total, green, amber, blueSky }) =>
-      apiPut('/api/pipeline/fy-actuals', {
+    mutationFn: ({ fiscalYear, green = 0, amber = 0, blueSky = 0 }) => {
+      const g = Number(green) || 0;
+      const a = Number(amber) || 0;
+      const b = Number(blueSky) || 0;
+      return apiPut('/api/pipeline/fy-actuals', {
         leader_id: leaderId,
         fiscal_year: fiscalYear,
-        total,
-        green,
-        amber,
-        blue_sky: blueSky,
-      }),
+        green: g,
+        amber: a,
+        blue_sky: b,
+        total: g + a + b,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fy-actuals', leaderId, viewingFy] });
       qc.invalidateQueries({ queryKey: ['pipeline', leaderId, viewingFy] });

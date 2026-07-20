@@ -132,7 +132,7 @@ async def upsert_fy_actual(
     green = body.green if body.green is not None else 0
     amber = body.amber if body.amber is not None else 0
     blue_sky = body.blue_sky if body.blue_sky is not None else 0
-    total = body.total if body.total is not None else (green + amber + blue_sky)
+    total = green + amber + blue_sky
 
     existing = await database.db.pipeline_snapshots.find_one(
         {
