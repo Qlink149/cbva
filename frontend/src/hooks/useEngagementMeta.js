@@ -16,7 +16,7 @@ export function useEngagementChanges(engagementId, enabled = false) {
         date: c.changed_at
           ? formatIstDate(c.changed_at, 'd MMM yyyy')
           : '',
-        field: c.field,
+        field: c.label || c.field,
         from: c.old_value,
         to: c.new_value,
         by: c.changed_by_name,

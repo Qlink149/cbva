@@ -20,12 +20,15 @@ def _serialize_change_from_audit(
     change: dict,
     engagement_id: str,
 ) -> dict:
+    field = change.get("field") or ""
+    label = change.get("label") or field.replace("_", " ").title()
     return {
         "id": str(audit_doc["_id"]),
         "engagement_id": engagement_id,
         "leader_id": audit_doc.get("leader_id", ""),
         "fiscal_year": audit_doc.get("fiscal_year", ""),
-        "field": change["field"],
+        "field": field,
+        "label": label,
         "old_value": change.get("old"),
         "new_value": change.get("new"),
         "changed_by": audit_doc.get("actor_id", ""),

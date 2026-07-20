@@ -7,8 +7,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { formatINRFull } from '@/lib/formatCurrency';
 import { formatIstDateTime } from '@/lib/datetime';
+import { formatAuditValue } from '@/lib/formatAuditValue';
 import { useAuditLog, exportAuditLog } from '@/hooks/useAuditLog';
 
 const ENTITY_TYPES = [
@@ -51,11 +51,7 @@ function actionBadgeClass(action) {
 }
 
 function formatValue(val) {
-  if (val === null || val === undefined) return '—';
-  if (typeof val === 'number') return formatINRFull(val);
-  if (typeof val === 'boolean') return val ? 'Yes' : 'No';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
+  return formatAuditValue(val);
 }
 
 function AuditRowDetails({ entry }) {

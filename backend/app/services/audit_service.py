@@ -66,6 +66,31 @@ def _diff(
         old_val = before.get(field)
         if not _values_differ(old_val, new_val):
             continue
+
+        # Expand monthly_plan into per-month rows instead of one opaque object
+        if field == "monthly_plan" and isinstance(new_val, dict):
+            month_names = {
+                "04": "Apr", "05": "May", "06": "Jun", "07": "Jul",
+                "08": "Aug", "09": "Sep", "10": "Oct", "11": "Nov",
+                "12": "Dec", "01": "Jan", "02": "Feb", "03": "Mar",
+            }
+            old_map = old_val if isinstance(old_val, dict) else {}
+            month_keys = sorted(set(old_map.keys()) | set(new_val.keys()))
+            for mk in month_keys:
+                o = old_map.get(mk, 0)
+                n = new_val.get(mk, 0)
+                if o == n:
+                    continue
+                changes.append(
+                    {
+                        "field": f"monthly_plan.{mk}",
+                        "label": f"Monthly Plan ({month_names.get(str(mk), mk)})",
+                        "old": o,
+                        "new": n,
+                    }
+                )
+            continue
+
         if _is_redacted_field(field):
             changes.append(
                 {
