@@ -5,11 +5,12 @@ from pydantic import BaseModel
 
 
 class AuditChangeItem(BaseModel):
-    field: str
-    label: str
+    field: str = ""
+    label: str = ""
     old: Any = None
     new: Any = None
     derived: Optional[bool] = None
+    note: Optional[str] = None
 
 
 class AuditEntryResponse(BaseModel):

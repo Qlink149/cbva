@@ -95,24 +95,61 @@ def _redact_snapshot(doc: dict) -> dict:
     return snap
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, datetime):
+        return serialize_datetime(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return str(value)
+
+
+def _normalize_changes(changes: list | None) -> list[dict]:
+    out: list[dict] = []
+    for change in changes or []:
+        if not isinstance(change, dict):
+            continue
+        field = str(change.get("field") or "")
+        label = change.get("label")
+        if not label:
+            label = field.replace("_", " ").title() if field else "Change"
+        item = {
+            "field": field or "change",
+            "label": str(label),
+            "old": _json_safe(change.get("old")),
+            "new": _json_safe(change.get("new")),
+        }
+        if change.get("derived") is not None:
+            item["derived"] = bool(change.get("derived"))
+        if change.get("note"):
+            item["note"] = str(change.get("note"))
+        out.append(item)
+    return out
+
+
 def _serialize_audit_doc(doc: dict) -> dict:
     out = {
         "id": str(doc["_id"]),
-        "entity_type": doc["entity_type"],
-        "entity_id": doc["entity_id"],
-        "entity_label": doc.get("entity_label", ""),
-        "action": doc["action"],
-        "changes": doc.get("changes") or [],
-        "snapshot": doc.get("snapshot"),
-        "actor_id": doc.get("actor_id", ""),
-        "actor_name": doc.get("actor_name", ""),
-        "actor_role": doc.get("actor_role", ""),
+        "entity_type": doc.get("entity_type") or "unknown",
+        "entity_id": str(doc.get("entity_id") or ""),
+        "entity_label": doc.get("entity_label") or "",
+        "action": doc.get("action") or "updated",
+        "changes": _normalize_changes(doc.get("changes")),
+        "snapshot": _json_safe(doc.get("snapshot")) if doc.get("snapshot") is not None else None,
+        "actor_id": str(doc.get("actor_id") or ""),
+        "actor_name": doc.get("actor_name") or "",
+        "actor_role": doc.get("actor_role") or "",
         "leader_id": doc.get("leader_id"),
         "fiscal_year": doc.get("fiscal_year"),
-        "source": doc.get("source", "ui"),
+        "source": doc.get("source") or "ui",
         "triggered_by": str(doc["triggered_by"]) if doc.get("triggered_by") else None,
         "request_id": doc.get("request_id"),
-        "created_at": serialize_datetime(doc["created_at"]),
+        "created_at": serialize_datetime(doc.get("created_at")) or serialize_datetime(datetime.now(timezone.utc)),
     }
     return out
 

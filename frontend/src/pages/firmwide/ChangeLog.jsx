@@ -109,7 +109,7 @@ export default function ChangeLog() {
     return params;
   }, [filters, skip, limit]);
 
-  const { data, isLoading, isFetching } = useAuditLog(queryParams);
+  const { data, isLoading, isFetching, isError, error } = useAuditLog(queryParams);
   const entries = data?.data ?? [];
   const total = data?.total ?? 0;
 
@@ -194,6 +194,13 @@ export default function ChangeLog() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
+          </div>
+        ) : isError ? (
+          <div className="p-8 text-center space-y-2">
+            <p className="text-sm font-medium text-red-600">Couldn’t load the change log.</p>
+            <p className="text-xs text-muted-foreground">
+              {error?.response?.data?.detail || error?.message || 'Please refresh and try again.'}
+            </p>
           </div>
         ) : (
           <table className="w-full table-fixed text-sm">
