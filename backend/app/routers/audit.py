@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_current_user, enforce_leader_scope
+from app.dependencies.auth import get_current_user, enforce_leader_scope, require_roles
 from app.schemas.audit import AuditLogListResponse
 from app.services import audit_service
 from app.core import database
@@ -172,7 +172,7 @@ async def list_audit_log(
     q: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("admin")),
 ):
     filters = _build_filters(
         entity_type=entity_type,
@@ -197,17 +197,8 @@ async def get_entity_history(
     entity_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("admin")),
 ):
-    if current_user.get("role") == "user":
-        if entity_type in LEADER_EXCLUDED_TYPES:
-            raise HTTPException(status_code=403, detail="Access denied")
-        record_leader = await _entity_leader_id(entity_type, entity_id)
-        if record_leader:
-            enforce_leader_scope(current_user, record_leader)
-    elif current_user.get("role") == "management" and entity_type in MANAGEMENT_EXCLUDED_TYPES:
-        raise HTTPException(status_code=403, detail="Access denied")
-
     filters = {"entity_type": entity_type, "entity_id": entity_id}
     filters = _apply_role_filters(current_user, filters)
     data, total = await audit_service.list_audit(filters, skip, limit)
@@ -226,7 +217,7 @@ async def export_audit_log(
     date_from: str | None = None,
     date_to: str | None = None,
     q: str | None = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("admin")),
 ):
     filters = _build_filters(
         entity_type=entity_type,

@@ -17,7 +17,6 @@ const LEADER_NAV = [
   { label: 'Team', path: '/my-plan/team', icon: Users },
   { label: 'Actions', path: '/my-plan/actions', icon: CheckSquare },
   { label: 'Meetings', path: '/my-plan/meetings', icon: Bell },
-  { label: 'Change Log', path: '/firmwide/change-log', icon: History },
 ];
 
 const FIRMWIDE_NAV = [
@@ -28,6 +27,7 @@ const FIRMWIDE_NAV = [
 ];
 
 const ADMIN_NAV = [
+  { label: 'Change Log', path: '/firmwide/change-log', icon: History },
   { label: 'Admin', path: '/admin', icon: Settings },
 ];
 
