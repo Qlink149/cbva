@@ -48,8 +48,6 @@ async def close_db() -> None:
         _client.close()
     _client = None
     db = None
-    from app.services import kra_seed as kra_seed_mod
-    kra_seed_mod._seeded = False
 
 
 async def _create_indexes() -> None:

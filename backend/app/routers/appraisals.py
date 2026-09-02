@@ -17,7 +17,6 @@ from app.services.appraisal_rollup import (
 )
 from app.services.fiscal_year import assert_fy_editable
 from app.services.kra_resolve import resolve_competencies, resolve_kpis, resolve_weights
-from app.services.kra_seed import ensure_kra_seed
 
 router = APIRouter()
 
@@ -110,7 +109,6 @@ async def list_rounds(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_scope(current_user, leader_id)
-    await ensure_kra_seed()
     rounds = await ensure_rounds(fiscal_year, leader_id)
     return {"data": [_serialize_round(r) for r in rounds]}
 
@@ -236,7 +234,6 @@ async def get_scorecard(
     if period not in PERIOD_ROUNDS:
         raise HTTPException(status_code=400, detail="period must be midyear or yearend")
     enforce_leader_scope(current_user, leader_id)
-    await ensure_kra_seed()
     rounds = await ensure_rounds(fiscal_year, leader_id)
     self_type, mgmt_type = PERIOD_ROUNDS[period]
     by_type = {r["round_type"]: r for r in rounds}
