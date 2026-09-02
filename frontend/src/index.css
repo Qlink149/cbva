@@ -369,6 +369,16 @@
     width: 12px;
   }
 
+  /* Visible both-axis scrollbar; 12px matches the previous vertical size. */
+  .scrollbar-both {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-both::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
   .bg-blue-50,
   .bg-indigo-50 {
     background-color: rgb(var(--royal-rgb) / 0.08) !important;

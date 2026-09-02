@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useDeferredValue, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2, Columns3 } from 'lucide-react';
 import ClientRowExpanded from '@/components/clients/ClientRowExpanded';
 import AddEngagementModal from '@/components/clients/AddEngagementModal';
 import ClientFilterPanel from '@/components/clients/ClientFilterPanel';
@@ -19,62 +19,39 @@ import {
   DEFAULT_ENGAGEMENT_FILTERS,
   applyEngagementFilters,
   countActiveEngagementFilters,
-  uniqueManagers,
   pruneMonthlyFilters,
 } from '@/lib/engagementFilters';
 import PersonSelect from '@/components/clients/PersonSelect';
 import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
-import { useFirmwideTeam } from '@/hooks/useFirmwide';
-import { useLeaders } from '@/hooks/useLeaders';
-import { mergePersonOptions } from '@/lib/personNames';
-import { displayPartnerNames, uniqueRelationshipPartners } from '@/lib/relationshipPartners';
+import { useLeader } from '@/hooks/useLeaders';
+import { leaderScopedManagerOptions } from '@/lib/designations';
+import { displayPartnerNames } from '@/lib/relationshipPartners';
 import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 import { useEngagementChanges } from '@/hooks/useEngagementMeta';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/components/ui/LoadingState';
+import {
+  COL_WIDTH,
+  DEFAULT_COLUMN_VISIBILITY,
+  TOGGLEABLE_IDENTITY_COLUMNS,
+  STICKY_EDGE_SHADOW_CLASS,
+  buildEngagementColumns,
+  engagementTableMinWidth,
+  colVisible,
+  colWidth,
+  widthStyle,
+  stickyLeftMap,
+} from '@/lib/fyTableConfig';
 
 const L = 100000;
 const BLUE_SKY_BG = '#00CCFF';
-const SCOPE_COL_WIDTH = 100;
-const PREV_ACTUAL_COLLECTED_COL_WIDTH = 150;
-const MONTH_SUB_COL_WIDTH = 80;
 
-// Column order: #, client, [scope], manager, relPartner, elStatus, prevActualCollected,
-// green, amber, blueSky, total, collected, [ (planned, collected, variance) x months ],
-// balance, remarks, expand
-function engagementColumnWidths(collectionsOpen, showScope, monthCount = 0) {
-  const widths = [32, 180];
-  if (showScope) widths.push(SCOPE_COL_WIDTH);
-  widths.push(100, 100, 100);                 // manager, rel partner, el status
-  widths.push(PREV_ACTUAL_COLLECTED_COL_WIDTH); // prior-FY actual collected
-  widths.push(96, 96, 96, 96, 96);            // green, amber, blue sky, total, collected
-  if (collectionsOpen) {
-    for (let i = 0; i < monthCount; i += 1) {
-      widths.push(MONTH_SUB_COL_WIDTH, MONTH_SUB_COL_WIDTH, MONTH_SUB_COL_WIDTH);
-    }
-  }
-  widths.push(96);                            // balance
-  widths.push(320, 32);                       // remarks, expand
-  return widths;
-}
-
-function engagementTableMinWidth(collectionsOpen, showScope, monthCount = 0) {
-  return engagementColumnWidths(collectionsOpen, showScope, monthCount).reduce((sum, width) => sum + width, 0);
-}
-
-function stickyLeftOffsets(showScope) {
-  if (showScope) {
-    return { client: 32, scope: 212, manager: 212 + SCOPE_COL_WIDTH, relPartner: 312 + SCOPE_COL_WIDTH, elStatus: 412 + SCOPE_COL_WIDTH };
-  }
-  return { client: 32, manager: 212, relPartner: 312, elStatus: 412 };
-}
-
-function EngagementColGroup({ collectionsOpen, showScope, monthCount }) {
+function EngagementColGroup({ columns }) {
   return (
     <colgroup>
-      {engagementColumnWidths(collectionsOpen, showScope, monthCount).map((width, index) => (
-        <col key={index} style={{ width, minWidth: width }} />
+      {columns.map((col) => (
+        <col key={col.key} style={{ width: col.width, minWidth: col.width }} />
       ))}
     </colgroup>
   );
@@ -87,6 +64,17 @@ function SortIcon({ field, sortField, sortDir }) {
   return sortDir === 'desc'
     ? <ArrowDown className="w-3 h-3 inline ml-1 text-cbva-navy" />
     : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
+}
+
+function VirtualPadRow({ height, columns }) {
+  if (!height) return null;
+  return (
+    <tr aria-hidden="true">
+      {columns.map((col) => (
+        <td key={col.key} style={{ height, padding: 0, border: 'none' }} />
+      ))}
+    </tr>
+  );
 }
 
 function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stickyClass, stickyStyle }) {
@@ -107,7 +95,7 @@ function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stick
 
   return (
     <td className={`${stickyClass} py-2 px-2 font-medium text-foreground`} style={stickyStyle}>
-      <div className="flex items-center gap-1.5 w-full">
+      <div className="flex items-center gap-1.5 w-full min-w-0 overflow-hidden">
         <button
           type="button"
           onClick={onToggleExpand}
@@ -153,35 +141,39 @@ function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stick
 function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
   return (
     <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
-      <PersonMultiSelect
-        value={value}
-        onChange={onChange}
-        options={options}
-        disabled={disabled}
-        compact
-        title={value ? displayPartnerNames(value) : 'Select relationship partner'}
-      />
+      <div className="min-w-0 w-full overflow-hidden">
+        <PersonMultiSelect
+          value={value}
+          onChange={onChange}
+          options={options}
+          disabled={disabled}
+          compact
+          title={value ? displayPartnerNames(value) : 'Select relationship partner'}
+        />
+      </div>
     </td>
   );
 }
 
 function ELStatusCell({ value, onChange, stickyClass, stickyStyle, disabled = false }) {
   return (
-    <td className={`${stickyClass} py-2 px-1.5 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ ...stickyStyle, clipPath: 'inset(0 -15px 0 0)' }}>
-      <select
-        aria-label="EL status"
-        title={disabled ? 'Fiscal year is locked' : 'Change EL status'}
-        disabled={disabled}
-        className={`w-full text-[10px] border border-transparent rounded px-1 py-1 bg-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-border/60 cursor-pointer'}`}
-        value={value || '—'}
-        onChange={(e) => {
-          if (e.target.value !== (value || '—')) onChange(e.target.value);
-        }}
-      >
-        {EL_STATUS_OPTIONS.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
+    <td className={`${stickyClass} py-2 px-1.5`} style={stickyStyle}>
+      <div className="min-w-0 w-full overflow-hidden">
+        <select
+          aria-label="EL status"
+          title={disabled ? 'Fiscal year is locked' : 'Change EL status'}
+          disabled={disabled}
+          className={`w-full text-[10px] border border-transparent rounded px-1 py-1 bg-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-border/60 cursor-pointer'}`}
+          value={value || '—'}
+          onChange={(e) => {
+            if (e.target.value !== (value || '—')) onChange(e.target.value);
+          }}
+        >
+          {EL_STATUS_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
     </td>
   );
 }
@@ -189,14 +181,16 @@ function ELStatusCell({ value, onChange, stickyClass, stickyStyle, disabled = fa
 function ManagerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
   return (
     <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
-      <PersonSelect
-        value={value}
-        onChange={onChange}
-        options={options}
-        disabled={disabled}
-        compact
-        title={value || 'Select manager'}
-      />
+      <div className="min-w-0 w-full overflow-hidden">
+        <PersonSelect
+          value={value}
+          onChange={onChange}
+          options={options}
+          disabled={disabled}
+          compact
+          title={value || 'Select manager'}
+        />
+      </div>
     </td>
   );
 }
@@ -407,38 +401,24 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const canEdit = isFyEditable(activeFY, fiscalYears, user?.role);
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
-  const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
-  const { data: leaders = [] } = useLeaders();
+  const { data: selectedLeader } = useLeader(selectedLeaderId);
 
-  const firmwideNames = useMemo(
-    () => mergePersonOptions(firmwideTeam.map((m) => m.full_name)),
-    [firmwideTeam],
-  );
+  const selectedLeaderName = selectedLeader?.name || '';
 
   const managerOptions = useMemo(
-    () => mergePersonOptions(
-      teamMembers.map((m) => m.full_name),
-      firmwideNames,
-      uniqueManagers(clients),
-      leaders.map((l) => l.name),
-    ),
-    [teamMembers, firmwideNames, clients, leaders],
+    () => leaderScopedManagerOptions(teamMembers, selectedLeaderName),
+    [teamMembers, selectedLeaderName],
   );
 
-  const relPartnerOptions = useMemo(
-    () => mergePersonOptions(
-      uniqueRelationshipPartners(clients),
-      leaders.map((l) => l.name),
-      firmwideNames,
-    ),
-    [clients, leaders, firmwideNames],
-  );
+  const relPartnerOptions = managerOptions;
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [expandedRow, setExpandedRow] = useState(null);
   const [collectionsOpen, setCollectionsOpen] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showColumns, setShowColumns] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState(DEFAULT_COLUMN_VISIBILITY);
   const [filters, setFilters] = useState(DEFAULT_ENGAGEMENT_FILTERS);
   const deferredFilters = useDeferredValue(filters);
 
@@ -621,20 +601,45 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, selectedMonths, txMap, prevCollectedByName]);
 
-  const partnerOptions = relPartnerOptions;
   const showScopeColumn = leaderHasClientScope(selectedLeaderId);
-  const stickyLeft = stickyLeftOffsets(showScopeColumn);
   const monthCount = selectedMonths.length;
-  const tableMinWidth = engagementTableMinWidth(collectionsOpen, showScopeColumn, monthCount);
-  const bodyColSpan = 14 + (showScopeColumn ? 1 : 0) + (collectionsOpen ? monthCount * 3 : 0);
-
+  const columns = useMemo(
+    () => buildEngagementColumns({
+      collectionsOpen,
+      showScope: showScopeColumn,
+      monthCount,
+      visibility: columnVisibility,
+    }),
+    [collectionsOpen, showScopeColumn, monthCount, columnVisibility],
+  );
+  const { stickyLeft, lastStickyKey } = stickyLeftMap(columns);
+  const tableMinWidth = engagementTableMinWidth(columns);
+  const bodyColSpan = columns.length;
+  const showManager = colVisible(columns, 'manager');
+  const showRelPartner = colVisible(columns, 'relPartner');
+  const showElStatus = colVisible(columns, 'elStatus');
   const HDR_BG = '#F1F2F4';
-  const stickyHeaderRow1 = 'sticky z-20 top-0';
-  const stickyHeaderRow2 = 'sticky z-20';
-  const stickyBase = 'sticky z-10 bg-white';
+  const stickyEdgeClass = (key) => (lastStickyKey === key ? STICKY_EDGE_SHADOW_CLASS : '');
+  const colW = (key) => colWidth(columns, key) ?? COL_WIDTH[key];
+  const headerBg = (width, extra = {}) => ({
+    ...widthStyle(width),
+    background: HDR_BG,
+    ...extra,
+  });
+  const frozenHeader = (key, extra = {}) => ({
+    left: stickyLeft[key],
+    ...headerBg(colW(key), extra),
+  });
+  const frozenBody = (key) => ({
+    left: stickyLeft[key],
+    ...widthStyle(colW(key)),
+  });
+
+  // thead sticks as one block (no per-row top: 36). Identity cols only stick left.
+  const stickyHeaderLeft = 'sticky z-50';
+  const stickyBase = 'sticky z-[1] bg-white';
   const stickyFooter = 'sticky bottom-0 z-10 bg-muted';
-  const stickyFooterLeft = 'sticky bottom-0 z-20 bg-muted';
-  const thStyle = { top: 36, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const stickyFooterLeft = 'sticky bottom-0 z-30 bg-muted';
 
   const activeFilterCount = countActiveEngagementFilters(filters, selectedMonths);
 
@@ -648,7 +653,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [expandedRow, filtered.length, collectionsOpen, rowVirtualizer]);
+  }, [expandedRow, filtered.length, collectionsOpen, columnVisibility, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
@@ -672,6 +677,30 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               </span>
             )}
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowColumns((v) => !v)}
+              className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-medium transition-colors ${showColumns ? 'bg-cbva-navy text-white border-cbva-navy' : 'bg-white text-foreground border-border hover:bg-muted'}`}
+            >
+              <Columns3 className="w-4 h-4" />
+              Columns
+            </button>
+            {showColumns && (
+              <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-lg border border-border bg-white p-2 shadow-lg">
+                {TOGGLEABLE_IDENTITY_COLUMNS.map((col) => (
+                  <label key={col.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                    <input
+                      type="checkbox"
+                      checked={columnVisibility[col.key]}
+                      onChange={() => setColumnVisibility((prev) => ({ ...prev, [col.key]: !prev[col.key] }))}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <input
             className="text-sm border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring w-72"
             placeholder="Search clients..."
@@ -712,7 +741,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
         <AddEngagementModal
           nextNum={clients.length + 1}
           onClose={() => setShowAddModal(false)}
-          partnerOptions={partnerOptions}
           showScopeField={showScopeColumn}
         />
       )}
@@ -726,6 +754,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           selectedMonths={selectedMonths}
           fySlug={activeFY}
           collectionsOpen={collectionsOpen}
+          managerOptions={managerOptions}
+          relPartnerOptions={relPartnerOptions}
         />
       )}
 
@@ -746,50 +776,57 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
         <SectionLoadingOverlay show={txLoading && collectionsOpen} label="Loading collection data…" />
         <div
           ref={scrollRef}
-          className="scrollbar-x-none overflow-auto"
+          className="scrollbar-both isolate overflow-auto"
           style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 230px)', minHeight: '500px' }}
         >
           <table className="text-sm border-separate" style={{ minWidth: tableMinWidth, borderSpacing: 0, tableLayout: 'fixed' }}>
-            <EngagementColGroup collectionsOpen={collectionsOpen} showScope={showScopeColumn} monthCount={monthCount} />
-            <thead>
-              <tr style={{ background: HDR_BG, height: 36 }}>
-                <th className={`${stickyHeaderRow1} left-0 border-b-0`} style={{ minWidth: 32, width: 32, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.client, minWidth: 180, width: 180, background: HDR_BG }}></th>
+            <EngagementColGroup columns={columns} />
+            <thead className="sticky top-0 z-40 shadow-[0_1px_0_0_rgba(15,23,42,0.08)]" style={{ background: HDR_BG }}>
+              <tr className="h-9" style={{ background: HDR_BG }}>
+                <th className={`${stickyHeaderLeft} left-0 border-b-0 h-9 ${stickyEdgeClass('num')}`} style={frozenHeader('num')}></th>
+                <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('name')}`} style={frozenHeader('name')}></th>
                 {showScopeColumn && (
-                  <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, background: HDR_BG }}></th>
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('scope')}`} style={frozenHeader('scope')}></th>
                 )}
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.manager, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}></th>
-                <th colSpan={5} className="border-b-0" style={{ minWidth: 570, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}></th>
-                <th className="text-center py-1 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50" style={{ minWidth: 120, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                {showManager && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('manager')}`} style={frozenHeader('manager')}></th>
+                )}
+                {showRelPartner && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('relPartner')}`} style={frozenHeader('relPartner')}></th>
+                )}
+                {showElStatus && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('elStatus')}`} style={frozenHeader('elStatus')}></th>
+                )}
+                <th colSpan={5} className="border-b-0 h-9" style={{ minWidth: 570, background: HDR_BG }}></th>
+                <th className="text-center px-3 text-[10px] leading-tight uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50 h-9" style={{ minWidth: 120, background: HDR_BG }}>
                   Collected <span className="font-normal normal-case">(Finance Actuals)</span>
                 </th>
                 {collectionsOpen && (
-                  <th colSpan={monthCount * 3 + 1} className="text-center py-1 px-3 text-[10px] uppercase tracking-wider text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                  <th colSpan={monthCount * 3 + 1} className="text-center px-3 text-[10px] leading-tight uppercase tracking-wider text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 h-9" style={{ background: HDR_BG }}>
                     Planned vs Collected{' '}
                     <span className="font-normal text-blue-400 normal-case">(Forecast vs Actuals)</span>
                     <button onClick={() => setCollectionsOpen(false)} className="ml-2 text-cbva-navy hover:text-cbva-navy/80 font-medium inline-flex"><ChevronDown className="w-3 h-3" /></button>
                   </th>
                 )}
                 {!collectionsOpen && (
-                  <th className="text-center py-1 px-3 text-[10px] text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 whitespace-nowrap" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                  <th className="text-center px-3 text-[10px] leading-tight text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 whitespace-nowrap h-9" style={{ background: HDR_BG }}>
                     Planned vs Collected
                     <button onClick={() => setCollectionsOpen(true)} className="ml-2 text-cbva-navy hover:text-cbva-navy/80 font-medium inline-flex"><ChevronRight className="w-3 h-3" /></button>
                   </th>
                 )}
-                <th colSpan={2} className="border-b-0" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}></th>
+                <th colSpan={2} className="border-b-0 h-9" style={{ background: HDR_BG }}></th>
               </tr>
               <tr className="[&>th]:border-b [&>th]:border-border" style={{ background: HDR_BG }}>
-                <th className={`${stickyHeaderRow2} left-0 text-left py-3 px-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium`} style={{ minWidth: 32, width: 32, top: 36, background: HDR_BG }}>#</th>
+                <th className={`${stickyHeaderLeft} left-0 text-left py-3 px-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium ${stickyEdgeClass('num')}`} style={frozenHeader('num')}>#</th>
                 <ColumnHeaderFilter
                   label="Client Name"
                   type="text"
                   filterKey="name"
                   filters={filters}
                   setFilters={setFilters}
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.client, minWidth: 180, width: 180, top: 36, background: HDR_BG }}
+                  nowrap={false}
+                  className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('name')}`}
+                  style={frozenHeader('name')}
                 />
                 {showScopeColumn && (
                   <ColumnHeaderFilter
@@ -799,46 +836,56 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     options={CLIENT_SCOPE_VALUES}
-                    className={`${stickyHeaderRow2} text-muted-foreground`}
-                    style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, top: 36, background: HDR_BG }}
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('scope')}`}
+                    style={frozenHeader('scope')}
                   />
                 )}
-                <ColumnHeaderFilter
-                  label="Manager"
-                  type="multi"
-                  filterKey="manager"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={managerOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.manager, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
-                />
-                <ColumnHeaderFilter
-                  label="Rel. Partner"
-                  type="multi"
-                  filterKey="relPartner"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={relPartnerOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
-                />
-                <ColumnHeaderFilter
-                  label="EL Status"
-                  type="multi"
-                  filterKey="elStatus"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={elStatusOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`}
-                  style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, top: 36, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}
-                />
+                {showManager && (
+                  <ColumnHeaderFilter
+                    label="Manager"
+                    type="multi"
+                    filterKey="manager"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={managerOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('manager')}`}
+                    style={frozenHeader('manager')}
+                  />
+                )}
+                {showRelPartner && (
+                  <ColumnHeaderFilter
+                    label="Rel. Partner"
+                    type="multi"
+                    filterKey="relPartner"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={relPartnerOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('relPartner')}`}
+                    style={frozenHeader('relPartner')}
+                  />
+                )}
+                {showElStatus && (
+                  <ColumnHeaderFilter
+                    label="EL Status"
+                    type="multi"
+                    filterKey="elStatus"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={elStatusOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('elStatus')}`}
+                    style={frozenHeader('elStatus')}
+                  />
+                )}
                 <th
                   className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-emerald-800 font-medium"
-                  style={{ minWidth: PREV_ACTUAL_COLLECTED_COL_WIDTH, width: PREV_ACTUAL_COLLECTED_COL_WIDTH, top: 36, position: 'sticky', zIndex: 5, background: HDR_BG }}
+                  style={headerBg(COL_WIDTH.prevActualCollected)}
                   title={`Actual collected from ${prevFyLabel} (engagement.collected)`}
                 >
                   {prevFyLabel} Actual Collected
@@ -851,7 +898,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-emerald-700 cursor-pointer select-none"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.green), background: HDR_BG }}
                   onSort={() => handleSort('green')}
                   sortIcon={<SortIconCell field="green" />}
                 />
@@ -863,7 +910,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-amber-600 cursor-pointer select-none"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.amber), background: HDR_BG }}
                   onSort={() => handleSort('amber')}
                   sortIcon={<SortIconCell field="amber" />}
                 />
@@ -875,7 +922,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-cbva-navy cursor-pointer select-none"
-                  style={{ minWidth: 120, width: 120, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.blueSky), background: HDR_BG }}
                   onSort={() => handleSort('blueSky')}
                   sortIcon={<SortIconCell field="blueSky" />}
                 />
@@ -887,7 +934,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-muted-foreground"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.total), background: HDR_BG }}
                 />
                 <ColumnHeaderFilter
                   label="Collected (?)"
@@ -897,7 +944,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-muted-foreground"
-                  style={{ minWidth: 120, width: 120, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.collected), background: HDR_BG }}
                 />
                 {collectionsOpen && <>
                   {selectedMonths.map((mk) => (
@@ -911,7 +958,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-cbva-navy border-l border-border/40"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                       <ColumnHeaderFilter
                         label={`${MONTH_SHORT_NAMES[mk]} Coll`}
@@ -922,7 +969,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-emerald-700"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                       <ColumnHeaderFilter
                         label="Var"
@@ -933,7 +980,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-muted-foreground"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                     </React.Fragment>
                   ))}
@@ -945,7 +992,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     className="text-muted-foreground border-l border-border/40"
-                    style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                    style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}
                   />
                 </>}
                 {!collectionsOpen && (
@@ -957,7 +1004,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     className="text-muted-foreground border-l border-border/40"
-                    style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                    style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}
                   />
                 )}
                 <ColumnHeaderFilter
@@ -967,17 +1014,13 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-muted-foreground"
-                  style={{ minWidth: 320, width: 320, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}
                 />
-                <th className="py-3 px-3" style={{ minWidth: 32, width: 32, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}></th>
+                <th className="py-3 px-3" style={{ ...widthStyle(COL_WIDTH.expand), background: HDR_BG }}></th>
               </tr>
             </thead>
-            <tbody>
-              {paddingTop > 0 && (
-                <tr aria-hidden="true">
-                  <td colSpan={bodyColSpan} style={{ height: paddingTop, padding: 0, border: 'none' }} />
-                </tr>
-              )}
+            <tbody className="relative z-0">
+              <VirtualPadRow height={paddingTop} columns={columns} />
               {virtualRows.map((virtualRow) => {
                 const client = filtered[virtualRow.index];
                 const isExpanded = expandedRow === client.num;
@@ -986,48 +1029,54 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 return (
                   <React.Fragment key={client.id}>
                     <tr className={`[&>td]:border-b [&>td]:border-border/50 hover:bg-muted/20 transition-colors ${isExpanded ? 'bg-muted/10' : ''}`}>
-                      <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground`} style={{ minWidth: 32 }}>{client.num}</td>
+                      <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground ${stickyEdgeClass('num')}`} style={frozenBody('num')}>{client.num}</td>
                       <NameCell
                         value={client.name}
                         onChange={(v) => updateName(client.id, v)}
                         isExpanded={isExpanded}
                         actCount={actCount}
                         onToggleExpand={() => toggleExpandedRow(client.num)}
-                        stickyClass={stickyBase}
-                        stickyStyle={{ left: stickyLeft.client, minWidth: 180 }}
+                        stickyClass={`${stickyBase} ${stickyEdgeClass('name')}`}
+                        stickyStyle={frozenBody('name')}
                       />
                       {showScopeColumn && (
                         <ScopeCell
                           value={client.clientScope}
                           onChange={v => updateScope(client.id, v)}
-                          stickyClass={stickyBase}
-                          stickyStyle={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('scope')}`}
+                          stickyStyle={frozenBody('scope')}
                           disabled={!canEdit}
                         />
                       )}
-                      <ManagerCell
-                        value={client.manager}
-                        onChange={v => updateManager(client.id, v)}
-                        stickyClass={stickyBase}
-                        stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
-                        options={managerOptions}
-                        disabled={!canEdit}
-                      />
-                      <RelPartnerCell
-                        value={client.relPartner}
-                        onChange={(v) => updateRelPartner(client.id, v)}
-                        stickyClass={stickyBase}
-                        stickyStyle={{ left: stickyLeft.relPartner, minWidth: 100 }}
-                        options={relPartnerOptions}
-                        disabled={!canEdit}
-                      />
-                      <ELStatusCell
-                        value={client.elStatus}
-                        onChange={(v) => updateElStatus(client.id, v)}
-                        stickyClass={stickyBase}
-                        stickyStyle={{ left: stickyLeft.elStatus, minWidth: 100 }}
-                        disabled={!canEdit}
-                      />
+                      {showManager && (
+                        <ManagerCell
+                          value={client.manager}
+                          onChange={v => updateManager(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('manager')}`}
+                          stickyStyle={frozenBody('manager')}
+                          options={managerOptions}
+                          disabled={!canEdit}
+                        />
+                      )}
+                      {showRelPartner && (
+                        <RelPartnerCell
+                          value={client.relPartner}
+                          onChange={(v) => updateRelPartner(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('relPartner')}`}
+                          stickyStyle={frozenBody('relPartner')}
+                          options={relPartnerOptions}
+                          disabled={!canEdit}
+                        />
+                      )}
+                      {showElStatus && (
+                        <ELStatusCell
+                          value={client.elStatus}
+                          onChange={(v) => updateElStatus(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('elStatus')}`}
+                          stickyStyle={frozenBody('elStatus')}
+                          disabled={!canEdit}
+                        />
+                      )}
                       <td className="py-3 px-3 text-right font-tabular text-xs text-emerald-800" title={prevActualCollected == null ? 'No confident prior-year match' : `Actual collected from ${prevFyLabel}`}>
                         {prevActualCollected == null ? <span className="text-muted-foreground/60 italic">TBD</span> : formatINRFull(prevActualCollected)}
                       </td>
@@ -1102,20 +1151,16 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   </React.Fragment>
                 );
               })}
-              {paddingBottom > 0 && (
-                <tr aria-hidden="true">
-                  <td colSpan={bodyColSpan} style={{ height: paddingBottom, padding: 0, border: 'none' }} />
-                </tr>
-              )}
+              <VirtualPadRow height={paddingBottom} columns={columns} />
             </tbody>
-            <tfoot>
+            <tfoot className="relative z-30">
               <tr className="bg-muted [&>td]:border-t-2 [&>td]:border-border">
-                <td className={`${stickyFooterLeft} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ minWidth: 32 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ left: stickyLeft.client, minWidth: 180 }}>TOTAL</td>
-                {showScopeColumn && <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}></td>}
-                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.manager, minWidth: 100 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}></td>
+                <td className={`${stickyFooterLeft} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground ${stickyEdgeClass('num')}`} style={frozenBody('num')}></td>
+                <td className={`${stickyFooterLeft} py-3 px-3 text-xs font-bold uppercase text-foreground ${stickyEdgeClass('name')}`} style={frozenBody('name')}>TOTAL</td>
+                {showScopeColumn && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('scope')}`} style={frozenBody('scope')}></td>}
+                {showManager && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('manager')}`} style={frozenBody('manager')}></td>}
+                {showRelPartner && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('relPartner')}`} style={frozenBody('relPartner')}></td>}
+                {showElStatus && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('elStatus')}`} style={frozenBody('elStatus')}></td>}
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-emerald-800 text-xs`}>{totals.prevActualCollected > 0 ? formatINRFull(totals.prevActualCollected) : '-'}</td>
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>

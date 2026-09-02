@@ -5,6 +5,7 @@ from app.schemas.baseline import BaselinePlanCreate, BaselinePlanUpdate, Baselin
 from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services.fiscal_year import assert_fy_editable
 from app.services import audit_service
 
 router = APIRouter()
@@ -44,6 +45,7 @@ async def list_baselines(
 @router.post("/", response_model=BaselinePlanResponse, status_code=201)
 async def create_baseline(body: BaselinePlanCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.financial_year_id, current_user)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.baseline_plans.insert_one(doc)
@@ -67,6 +69,12 @@ async def update_baseline(
     if not existing:
         raise HTTPException(status_code=404, detail="Baseline plan not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["financial_year_id"], current_user)
+    if existing.get("is_locked") and current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="This fiscal year is locked for editing. Ask an admin to enable editing in Admin Settings.",
+        )
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.baseline_plans.find_one_and_update(

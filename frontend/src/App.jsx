@@ -29,6 +29,7 @@ const ConsolidatedSummary = lazy(() => import('./pages/firmwide/ConsolidatedSumm
 const ChangeLog = lazy(() => import('./pages/firmwide/ChangeLog'));
 const ClientDetail = lazy(() => import('./pages/ClientDetail'));
 const ClientMeetings = lazy(() => import('./pages/ClientMeetings'));
+const Scorecard = lazy(() => import('./pages/Scorecard'));
 
 function PageLoader() {
   return (
@@ -81,6 +82,7 @@ const AuthenticatedApp = () => {
             <Route path="/my-plan/clients/:clientId" element={<LazyPage><ClientDetail user={user} /></LazyPage>} />
             <Route path="/my-plan/actions" element={<LazyPage><ClientActionsLayout><Actions user={user} /></ClientActionsLayout></LazyPage>} />
             <Route path="/my-plan/meetings" element={<LazyPage><ClientMeetings user={user} /></LazyPage>} />
+            <Route path="/my-plan/scorecard" element={<LazyPage><Scorecard user={user} /></LazyPage>} />
             <Route path="/my-plan/blue-sky-summary" element={<LazyPage><BlueSkyPage user={user} /></LazyPage>} />
             <Route path="/firmwide" element={<Navigate to="/firmwide/consolidated" replace />} />
             <Route path="/firmwide/leaders" element={<Navigate to="/firmwide/consolidated" replace />} />

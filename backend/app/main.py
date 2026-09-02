@@ -34,6 +34,8 @@ from app.routers import (
     client_meetings,
     consolidated,
     audit,
+    kra,
+    appraisals,
 )
 
 
@@ -118,6 +120,8 @@ app.include_router(firmwide.router,    prefix="/api/firmwide",     tags=["Firmwi
 app.include_router(consolidated.router, prefix="/api/consolidated-summary", tags=["Consolidated"])
 app.include_router(admin.router,       prefix="/api/admin",        tags=["Admin"])
 app.include_router(audit.router,       prefix="/api/audit-log",    tags=["AuditLog"])
+app.include_router(kra.router,         prefix="/api/kra",          tags=["KRA"])
+app.include_router(appraisals.router,  prefix="/api/appraisals",   tags=["Appraisals"])
 
 
 @app.get("/health")

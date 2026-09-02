@@ -9,10 +9,11 @@ import {
   MONTH_FULL_NAMES,
 } from '@/lib/fyMonths';
 
-/** Show em-dash for missing or zero amounts — never hide the cell. */
-function fmt(val, emptyLabel = '—') {
-  if (val === null || val === undefined || val === '' || Number(val) === 0) return emptyLabel;
+/** Show em-dash for missing amounts. TBD only when the row is a placeholder. */
+function fmt(val, emptyLabel = '—', allowZero = false) {
   if (val === 'TBD') return 'TBD';
+  if (val === null || val === undefined || val === '') return emptyLabel;
+  if (Number(val) === 0) return allowZero ? formatINRFull(0) : emptyLabel;
   return formatINRFull(val);
 }
 
@@ -31,13 +32,13 @@ function matchMonthKey(label) {
   return null;
 }
 
-function AmountCells({ row, emphasize = false, emptyLabel = '—' }) {
+function AmountCells({ row, emphasize = false, emptyLabel = '—', allowZero = false }) {
   return (
     <>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.green, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.amber, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.blueSky, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap`}>{fmt(row.total, emptyLabel)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.green, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.amber, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.blueSky, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap`}>{fmt(row.total, emptyLabel, allowZero)}</td>
     </>
   );
 }
@@ -105,7 +106,7 @@ function EditableAmountCell({ value, onSave, disabled, className = '' }) {
  * - Prior-year actuals (editable, stored as pipeline fy_actual — not consolidated)
  * - Initial / Board plan rows when present
  * - Current month always visible with live Green/Amber/Blue Sky/Total
- * - Prior months hidden behind header arrow; expand to show "TBD"
+ * - Prior months hidden behind header arrow; expand to show stored snapshots or TBD
  */
 export default function MonthlyEvolutionCard({
   pipelineData = [],
@@ -192,7 +193,19 @@ export default function MonthlyEvolutionCard({
             }
           : { key: `month-${mk}`, label, ...emptyAmounts() };
       } else {
-        prev.push({ key: `month-${mk}`, label, ...emptyAmounts('TBD'), isTbd: true });
+        const src = monthlyByKey[mk];
+        if (src) {
+          prev.push({
+            key: `month-${mk}`,
+            label,
+            green: src.green,
+            amber: src.amber,
+            blueSky: src.blueSky,
+            total: src.total,
+          });
+        } else {
+          prev.push({ key: `month-${mk}`, label, ...emptyAmounts('TBD'), isTbd: true });
+        }
       }
     });
 
@@ -289,7 +302,7 @@ export default function MonthlyEvolutionCard({
             {prevOpen && prevMonthRows.map((row) => (
               <tr key={row.key} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                 <td className="py-2.5 font-medium text-slate-500 col-num">{row.label}</td>
-                <AmountCells row={row} emptyLabel="TBD" />
+                <AmountCells row={row} emptyLabel={row.isTbd ? 'TBD' : '—'} allowZero={!row.isTbd} />
               </tr>
             ))}
 

@@ -86,6 +86,6 @@ export const apiGet = (path, params) => axiosInstance.get(path, { params });
 export const apiPost = (path, body) => axiosInstance.post(path, body);
 export const apiPut = (path, body) => axiosInstance.put(path, body);
 export const apiPatch = (path, body) => axiosInstance.patch(path, body);
-export const apiDelete = (path) => axiosInstance.delete(path);
+export const apiDelete = (path, params) => axiosInstance.delete(path, params ? { params } : undefined);
 
 export const apiLogout = () => apiPost('/api/auth/logout').catch(() => {});

@@ -5,6 +5,7 @@ from app.schemas.el_summary import ELSummaryUpdate, ELSummaryResponse
 from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services.fiscal_year import assert_fy_editable
 from app.services import audit_service
 
 router = APIRouter()
@@ -131,6 +132,7 @@ async def update_el_summary(
     if not existing:
         raise HTTPException(status_code=404, detail="EL summary not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.el_summaries.find_one_and_update(

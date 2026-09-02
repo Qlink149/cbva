@@ -3,11 +3,10 @@ import { X } from 'lucide-react';
 import { useCreateEngagement } from '@/hooks/useEngagements';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useTeam } from '@/hooks/useTeam';
-import { useFirmwideTeam } from '@/hooks/useFirmwide';
-import { useLeaders } from '@/hooks/useLeaders';
+import { useLeader } from '@/hooks/useLeaders';
 import PersonSelect from '@/components/clients/PersonSelect';
 import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
-import { mergePersonOptions } from '@/lib/personNames';
+import { leaderScopedManagerOptions } from '@/lib/designations';
 import { isFyEditable } from '@/lib/fiscalYear';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -29,39 +28,24 @@ const DEFAULT_FORM = {
   remarks: '',
 };
 
-export default function AddEngagementModal({ onClose, nextNum, partnerOptions = [], showScopeField = false }) {
+export default function AddEngagementModal({ onClose, nextNum, showScopeField = false }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [error, setError] = useState('');
   const { user } = useAuth();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const canEdit = isFyEditable(activeFY, fiscalYears, user?.role);
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
-  const { data: firmwideTeam = [] } = useFirmwideTeam(activeFY);
-  const { data: leaders = [] } = useLeaders();
+  const { data: selectedLeader } = useLeader(selectedLeaderId);
   const createMutation = useCreateEngagement();
 
-  const firmwideNames = useMemo(
-    () => mergePersonOptions(firmwideTeam.map((m) => m.full_name)),
-    [firmwideTeam],
-  );
+  const selectedLeaderName = selectedLeader?.name || '';
 
   const managerOptions = useMemo(
-    () => mergePersonOptions(
-      teamMembers.map((m) => m.full_name),
-      firmwideNames,
-      leaders.map((l) => l.name),
-    ),
-    [teamMembers, firmwideNames, leaders],
+    () => leaderScopedManagerOptions(teamMembers, selectedLeaderName),
+    [teamMembers, selectedLeaderName],
   );
 
-  const relPartnerOptions = useMemo(
-    () => mergePersonOptions(
-      partnerOptions,
-      leaders.map((l) => l.name),
-      firmwideNames,
-    ),
-    [partnerOptions, leaders, firmwideNames],
-  );
+  const relPartnerOptions = managerOptions;
 
   function set(field, val) {
     setForm(prev => {

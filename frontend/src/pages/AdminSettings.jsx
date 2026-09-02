@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Settings, Users, Building2, Briefcase, Calendar, Target } from 'lucide-react';
+import { Plus, Settings, Users, Building2, Briefcase, Calendar, Target, ClipboardList } from 'lucide-react';
 import { formatINR } from '@/lib/formatCurrency';
 import { useBaselines } from '@/hooks/useBaselines';
 import {
@@ -22,6 +22,7 @@ import { useLeaders } from '@/hooks/useLeaders';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { getFyLabel } from '@/lib/fiscalYear';
 import { useToast } from '@/components/ui/use-toast';
+import KraConfigTab from '@/components/admin/KraConfigTab';
 function UsersTab() {
   const { data: users = [], isLoading } = useAdminUsers();
   const { data: leaders = [] } = useLeaders();
@@ -532,10 +533,12 @@ export default function AdminSettings() {
           <TabsTrigger value="users" className="gap-1.5"><Users className="w-3.5 h-3.5" />Users</TabsTrigger>
           <TabsTrigger value="plans" className="gap-1.5"><Target className="w-3.5 h-3.5" />Plans</TabsTrigger>
           <TabsTrigger value="fy" className="gap-1.5"><Calendar className="w-3.5 h-3.5" />Financial Years</TabsTrigger>
+          <TabsTrigger value="kra" className="gap-1.5"><ClipboardList className="w-3.5 h-3.5" />KRA</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
         <TabsContent value="plans" className="mt-4"><PlansTab /></TabsContent>
         <TabsContent value="fy" className="mt-4"><FYTab /></TabsContent>
+        <TabsContent value="kra" className="mt-4"><KraConfigTab /></TabsContent>
       </Tabs>
     </div>
   );

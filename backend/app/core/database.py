@@ -17,6 +17,8 @@ async def connect_db() -> None:
     db = _client[settings.DATABASE_NAME]
     try:
         await _create_indexes()
+        from app.services.kra_seed import ensure_kra_seed
+        await ensure_kra_seed()
         logger.info("MongoDB connected and indexes ensured.")
     except Exception as exc:
         logger.warning(
@@ -43,8 +45,11 @@ async def ensure_db_connected() -> None:
 
 
 async def close_db() -> None:
+    global _client, db
     if _client:
         _client.close()
+    _client = None
+    db = None
 
 
 async def _create_indexes() -> None:
@@ -101,3 +106,24 @@ async def _create_indexes() -> None:
     await db.audit_log.create_index([("entity_type", 1), ("entity_id", 1), ("created_at", -1)])
     await db.audit_log.create_index([("actor_id", 1), ("created_at", -1)])
     await db.audit_log.create_index([("leader_id", 1), ("fiscal_year", 1), ("created_at", -1)])
+    await db.kra_categories.create_index("sort_order")
+    try:
+        await db.kra_weight_config.drop_index("fiscal_year_1_leader_id_1_category_id_1")
+    except Exception:
+        pass
+    await db.kra_weight_config.create_index(
+        [("layer", 1), ("fiscal_year", 1), ("leader_id", 1), ("category_id", 1)],
+        unique=True,
+    )
+    await db.kpi_definitions.create_index(
+        [("layer", 1), ("fiscal_year", 1), ("leader_id", 1), ("sort_order", 1)]
+    )
+    await db.leadership_competencies.create_index(
+        [("layer", 1), ("fiscal_year", 1), ("leader_id", 1), ("sort_order", 1)]
+    )
+    await db.appraisal_rounds.create_index(
+        [("fiscal_year", 1), ("leader_id", 1), ("round_type", 1)],
+        unique=True,
+    )
+    await db.kpi_ratings.create_index([("round_id", 1), ("kpi_definition_id", 1)], unique=True)
+    await db.competency_ratings.create_index([("round_id", 1), ("competency_id", 1)], unique=True)

@@ -11,6 +11,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope, require_roles
 from app.services.engagement_derivation import materialize_leader_derived_data
+from app.services.fiscal_year import assert_fy_editable
 from app.services import audit_service
 
 router = APIRouter()
@@ -126,6 +127,7 @@ async def upsert_fy_actual(
     enforce_leader_write_scope(current_user, body.leader_id)
     if not body.fiscal_year or len(body.fiscal_year) != 4:
         raise HTTPException(status_code=400, detail="fiscal_year must be a 4-char slug like 2425")
+    await assert_fy_editable(body.fiscal_year, current_user)
 
     now = datetime.now(timezone.utc)
     label = _fy_actual_label(body.fiscal_year)
@@ -185,6 +187,7 @@ async def upsert_fy_actual(
 @router.post("/", response_model=PipelineSnapshotResponse, status_code=201)
 async def create_snapshot(body: PipelineSnapshotCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.pipeline_snapshots.insert_one(doc)
@@ -208,6 +211,7 @@ async def update_snapshot(
     if not existing:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.pipeline_snapshots.find_one_and_update(
@@ -228,6 +232,7 @@ async def delete_snapshot(snapshot_id: str, current_user: dict = Depends(require
     if not existing:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.pipeline_snapshots.delete_one({"_id": ObjectId(snapshot_id)})
     await audit_service.log_delete(
         "pipeline_snapshot", existing, current_user,
