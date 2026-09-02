@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timezone
 from bson import ObjectId
+from bson.errors import InvalidId
 from app.schemas.engagement_action import (
     EngagementActionCreate,
     EngagementActionStatusPatch,
@@ -22,6 +23,7 @@ def _serialize(doc: dict) -> dict:
         "leader_id": doc["leader_id"],
         "fiscal_year": doc["fiscal_year"],
         "engagement_num": doc["engagement_num"],
+        "client_name": doc.get("client_name") or "",
         "description": doc["description"],
         "deadline": doc.get("deadline"),
         "status": doc.get("status", "Pending"),
@@ -32,6 +34,7 @@ def _serialize(doc: dict) -> dict:
     }
 
 
+@router.get("", include_in_schema=False)
 @router.get("/", response_model=dict)
 async def list_engagement_actions(
     leader_id: str = Query(...),
@@ -46,6 +49,7 @@ async def list_engagement_actions(
     return {"data": [_serialize(d) for d in docs]}
 
 
+@router.post("", response_model=EngagementActionResponse, status_code=201, include_in_schema=False)
 @router.post("/", response_model=EngagementActionResponse, status_code=201)
 async def create_engagement_action(
     body: EngagementActionCreate,
@@ -54,7 +58,12 @@ async def create_engagement_action(
     enforce_leader_write_scope(current_user, body.leader_id)
     await assert_fy_editable(body.fiscal_year, current_user)
 
-    engagement = await database.db.engagements.find_one({"_id": ObjectId(body.engagement_id)})
+    try:
+        engagement_oid = ObjectId(body.engagement_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid engagement")
+
+    engagement = await database.db.engagements.find_one({"_id": engagement_oid})
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
     if engagement["leader_id"] != body.leader_id or engagement["fiscal_year"] != body.fiscal_year:
@@ -62,10 +71,11 @@ async def create_engagement_action(
 
     now = datetime.now(timezone.utc)
     doc = {
-        "engagement_id": ObjectId(body.engagement_id),
+        "engagement_id": engagement_oid,
         "leader_id": body.leader_id,
         "fiscal_year": body.fiscal_year,
         "engagement_num": body.engagement_num,
+        "client_name": engagement.get("name") or "",
         "description": body.description.strip(),
         "deadline": body.deadline,
         "status": "Pending",

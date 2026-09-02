@@ -22,6 +22,7 @@ class EngagementActionResponse(BaseModel):
     leader_id: str
     fiscal_year: str
     engagement_num: int
+    client_name: str = ""
     description: str
     deadline: Optional[date]
     status: str

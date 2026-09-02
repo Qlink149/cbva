@@ -2,6 +2,7 @@ import React, { createContext, useContext, useMemo, useCallback } from 'react';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useEngagements, useUpdateEngagement, useDeleteEngagement, useUpdateRemarks } from '@/hooks/useEngagements';
 import { useEngagementActions } from '@/hooks/useEngagementMeta';
+import { toast } from 'sonner';
 
 const ClientActionsContext = createContext(null);
 
@@ -14,10 +15,17 @@ export function ClientActionsProvider({ children }) {
 
   const {
     actions: clientActions,
+    isLoading: actionsLoading,
     createAction,
     deleteAction,
     patchActionStatus,
   } = useEngagementActions(selectedLeaderId, activeFY);
+
+  const clientNameById = useMemo(() => {
+    const map = new Map();
+    clients.forEach((c) => map.set(String(c.id), c.name));
+    return map;
+  }, [clients]);
 
   const clientNameByNum = useMemo(() => {
     const map = new Map();
@@ -28,18 +36,30 @@ export function ClientActionsProvider({ children }) {
   const clientActionsWithNames = useMemo(
     () => clientActions.map((a) => ({
       ...a,
-      clientName: clientNameByNum.get(a.clientNum) || a.clientName || '',
+      clientName:
+        a.clientName
+        || clientNameById.get(String(a.engagementId))
+        || clientNameByNum.get(a.clientNum)
+        || '',
     })),
-    [clientActions, clientNameByNum],
+    [clientActions, clientNameById, clientNameByNum],
   );
 
-  const addAction = useCallback(({ clientNum, clientName, description, deadline, engagementId }) => {
-    if (!engagementId || !selectedLeaderId || !activeFY) return;
-    createAction.mutate({
+  const addAction = useCallback(async ({ clientNum, description, deadline, engagementId }) => {
+    if (!engagementId || !selectedLeaderId || !activeFY) {
+      toast.error('Cannot add action point — missing client or year.');
+      throw new Error('missing client or year');
+    }
+    const num = Number(clientNum);
+    if (!Number.isFinite(num)) {
+      toast.error('Cannot add action point — invalid client.');
+      throw new Error('invalid client num');
+    }
+    return createAction.mutateAsync({
       engagement_id: engagementId,
       leader_id: selectedLeaderId,
       fiscal_year: activeFY,
-      engagement_num: clientNum,
+      engagement_num: num,
       description,
       deadline: deadline || null,
     });
@@ -69,6 +89,7 @@ export function ClientActionsProvider({ children }) {
     clients,
     isLoading,
     isError,
+    actionsLoading,
     clientActions: clientActionsWithNames,
     addAction,
     deleteAction: removeAction,
@@ -77,10 +98,12 @@ export function ClientActionsProvider({ children }) {
     deleteEngagement,
     updateRemarks,
     isUpdating: updateMutation.isPending,
+    isAddingAction: createAction.isPending,
   }), [
     clients,
     isLoading,
     isError,
+    actionsLoading,
     clientActionsWithNames,
     addAction,
     removeAction,
@@ -89,6 +112,7 @@ export function ClientActionsProvider({ children }) {
     deleteEngagement,
     updateRemarks,
     updateMutation.isPending,
+    createAction.isPending,
   ]);
 
   return (

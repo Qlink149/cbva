@@ -564,11 +564,12 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     return list;
   }, [clients, sortField, sortDir, deferredFilters, txMap, selectedMonths]);
 
-  const actCountByClientNum = useMemo(() => {
+  const actCountByClient = useMemo(() => {
     const map = new Map();
     clientActions.forEach((a) => {
       if (a.status !== 'Done') {
-        map.set(a.clientNum, (map.get(a.clientNum) || 0) + 1);
+        const key = a.engagementId != null ? String(a.engagementId) : a.clientNum;
+        map.set(key, (map.get(key) || 0) + 1);
       }
     });
     return map;
@@ -1024,7 +1025,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               {virtualRows.map((virtualRow) => {
                 const client = filtered[virtualRow.index];
                 const isExpanded = expandedRow === client.num;
-                const actCount = actCountByClientNum.get(client.num) || 0;
+                const actCount = actCountByClient.get(String(client.id)) || actCountByClient.get(client.num) || 0;
                 const prevActualCollected = prevActualCollectedFor(client);
                 return (
                   <React.Fragment key={client.id}>
@@ -1141,8 +1142,14 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           <EngagementExpandedPanel
                             client={client}
                             actions={clientActions}
-                            onAddAction={addAction}
-                            onDeleteAction={deleteAction}
+                            onAddAction={(payload) => {
+                              if (!canEdit) {
+                                toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+                                return Promise.reject(new Error('locked'));
+                              }
+                              return addAction(payload);
+                            }}
+                            onDeleteAction={(id) => guardEdit(() => deleteAction(id))}
                             onUpdateRemarks={updateRemarks}
                           />
                         </td>

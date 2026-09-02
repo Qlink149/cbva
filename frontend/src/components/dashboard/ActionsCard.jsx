@@ -11,11 +11,11 @@ export default function ActionsCard({ actions = [], fyLabel = '', isLoading = fa
   const { overdue, upcoming } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const open = actions.filter((a) => a.status !== 'Closed');
+    const open = actions.filter((a) => a.status !== 'Closed' && a.status !== 'Done');
     const overdueItems = [];
     const upcomingItems = [];
     open.forEach((a) => {
-      const due = parseDueDate(a.due_date);
+      const due = parseDueDate(a.due_date || a.deadline);
       if (due && due < today) overdueItems.push(a);
       else upcomingItems.push(a);
     });
@@ -34,7 +34,10 @@ export default function ActionsCard({ actions = [], fyLabel = '', isLoading = fa
     );
   }
 
-  const label = (a) => a.description || a.category || 'Untitled action';
+  const label = (a) => {
+    const text = a.description || a.category || 'Untitled action';
+    return a.clientName ? `${a.clientName}: ${text}` : text;
+  };
   const isEmpty = overdue.length === 0 && upcoming.length === 0;
 
   return (
@@ -67,9 +70,9 @@ export default function ActionsCard({ actions = [], fyLabel = '', isLoading = fa
                     className="flex items-start justify-between gap-3 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-red-700 min-w-0 truncate">{label(a)}</span>
-                    {a.due_date && (
-                      <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{a.due_date}</span>
-                    )}
+                    {a.due_date || a.deadline ? (
+                      <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{a.due_date || a.deadline}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -90,9 +93,9 @@ export default function ActionsCard({ actions = [], fyLabel = '', isLoading = fa
                     className="flex items-start justify-between gap-3 rounded-lg bg-white border border-slate-200 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-slate-700 min-w-0 truncate">{label(a)}</span>
-                    {a.due_date && (
-                      <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">{a.due_date}</span>
-                    )}
+                    {a.due_date || a.deadline ? (
+                      <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">{a.due_date || a.deadline}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

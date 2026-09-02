@@ -17,7 +17,7 @@ import { usePipeline, useFyActuals, useUpsertFyActual } from '@/hooks/usePipelin
 import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
 import { useClientMeetings } from '@/hooks/useClientMeetings';
-import { useActions } from '@/hooks/useActions';
+import { useEngagementActions } from '@/hooks/useEngagementMeta';
 import { useHiring } from '@/hooks/useHiring';
 import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
@@ -47,7 +47,7 @@ export default function LeaderDashboard({ user }) {
   const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId, activeFY);
   const { approvedByDesignation } = useHeadcount(selectedLeaderId, activeFY);
   const { data: meetings = [], isLoading: meetingsLoading } = useClientMeetings(selectedLeaderId, activeFY);
-  const { data: leaderActions = [], isLoading: actionsLoading } = useActions(selectedLeaderId, activeFY);
+  const { actions: clientActions = [], isLoading: actionsLoading } = useEngagementActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);
   const activeBaseline = baselines[0] ?? null;
 
@@ -202,7 +202,7 @@ export default function LeaderDashboard({ user }) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <MeetingsCard meetings={meetings} fyLabel={fyLabel} isLoading={meetingsLoading} />
-          <ActionsCard actions={leaderActions} fyLabel={fyLabel} isLoading={actionsLoading} />
+          <ActionsCard actions={clientActions} fyLabel={fyLabel} isLoading={actionsLoading} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

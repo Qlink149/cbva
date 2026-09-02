@@ -1,9 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiDelete, apiPatch } from '@/api/client';
 import { formatIstDate } from '@/lib/datetime';
+import { toast } from 'sonner';
 
 const changesKey = (engagementId) => ['engagement-changes', engagementId];
 const actionsKey = (leaderId, fiscalYear) => ['engagement-actions', leaderId, fiscalYear];
+
+export function apiErrorMessage(err) {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const msg = detail.map((item) => item?.msg || item?.message || '').filter(Boolean).join('; ');
+    if (msg) return msg;
+  }
+  return err?.message || 'Request failed';
+}
 
 export function useEngagementChanges(engagementId, enabled = false) {
   return useQuery({
@@ -32,13 +43,13 @@ export function useEngagementActions(leaderId, fiscalYear) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => apiGet('/api/engagement-actions', { leader_id: leaderId, fiscal_year: fiscalYear }),
+    queryFn: () => apiGet('/api/engagement-actions/', { leader_id: leaderId, fiscal_year: fiscalYear }),
     enabled: !!leaderId && !!fiscalYear,
     select: (res) => (res.data ?? res ?? []).map((a) => ({
       id: a.id,
       engagementId: a.engagement_id,
       clientNum: a.engagement_num,
-      clientName: '',
+      clientName: a.client_name || '',
       description: a.description,
       deadline: a.deadline || '',
       status: a.status,
@@ -48,18 +59,27 @@ export function useEngagementActions(leaderId, fiscalYear) {
   });
 
   const createAction = useMutation({
-    mutationFn: (body) => apiPost('/api/engagement-actions', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    mutationFn: (body) => apiPost('/api/engagement-actions/', body),
+    onSuccess: (created) => {
+      qc.setQueryData(queryKey, (old) => {
+        const list = old?.data ?? (Array.isArray(old) ? old : []);
+        return { data: [created, ...list.filter((row) => row.id !== created.id)] };
+      });
+      qc.invalidateQueries({ queryKey });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err) || 'Failed to add action point'),
   });
 
   const deleteAction = useMutation({
     mutationFn: (id) => apiDelete(`/api/engagement-actions/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onError: (err) => toast.error(apiErrorMessage(err) || 'Failed to delete action point'),
   });
 
   const patchActionStatus = useMutation({
     mutationFn: ({ id, status }) => apiPatch(`/api/engagement-actions/${id}/status`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onError: (err) => toast.error(apiErrorMessage(err) || 'Failed to update status'),
   });
 
   return {

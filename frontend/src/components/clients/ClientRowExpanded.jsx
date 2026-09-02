@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Plus, Trash2, Calendar, Pencil } from 'lucide-react';
 import { formatIstDate } from '@/lib/datetime';
 import { formatAuditValue } from '@/lib/formatAuditValue';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { useClientActions } from '@/lib/ClientActionsContext';
+import { toast } from 'sonner';
 
 function formatHistoryDate(iso) {
   if (!iso) return '';
@@ -156,18 +159,36 @@ export default function ClientRowExpanded({
   onUpdateRemarks,
 }) {
   const [newAction, setNewAction] = useState({ description: '', deadline: '' });
-  const clientActions = actions.filter((a) => a.clientNum === client.num);
+  const [adding, setAdding] = useState(false);
+  const { canEdit, lockedMessage } = useFyEditAccess();
+  const { isAddingAction } = useClientActions() || {};
+  const clientActions = actions.filter((a) => (
+    (a.engagementId && client.id && String(a.engagementId) === String(client.id))
+    || a.clientNum === client.num
+  ));
+  const busy = adding || isAddingAction;
 
-  function handleAdd() {
-    if (!newAction.description.trim()) return;
-    onAddAction({
-      clientNum: client.num,
-      clientName: client.name,
-      engagementId: client.id,
-      description: newAction.description.trim(),
-      deadline: newAction.deadline,
-    });
-    setNewAction({ description: '', deadline: '' });
+  async function handleAdd() {
+    if (!newAction.description.trim() || busy) return;
+    if (!canEdit) {
+      toast.error(lockedMessage);
+      return;
+    }
+    setAdding(true);
+    try {
+      await onAddAction({
+        clientNum: client.num,
+        clientName: client.name,
+        engagementId: client.id,
+        description: newAction.description.trim(),
+        deadline: newAction.deadline,
+      });
+      setNewAction({ description: '', deadline: '' });
+    } catch {
+      // toast is handled by the mutation
+    } finally {
+      setAdding(false);
+    }
   }
 
   return (
@@ -196,7 +217,14 @@ export default function ClientRowExpanded({
                       {a.deadline}
                     </span>
                   )}
-                  <button onClick={() => onDeleteAction(a.id)} className="text-muted-foreground hover:text-red-500 transition-colors shrink-0" title="Remove action">
+                  <button
+                    onClick={() => {
+                      if (!canEdit) { toast.error(lockedMessage); return; }
+                      onDeleteAction(a.id);
+                    }}
+                    className="text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+                    title="Remove action"
+                  >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
@@ -213,6 +241,7 @@ export default function ClientRowExpanded({
               value={newAction.description}
               onChange={(e) => setNewAction((p) => ({ ...p, description: e.target.value }))}
               onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+              disabled={busy || !canEdit}
             />
             <div className="flex items-center gap-2">
               <input
@@ -220,12 +249,14 @@ export default function ClientRowExpanded({
                 className="flex-1 text-xs border border-border rounded-full px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring"
                 value={newAction.deadline}
                 onChange={(e) => setNewAction((p) => ({ ...p, deadline: e.target.value }))}
+                disabled={busy || !canEdit}
               />
               <button
                 onClick={handleAdd}
-                className="flex items-center gap-1 text-xs bg-cbva-navy text-white px-3 py-2 rounded-full hover:bg-cbva-navy/80 transition-colors shrink-0"
+                disabled={busy || !canEdit || !newAction.description.trim()}
+                className="flex items-center gap-1 text-xs bg-cbva-navy text-white px-3 py-2 rounded-full hover:bg-cbva-navy/80 transition-colors shrink-0 disabled:opacity-50"
               >
-                <Plus className="w-3 h-3" /> Add
+                <Plus className="w-3 h-3" /> {busy ? 'Adding...' : 'Add'}
               </button>
             </div>
           </div>
