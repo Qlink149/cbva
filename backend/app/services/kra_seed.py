@@ -253,8 +253,12 @@ COMPETENCIES = [
 ]
 
 
+_seeded = False
+
+
 async def ensure_kra_seed() -> None:
-    if database.db is None:
+    global _seeded
+    if _seeded or database.db is None:
         return
     now = datetime.now(timezone.utc)
 
@@ -360,3 +364,4 @@ async def ensure_kra_seed() -> None:
             "Seeded kpi_definitions all-time from Leader_Scorecard sheet "
             "(starting default only — B2 not decided)."
         )
+    _seeded = True

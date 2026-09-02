@@ -42,10 +42,19 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
+function isAuthCredentialRequest(config) {
+  const url = `${config?.baseURL || ''}${config?.url || ''}`;
+  return url.includes('/api/auth/login') || url.includes('/api/auth/refresh');
+}
+
 axiosInstance.interceptors.response.use(
   (res) => res.data,
   async (err) => {
-    const originalRequest = err.config;
+    const originalRequest = err.config || {};
+
+    if (isAuthCredentialRequest(originalRequest)) {
+      return Promise.reject(err);
+    }
 
     if (err.response?.status !== 401 || originalRequest._retry) {
       if (err.response?.status === 401) clearAuthAndRedirect();

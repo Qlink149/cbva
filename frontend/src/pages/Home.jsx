@@ -41,8 +41,17 @@ export default function Home() {
       } else {
         redirectByRole(user);
       }
-    } catch {
-      setError('Invalid email or password.');
+    } catch (err) {
+      const status = err?.response?.status;
+      if (!err?.response) {
+        setError('Cannot reach the API. The site may still be pointing at localhost after the last deploy.');
+      } else if (status === 429) {
+        setError('Too many login attempts. Wait a minute and try again.');
+      } else if (status >= 500) {
+        setError('Server error on login. The API likely failed after the last deploy.');
+      } else {
+        setError('Invalid email or password.');
+      }
     } finally {
       setLoading(false);
     }

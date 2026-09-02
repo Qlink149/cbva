@@ -17,8 +17,6 @@ async def connect_db() -> None:
     db = _client[settings.DATABASE_NAME]
     try:
         await _create_indexes()
-        from app.services.kra_seed import ensure_kra_seed
-        await ensure_kra_seed()
         logger.info("MongoDB connected and indexes ensured.")
     except Exception as exc:
         logger.warning(
@@ -50,6 +48,8 @@ async def close_db() -> None:
         _client.close()
     _client = None
     db = None
+    from app.services import kra_seed as kra_seed_mod
+    kra_seed_mod._seeded = False
 
 
 async def _create_indexes() -> None:

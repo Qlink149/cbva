@@ -27,6 +27,7 @@ from app.services.kra_resolve import (
     resolve_kpis,
     resolve_weights,
 )
+from app.services.kra_seed import ensure_kra_seed
 
 router = APIRouter()
 
@@ -112,6 +113,7 @@ async def _find_comp(competency_id: str) -> dict | None:
 
 @router.get("/categories")
 async def list_categories(current_user: dict = Depends(get_current_user)):
+    await ensure_kra_seed()
     docs = await database.db.kra_categories.find({}).sort("sort_order", 1).to_list(length=20)
     return {"data": [_serialize_category(d) for d in docs]}
 
@@ -122,6 +124,7 @@ async def get_resolved(
     leader_id: str | None = Query(None),
     current_user: dict = Depends(get_current_user),
 ):
+    await ensure_kra_seed()
     kpi_layer, kpis = await resolve_kpis(fiscal_year, leader_id)
     weight_layer, weights = await resolve_weights(fiscal_year, leader_id)
     comp_layer, comps = await resolve_competencies(fiscal_year, leader_id)
@@ -189,6 +192,7 @@ async def list_competencies(
     current_user: dict = Depends(get_current_user),
 ):
     _layer_args(layer, fiscal_year, leader_id)
+    await ensure_kra_seed()
     docs = await fetch_competencies(layer, fiscal_year, leader_id)
     return {"data": [_serialize_competency(d) for d in docs], "exists": bool(docs)}
 
@@ -268,6 +272,7 @@ async def list_kpis(
     current_user: dict = Depends(get_current_user),
 ):
     _layer_args(layer, fiscal_year, leader_id)
+    await ensure_kra_seed()
     docs = await fetch_kpis(layer, fiscal_year, leader_id)
     return {"data": [_serialize_kpi(d) for d in docs], "exists": bool(docs)}
 
@@ -351,6 +356,7 @@ async def list_weights(
     current_user: dict = Depends(get_current_user),
 ):
     _layer_args(layer, fiscal_year, leader_id)
+    await ensure_kra_seed()
     docs = await fetch_weights(layer, fiscal_year, leader_id)
     by_cat = {d["category_id"]: d["weight"] for d in docs}
     return {

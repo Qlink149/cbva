@@ -17,6 +17,8 @@ from app.core.security import hash_password, create_access_token
 @pytest_asyncio.fixture
 async def client():
     await database.connect_db()
+    from app.services.kra_seed import ensure_kra_seed
+    await ensure_kra_seed()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
