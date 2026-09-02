@@ -44,7 +44,9 @@ export default function Home() {
     } catch (err) {
       const status = err?.response?.status;
       if (!err?.response) {
-        setError('Cannot reach the API. The site may still be pointing at localhost after the last deploy.');
+        setError('Cannot reach the API. Check the Network tab for /api/auth/login (blocked, CORS, or timeout).');
+      } else if (status === 404) {
+        setError('Login route not found on the API host. The backend is up but URL routing is wrong.');
       } else if (status === 429) {
         setError('Too many login attempts. Wait a minute and try again.');
       } else if (status >= 500) {
