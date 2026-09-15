@@ -36,6 +36,7 @@ async def client():
             await database.db.kpi_ratings.delete_many({})
             await database.db.competency_ratings.delete_many({})
             await database.db.financial_years.delete_many({})
+            await database.db.engagement_actions.delete_many({})
         except Exception:
             pass
     await database.close_db()

@@ -9,8 +9,8 @@ import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
 import { leaderScopedManagerOptions } from '@/lib/designations';
 import { isFyEditable } from '@/lib/fiscalYear';
 import { useAuth } from '@/lib/AuthContext';
-
-const L = 100000;
+import { parseLakhInputToRupees, lakhDraftToRupees } from '@/lib/parseAmount';
+import { formatINRFull } from '@/lib/formatCurrency';
 
 const DEFAULT_FORM = {
   name: '',
@@ -50,11 +50,11 @@ export default function AddEngagementModal({ onClose, nextNum, showScopeField = 
   function set(field, val) {
     setForm(prev => {
       const updated = { ...prev, [field]: val };
-      const g = parseFloat(updated.green) || 0;
-      const a = parseFloat(updated.amber) || 0;
-      const b = parseFloat(updated.blueSky) || 0;
+      const g = lakhDraftToRupees(updated.green);
+      const a = lakhDraftToRupees(updated.amber);
+      const b = lakhDraftToRupees(updated.blueSky);
       const autoTotal = g + a + b;
-      const c = parseFloat(updated.collected) || 0;
+      const c = lakhDraftToRupees(updated.collected);
       return {
         ...updated,
         ...((['green', 'amber', 'blueSky'].includes(field)) && {
@@ -67,6 +67,8 @@ export default function AddEngagementModal({ onClose, nextNum, showScopeField = 
     });
   }
 
+  const previewTotal = lakhDraftToRupees(form.green) + lakhDraftToRupees(form.amber) + lakhDraftToRupees(form.blueSky);
+
   function handleSave() {
     if (!canEdit) {
       setError('This fiscal year is locked for editing.');
@@ -76,7 +78,7 @@ export default function AddEngagementModal({ onClose, nextNum, showScopeField = 
       setError('Client Name is required.');
       return;
     }
-    const toVal = v => v === '' ? 0 : Math.round((parseFloat(v) || 0) * L);
+    const toVal = (v) => (v === '' || v == null ? 0 : parseLakhInputToRupees(v));
     createMutation.mutate({
       leader_id: selectedLeaderId,
       fiscal_year: activeFY,
@@ -154,37 +156,45 @@ export default function AddEngagementModal({ onClose, nextNum, showScopeField = 
               <option value="Signed">Signed</option>
               <option value="Not Signed">Not Signed</option>
               <option value="Waived">Waived</option>
+              <option value="Waiver Requested">Waiver Requested</option>
               <option value="NA">NA</option>
             </select>
           </Field>
 
+          <p className="text-[11px] text-muted-foreground">
+            Amounts below are in <span className="font-semibold text-foreground">₹ Lakh</span> (e.g. 18 = ₹18,00,000).
+            {previewTotal > 0 && (
+              <span className="ml-1">Preview total: {formatINRFull(previewTotal)}</span>
+            )}
+          </p>
+
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Green (₹)">
-              <input type="number" className="input-base" value={form.green} onChange={e => set('green', e.target.value)} placeholder="0" />
+            <Field label="Green (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.green} onChange={e => set('green', e.target.value)} placeholder="0" />
             </Field>
-            <Field label="Amber (₹)">
-              <input type="number" className="input-base" value={form.amber} onChange={e => set('amber', e.target.value)} placeholder="0" />
+            <Field label="Amber (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.amber} onChange={e => set('amber', e.target.value)} placeholder="0" />
             </Field>
-            <Field label="Blue Sky (₹)">
-              <input type="number" className="input-base" value={form.blueSky} onChange={e => set('blueSky', e.target.value)} placeholder="0" />
+            <Field label="Blue Sky (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.blueSky} onChange={e => set('blueSky', e.target.value)} placeholder="0" />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Collected (₹)">
-              <input type="number" className="input-base" value={form.collected} onChange={e => set('collected', e.target.value)} placeholder="0" />
+            <Field label="Collected (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.collected} onChange={e => set('collected', e.target.value)} placeholder="0" />
             </Field>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <Field label="May (₹)">
-              <input type="number" className="input-base" value={form.mayCol} onChange={e => set('mayCol', e.target.value)} placeholder="0" />
+            <Field label="May (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.mayCol} onChange={e => set('mayCol', e.target.value)} placeholder="0" />
             </Field>
-            <Field label="June (₹)">
-              <input type="number" className="input-base" value={form.juneCol} onChange={e => set('juneCol', e.target.value)} placeholder="0" />
+            <Field label="June (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.juneCol} onChange={e => set('juneCol', e.target.value)} placeholder="0" />
             </Field>
-            <Field label="July (₹)">
-              <input type="number" className="input-base" value={form.julyCol} onChange={e => set('julyCol', e.target.value)} placeholder="0" />
+            <Field label="July (₹ Lakh)">
+              <input type="text" inputMode="decimal" className="input-base" value={form.julyCol} onChange={e => set('julyCol', e.target.value)} placeholder="0" />
             </Field>
           </div>
 

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useDeferredValue, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2, Columns3 } from 'lucide-react';
 import ClientRowExpanded from '@/components/clients/ClientRowExpanded';
@@ -10,11 +11,13 @@ import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useTeam } from '@/hooks/useTeam';
 import { useEngagements } from '@/hooks/useEngagements';
 import { useCollectionTransactions, useAddTransaction, useDeleteTransaction } from '@/hooks/useCollectionTransactions';
+import { useCollections } from '@/hooks/useCollections';
 import MonthSelector from '@/components/clients/MonthSelector';
 import { getDefaultMonthKey, MONTH_SHORT_NAMES } from '@/lib/fyMonths';
-import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth } from '@/lib/collectionsRollup';
+import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth, leaderMonthActualsFromCollectionApi, historicalYearEngagementTotals } from '@/lib/collectionsRollup';
 import { getPrevFySlug, getFyLabel, isFyEditable } from '@/lib/fiscalYear';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
 import {
   DEFAULT_ENGAGEMENT_FILTERS,
   applyEngagementFilters,
@@ -44,7 +47,6 @@ import {
   stickyLeftMap,
 } from '@/lib/fyTableConfig';
 
-const L = 100000;
 const BLUE_SKY_BG = '#00CCFF';
 
 function EngagementColGroup({ columns }) {
@@ -57,7 +59,7 @@ function EngagementColGroup({ columns }) {
   );
 }
 
-const EL_STATUS_OPTIONS = ['Signed', 'Not Signed', 'Waived', 'NA', 'DS', '—'];
+const EL_STATUS_OPTIONS = ['Signed', 'Not Signed', 'Waived', 'Waiver Requested', 'NA'];
 
 function SortIcon({ field, sortField, sortDir }) {
   if (sortField !== field) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />;
@@ -296,11 +298,8 @@ function CollectedMonthCell({ value, onSetAmount, pending }) {
   }
 
   async function commit() {
-    const parsed = parseFloat(draft);
-    if (!isNaN(parsed) && parsed >= 0) {
-      const next = Math.round(parsed);
-      if (next !== (value || 0)) await onSetAmount(next);
-    }
+    const next = parseRupeeInput(draft);
+    if (next != null && next !== (value || 0)) await onSetAmount(next);
     setEditing(false);
   }
 
@@ -346,8 +345,8 @@ function EditableCell({ value, onChange, color, colVisible = true }) {
   }
 
   function commit() {
-    const parsed = parseFloat(draft);
-    if (!isNaN(parsed) && parsed >= 0) onChange(Math.round(parsed));
+    const next = parseRupeeInput(draft);
+    if (next != null) onChange(next);
     setEditing(false);
   }
 
@@ -399,7 +398,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { user } = useAuth();
   const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi, isUpdating } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
-  const canEdit = isFyEditable(activeFY, fiscalYears, user?.role);
+  const isFy2526 = activeFY === '2526';
+  const canEdit = isFyEditable(activeFY, fiscalYears, user?.role) && !isFy2526;
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const { data: selectedLeader } = useLeader(selectedLeaderId);
 
@@ -419,7 +419,17 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const [showFilters, setShowFilters] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState(DEFAULT_COLUMN_VISIBILITY);
-  const [filters, setFilters] = useState(DEFAULT_ENGAGEMENT_FILTERS);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filters, setFilters] = useState(() => {
+    try {
+      const raw = searchParams.get('ef');
+      if (!raw) return DEFAULT_ENGAGEMENT_FILTERS;
+      const parsed = JSON.parse(decodeURIComponent(raw));
+      return { ...DEFAULT_ENGAGEMENT_FILTERS, ...parsed, financials: { ...DEFAULT_ENGAGEMENT_FILTERS.financials, ...(parsed.financials || {}) } };
+    } catch {
+      return DEFAULT_ENGAGEMENT_FILTERS;
+    }
+  });
   const deferredFilters = useDeferredValue(filters);
 
   // Selected months for the Planned vs Collected section (default: previous month)
@@ -431,6 +441,17 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   useEffect(() => {
     setFilters((prev) => pruneMonthlyFilters(prev, selectedMonths));
   }, [selectedMonths]);
+
+  // Persist filters in URL (survives sidebar navigation)
+  useEffect(() => {
+    const active = countActiveEngagementFilters(filters, selectedMonths);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (active === 0) next.delete('ef');
+      else next.set('ef', encodeURIComponent(JSON.stringify(filters)));
+      return next;
+    }, { replace: true });
+  }, [filters, selectedMonths, setSearchParams]);
 
   // Prior-FY actual collected (engagement.collected), matched by client name
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
@@ -457,6 +478,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
 
   // Per-engagement per-month actual collected (from finance transactions)
   const { data: transactions = [], isLoading: txLoading, isFetching: txFetching } = useCollectionTransactions(selectedLeaderId, activeFY);
+  const { data: collectionsRes } = useCollections(selectedLeaderId, activeFY);
+  const leaderMonthActuals = useMemo(
+    () => (isFy2526 ? leaderMonthActualsFromCollectionApi(collectionsRes?.data ?? []) : {}),
+    [isFy2526, collectionsRes?.data]
+  );
   const txMap = useMemo(() => groupTxByEngagementMonth(transactions), [transactions]);
   const addTransaction = useAddTransaction(selectedLeaderId, activeFY);
   const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
@@ -517,6 +543,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   async function setMonthCollected(client, monthKey, amount) {
+    if (isFy2526) return;
     if (!selectedLeaderId || !activeFY || !client?.id) return;
     const key = `${client.id}:${monthKey}`;
     setSettingCollectedKey(key);
@@ -576,6 +603,20 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }, [clientActions]);
 
   const totals = useMemo(() => {
+    if (isFy2526) {
+      const ytdCollected = Object.values(leaderMonthActuals).reduce((s, v) => s + (v || 0), 0);
+      const acc = {
+        ...historicalYearEngagementTotals(ytdCollected),
+        prevActualCollected: 0,
+        months: {},
+      };
+      selectedMonths.forEach((mk) => {
+        const actual = leaderMonthActuals[mk] ?? 0;
+        acc.months[mk] = { planned: 0, collected: actual, variance: actual };
+      });
+      return acc;
+    }
+
     const acc = {
       green: 0, amber: 0, blueSky: 0, collected: 0, balance: 0, prevActualCollected: 0,
       months: {},
@@ -600,7 +641,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     acc.total = acc.green + acc.amber + acc.blueSky;
     return acc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, selectedMonths, txMap, prevCollectedByName]);
+  }, [filtered, selectedMonths, txMap, prevCollectedByName, isFy2526, leaderMonthActuals]);
 
   const showScopeColumn = leaderHasClientScope(selectedLeaderId);
   const monthCount = selectedMonths.length;
@@ -610,8 +651,9 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       showScope: showScopeColumn,
       monthCount,
       visibility: columnVisibility,
+      hideAmberBlueSky: isFy2526,
     }),
-    [collectionsOpen, showScopeColumn, monthCount, columnVisibility],
+    [collectionsOpen, showScopeColumn, monthCount, columnVisibility, isFy2526],
   );
   const { stickyLeft, lastStickyKey } = stickyLeftMap(columns);
   const tableMinWidth = engagementTableMinWidth(columns);
@@ -619,6 +661,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const showManager = colVisible(columns, 'manager');
   const showRelPartner = colVisible(columns, 'relPartner');
   const showElStatus = colVisible(columns, 'elStatus');
+  const showAmber = colVisible(columns, 'amber');
+  const showBlueSky = colVisible(columns, 'blueSky');
   const HDR_BG = '#F1F2F4';
   const stickyEdgeClass = (key) => (lastStickyKey === key ? STICKY_EDGE_SHADOW_CLASS : '');
   const colW = (key) => colWidth(columns, key) ?? COL_WIDTH[key];
@@ -665,6 +709,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap justify-between">
+        {!isFy2526 && (
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowFilters(f => !f)}
@@ -710,6 +755,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           />
           <span className="text-xs text-muted-foreground hidden sm:block">Click name, partner, EL, amounts, or month collected to edit · Chevron expands details</span>
         </div>
+        )}
+        {!isFy2526 && (
         <button
           onClick={() => {
             if (!canEdit) {
@@ -723,7 +770,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           <Plus className="w-4 h-4" />
           Add Engagement
         </button>
+        )}
       </div>
+
+      {isFy2526 && (
+        <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">FY 2025-26 is maintained at month level.</span>{' '}
+          See the <span className="font-medium text-foreground">Collections</span> tab for the month-wise breakdown.
+        </div>
+      )}
 
       {!canEdit && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
@@ -903,6 +958,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   onSort={() => handleSort('green')}
                   sortIcon={<SortIconCell field="green" />}
                 />
+                {showAmber && (
                 <ColumnHeaderFilter
                   label="Amber (?)"
                   align="right"
@@ -915,6 +971,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   onSort={() => handleSort('amber')}
                   sortIcon={<SortIconCell field="amber" />}
                 />
+                )}
+                {showBlueSky && (
                 <ColumnHeaderFilter
                   label="Blue Sky (?)"
                   align="right"
@@ -927,6 +985,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   onSort={() => handleSort('blueSky')}
                   sortIcon={<SortIconCell field="blueSky" />}
                 />
+                )}
                 <ColumnHeaderFilter
                   label="Total (?)"
                   align="right"
@@ -1021,6 +1080,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               </tr>
             </thead>
             <tbody className="relative z-0">
+              {isFy2526 ? (
+                <tr>
+                  <td colSpan={bodyColSpan} className="py-16 px-6 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground mb-1">No client-level records for FY 2025-26</p>
+                    <p>Month totals are shown in the footer below and on the Collections tab.</p>
+                  </td>
+                </tr>
+              ) : (
+              <>
               <VirtualPadRow height={paddingTop} columns={columns} />
               {virtualRows.map((virtualRow) => {
                 const client = filtered[virtualRow.index];
@@ -1087,9 +1155,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
                       <td
                         className="py-3 px-3 text-right font-tabular text-muted-foreground text-xs"
-                        title="Sum of collection transactions"
+                        title={isFy2526 ? 'Month totals from Collections tab; per-client split not available for FY2526' : 'Sum of collection transactions'}
                       >
-                        {client.collected ? formatINRFull(client.collected) : '-'}
+                        {isFy2526
+                          ? (client.collected ? formatINRFull(client.collected) : '—')
+                          : (client.collected ? formatINRFull(client.collected) : '-')}
                       </td>
                       {collectionsOpen && <>
                         {selectedMonths.map((mk) => {
@@ -1099,17 +1169,23 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           return (
                             <React.Fragment key={mk}>
                               <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} />
-                              <CollectedMonthCell
-                                value={collected}
-                                pending={settingCollectedKey === `${client.id}:${mk}`}
-                                onSetAmount={(amount) => setMonthCollected(client, mk, amount)}
-                              />
+                              {isFy2526 ? (
+                                <td className="py-3 px-3 text-right font-tabular text-muted-foreground/60 text-xs">—</td>
+                              ) : (
+                                <CollectedMonthCell
+                                  value={collected}
+                                  pending={settingCollectedKey === `${client.id}:${mk}`}
+                                  onSetAmount={(amount) => setMonthCollected(client, mk, amount)}
+                                />
+                              )}
                               <td className="py-3 px-3 text-right font-tabular text-xs">
-                                {planned === 0 && collected === 0
-                                  ? <span className="text-muted-foreground/50">-</span>
-                                  : variance >= 0
-                                    ? <span className="text-emerald-600">+{formatINRFull(variance)}</span>
-                                    : <span className="text-red-600">({formatINRFull(Math.abs(variance))})</span>}
+                                {isFy2526
+                                  ? <span className="text-muted-foreground/50">—</span>
+                                  : (planned === 0 && collected === 0
+                                    ? <span className="text-muted-foreground/50">-</span>
+                                    : variance >= 0
+                                      ? <span className="text-emerald-600">+{formatINRFull(variance)}</span>
+                                      : <span className="text-red-600">({formatINRFull(Math.abs(variance))})</span>)}
                               </td>
                             </React.Fragment>
                           );
@@ -1159,6 +1235,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 );
               })}
               <VirtualPadRow height={paddingBottom} columns={columns} />
+              </>
+              )}
             </tbody>
             <tfoot className="relative z-30">
               <tr className="bg-muted [&>td]:border-t-2 [&>td]:border-border">
@@ -1169,11 +1247,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 {showRelPartner && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('relPartner')}`} style={frozenBody('relPartner')}></td>}
                 {showElStatus && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('elStatus')}`} style={frozenBody('elStatus')}></td>}
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-emerald-800 text-xs`}>{totals.prevActualCollected > 0 ? formatINRFull(totals.prevActualCollected) : '-'}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{totals.green > 0 ? formatINRFull(totals.green) : '-'}</td>
+                {showAmber && (
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>
+                )}
+                {showBlueSky && (
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{formatINRFull(totals.total)}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{formatINRFull(totals.collected)}</td>
+                )}
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{totals.total > 0 ? formatINRFull(totals.total) : '-'}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{totals.collected > 0 ? formatINRFull(totals.collected) : '-'}</td>
                 {collectionsOpen && <>
                   {selectedMonths.map((mk) => {
                     const m = totals.months[mk] || { planned: 0, collected: 0, variance: 0 };
@@ -1187,10 +1269,10 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       </React.Fragment>
                     );
                   })}
-                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40`}>{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-xs border-l border-border/40 ${totals.balance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatINRFull(totals.balance)}</td>
                 </>}
                 {!collectionsOpen && (
-                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40`}>{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-xs border-l border-border/40 ${totals.balance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatINRFull(totals.balance)}</td>
                 )}
                 <td className={`${stickyFooter} py-3 px-3`}></td>
                 <td className={`${stickyFooter} py-3 px-3`}></td>
