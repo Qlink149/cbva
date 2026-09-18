@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    FRONTEND_ORIGIN: str = "http://localhost:5173"
+    # Comma-separated. Include both localhost and 127.0.0.1 for local Vite.
+    FRONTEND_ORIGIN: str = "http://localhost:5173,http://127.0.0.1:5173"
     # Optional regex for Vercel preview URLs (e.g. https://*.vercel.app)
     CORS_ORIGIN_REGEX: str | None = r"https://.*\.vercel\.app"
 

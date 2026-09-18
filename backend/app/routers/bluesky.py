@@ -199,16 +199,18 @@ async def upsert_bluesky(
         updates = {
             k: v
             for k, v in body.model_dump().items()
-            if k not in ("leader_id", "fiscal_year", "month_key") and v is not None
+            if k not in ("leader_id", "fiscal_year", "month_key", "opening") and v is not None
         }
         updates["month_key"] = body.month_key
         updates["month"] = month_label
         updates["sort_order"] = sort_order
         updates["updated_at"] = now
-        if any(k in updates for k in ("opening", "additional", "converted")) and "closing" not in updates:
-            opening = updates.get("opening", existing.get("opening") or 0)
+        # Opening is locked (prior-month closing); only recompute closing from stored opening.
+        if any(k in updates for k in ("additional", "converted")) and "closing" not in updates:
+            opening = existing.get("opening") or 0
             additional = updates.get("additional", existing.get("additional") or 0)
             converted = updates.get("converted", existing.get("converted") or 0)
+            # Closing = Opening + Additional - Converted; Additional reconciles as Closing - Opening + Converted.
             updates["closing"] = opening + additional - converted
         result = await database.db.blue_sky_entries.find_one_and_update(
             {"_id": existing["_id"]}, {"$set": updates}, return_document=True
@@ -221,11 +223,11 @@ async def upsert_bluesky(
         )
         return _serialize(result, month_key=body.month_key)
 
-    opening = body.opening if body.opening is not None else await _prior_closing(
-        body.leader_id, body.fiscal_year, body.month_key
-    )
+    # Opening always from prior closing — ignore body.opening from the client.
+    opening = await _prior_closing(body.leader_id, body.fiscal_year, body.month_key)
     additional = body.additional if body.additional is not None else 0
     converted = body.converted if body.converted is not None else 0
+    # Closing = Opening + Additional - Converted; Additional reconciles as Closing - Opening + Converted.
     closing = opening + additional - converted
     remarks = body.remarks if body.remarks is not None else ""
 
@@ -265,14 +267,15 @@ async def update_bluesky(
         raise HTTPException(status_code=404, detail="BlueSky entry not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await assert_fy_editable(existing["fiscal_year"], current_user)
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    # Opening is locked — strip from client updates; recompute closing from stored opening only.
+    updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "opening"}
     updates["updated_at"] = datetime.now(timezone.utc)
 
-    # Keep closing coherent if opening/additional/converted changed without closing
-    if any(k in updates for k in ("opening", "additional", "converted")) and "closing" not in updates:
-        opening = updates.get("opening", existing.get("opening") or 0)
+    if any(k in updates for k in ("additional", "converted")) and "closing" not in updates:
+        opening = existing.get("opening") or 0
         additional = updates.get("additional", existing.get("additional") or 0)
         converted = updates.get("converted", existing.get("converted") or 0)
+        # Closing = Opening + Additional - Converted; Additional reconciles as Closing - Opening + Converted.
         updates["closing"] = opening + additional - converted
 
     result = await database.db.blue_sky_entries.find_one_and_update(

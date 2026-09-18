@@ -24,6 +24,12 @@ const LAKH = 100_000;
 
 /** Parse modal field entered in lakhs → whole rupees. */
 export function parseLakhInputToRupees(raw) {
+  const trimmed = String(raw ?? '').trim();
+  // Comma-grouped input is rupee-formatted (e.g. 18,00,000), not lakhs.
+  if (trimmed.includes(',')) {
+    const rupees = parseRupeeInput(trimmed);
+    return rupees ?? 0;
+  }
   const lakhs = parseAmountInput(raw, { allowEmpty: false });
   if (lakhs == null) return 0;
   return Math.round(lakhs * LAKH);

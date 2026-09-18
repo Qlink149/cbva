@@ -2,13 +2,6 @@ import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatINRFull } from '@/lib/formatCurrency';
 
-const CR = 10000000;
-
-function fmtCr(val) {
-  if (!val && val !== 0) return '—';
-  return `₹${(val / CR).toFixed(2)} Cr`;
-}
-
 function pct(val, total) {
   if (!total) return '0.00%';
   return `${((val / total) * 100).toFixed(2)}%`;
@@ -18,6 +11,7 @@ const COLORS = {
   Signed: '#10B981',
   'Not Signed': '#F59E0B',
   Waived: '#94A3B8',
+  'Waiver Requested': '#6366F1',
   NA: '#CBD5E1',
 };
 
@@ -67,34 +61,51 @@ function DonutChart({ data, label }) {
   );
 }
 
+function bucketStatus(status) {
+  if (!status) return 'NA';
+  const s = String(status).trim();
+  if (s === 'Signed') return 'Signed';
+  if (s.toLowerCase() === 'not signed') return 'Not Signed';
+  if (s.toLowerCase() === 'waived' || s.toLowerCase() === 'waved') return 'Waived';
+  if (s.toLowerCase() === 'waiver requested') return 'Waiver Requested';
+  if (s.toUpperCase() === 'NA') return 'NA';
+  return 'Not Signed';
+}
+
 export default function ELStatusWidgets({ clients }) {
   const { volumeData, valueData } = useMemo(() => {
-    const signed = clients.filter(c => c.elStatus === 'Signed');
-    const notSigned = clients.filter(c => c.elStatus === 'Not Signed');
-    const waived = clients.filter(c => c.elStatus === 'DS');
-    const na = clients.filter(c => c.elStatus === 'NA' || c.elStatus === '—' || !c.elStatus);
+    const buckets = {
+      Signed: [],
+      'Not Signed': [],
+      Waived: [],
+      'Waiver Requested': [],
+      NA: [],
+    };
+    clients.forEach((c) => {
+      buckets[bucketStatus(c.elStatus)].push(c);
+    });
 
     const total = clients.length;
+    const volume = Object.entries(buckets)
+      .map(([name, list]) => ({
+        name,
+        value: list.length,
+        display: `${list.length} clients (${pct(list.length, total)})`,
+      }))
+      .filter((d) => d.value > 0);
 
-    const volume = [
-      { name: 'Signed', value: signed.length, display: `${signed.length} clients (${pct(signed.length, total)})` },
-      { name: 'Not Signed', value: notSigned.length, display: `${notSigned.length} clients (${pct(notSigned.length, total)})` },
-      { name: 'Waived', value: waived.length, display: `${waived.length} clients (${pct(waived.length, total)})` },
-      { name: 'NA', value: na.length, display: `${na.length} clients (${pct(na.length, total)})` },
-    ].filter(d => d.value > 0);
-
-    const signedVal = signed.reduce((s, c) => s + (c.green || 0), 0);
-    const notSignedVal = notSigned.reduce((s, c) => s + (c.green || 0), 0);
-    const waivedVal = waived.reduce((s, c) => s + (c.green || 0), 0);
-    const naVal = na.reduce((s, c) => s + (c.green || 0), 0);
-    const totalVal = signedVal + notSignedVal + waivedVal + naVal;
-
-    const value = [
-      { name: 'Signed',     value: signedVal,    display: `${formatINRFull(signedVal)} (${pct(signedVal, totalVal)})` },
-      { name: 'Not Signed', value: notSignedVal,  display: `${formatINRFull(notSignedVal)} (${pct(notSignedVal, totalVal)})` },
-      { name: 'Waived',     value: waivedVal,     display: `${formatINRFull(waivedVal)} (${pct(waivedVal, totalVal)})` },
-      { name: 'NA',         value: naVal,         display: `${formatINRFull(naVal)} (${pct(naVal, totalVal)})` },
-    ].filter(d => d.value > 0);
+    const valueRows = Object.entries(buckets).map(([name, list]) => {
+      const val = list.reduce((s, c) => s + (c.green || 0), 0);
+      return { name, value: val, list };
+    });
+    const totalVal = valueRows.reduce((s, r) => s + r.value, 0);
+    const value = valueRows
+      .map((r) => ({
+        name: r.name,
+        value: r.value,
+        display: `${formatINRFull(r.value)} (${pct(r.value, totalVal)})`,
+      }))
+      .filter((d) => d.value > 0);
 
     return { volumeData: volume, valueData: value };
   }, [clients]);

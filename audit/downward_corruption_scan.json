@@ -1,0 +1,16 @@
+{
+  "count": 1,
+  "hits": [
+    {
+      "collection": "collection_entries",
+      "_id": "6a96c35f890dcd4d73c6c46f",
+      "leader_id": "np",
+      "fiscal_year": "2526",
+      "month": "July 2025",
+      "field": "collected",
+      "value": 1000,
+      "leader_median": 4087725,
+      "ratio_to_median": 0.000245
+    }
+  ]
+}

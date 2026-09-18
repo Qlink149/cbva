@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user, enforce_leader_scope, enforc
 from app.dependencies.pagination import pagination_params
 from app.services.fy_calendar import get_fy_month_calendar_year
 from app.services.fiscal_year import assert_fy_editable
+from app.services.bluesky_service import compute_converted_from_pipeline
 
 router = APIRouter()
 
@@ -59,7 +60,7 @@ def _serialize(doc: dict) -> dict:
         "name": doc["name"],
         "model": doc.get("model", "—"),
         "rel_partner": doc.get("rel_partner", ""),
-        "el_status": doc.get("el_status", "—"),
+        "el_status": doc.get("el_status", "NA"),
         "green": doc.get("green", 0),
         "amber": doc.get("amber", 0),
         "blue_sky": doc.get("blue_sky", 0),
@@ -195,6 +196,7 @@ async def _auto_update_bluesky(
 
     Past months are never rewritten — they stay as historical ledger closes.
     opening for a new month row = previous month's closing when available.
+    Converted prefers pipeline delta (ΣG+ΣA next month − ΣG+ΣA this month) when available.
     """
     if new_blue_sky == old_blue_sky:
         return
@@ -210,6 +212,7 @@ async def _auto_update_bluesky(
     sort_order = FY_MONTH_KEYS.index(month_key) + 1
 
     is_conversion = (delta < 0) and (new_green > old_green or new_amber > old_amber)
+    mom_converted = await compute_converted_from_pipeline(leader_id, fiscal_year, month_key)
 
     existing = await database.db.blue_sky_entries.find_one(
         {"leader_id": leader_id, "fiscal_year": fiscal_year, "month": month_label}
@@ -222,9 +225,13 @@ async def _auto_update_bluesky(
         if delta > 0:
             additional += delta
         elif is_conversion:
-            converted += abs(delta)
+            if mom_converted is None:
+                converted += abs(delta)
         else:
             additional = max(0, additional + delta)
+        if mom_converted is not None:
+            converted = max(0, mom_converted)
+        # Closing = Opening + Additional - Converted; Additional reconciles as Closing - Opening + Converted.
         closing = opening + additional - converted
         await database.db.blue_sky_entries.update_one(
             {"_id": existing["_id"]},
@@ -264,9 +271,15 @@ async def _auto_update_bluesky(
                 break
 
         additional = max(0, delta) if delta > 0 else 0
-        converted = abs(delta) if is_conversion else 0
-        if delta < 0 and not is_conversion:
+        if mom_converted is not None:
+            converted = max(0, mom_converted)
+        elif is_conversion:
+            converted = abs(delta)
+        else:
+            converted = 0
+        if delta < 0 and not is_conversion and mom_converted is None:
             additional = 0
+        # Closing = Opening + Additional - Converted; Additional reconciles as Closing - Opening + Converted.
         closing = opening + additional - converted
 
         insert_result = await database.db.blue_sky_entries.insert_one({

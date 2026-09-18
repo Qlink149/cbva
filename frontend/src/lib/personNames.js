@@ -33,3 +33,11 @@ export function otherPersonOptions(allOptions = [], primaryOptions = []) {
 export function namesMatch(a, b) {
   return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 }
+
+/** Every whitespace-separated token in query must appear somewhere in name. */
+export function personNameMatchesQuery(name, query) {
+  const hay = String(name || '').toLowerCase();
+  const tokens = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  return tokens.every((t) => hay.includes(t));
+}

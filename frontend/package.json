@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "test:parse": "node --test src/lib/parseAmount.test.js",
+    "test:overdue": "node --test src/lib/isActionOverdue.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

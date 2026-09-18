@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import PipelineBoardChart from '@/components/dashboard/PipelineBoardChart';
@@ -8,11 +8,13 @@ import CollectionsTableReal from '@/components/dashboard/CollectionsTableReal';
 import MeetingsCard from '@/components/dashboard/MeetingsCard';
 import ActionsCard from '@/components/dashboard/ActionsCard';
 import TeamMetrics from '@/components/dashboard/TeamMetrics';
-import PlaceholderCard from '@/components/dashboard/PlaceholderCard';
+import NewClientsCard from '@/components/dashboard/NewClientsCard';
+import AdditionalWorkCard from '@/components/dashboard/AdditionalWorkCard';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { getFyLabel, getPrevFySlug, getFyRange, isFyEditable } from '@/lib/fiscalYear';
+import { getAvailableFyMonths, getFyMonthCalendarYear } from '@/lib/fyMonths';
 import { usePipeline, useFyActuals, useUpsertFyActual } from '@/hooks/usePipeline';
 import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
@@ -23,7 +25,11 @@ import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { useBaselines } from '@/hooks/useBaselines';
+import { useNewClients } from '@/hooks/useNewClients';
+import { useAdditionalWork } from '@/hooks/useAdditionalWork';
 import { useAuth } from '@/lib/AuthContext';
+import { useLeaderFyScopedState } from '@/hooks/useLeaderFyScopedState';
+import { PAGE_FILTER_SCOPES, isValidMonthKey } from '@/lib/pageFilterStorage';
 const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
 
 function SectionSkeleton({ className = 'h-48' }) {
@@ -50,6 +56,34 @@ export default function LeaderDashboard({ user }) {
   const { actions: clientActions = [], isLoading: actionsLoading } = useEngagementActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);
   const activeBaseline = baselines[0] ?? null;
+  const { data: newClients = [], isLoading: newClientsLoading } = useNewClients(selectedLeaderId, activeFY);
+  const { data: additionalWork = [], isLoading: additionalWorkLoading } = useAdditionalWork(selectedLeaderId, activeFY);
+  const [newClientsMonth, setNewClientsMonth] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.NEW_CLIENTS_MONTH,
+    () => '',
+    {
+      validate: (stored, { activeFY: fy, fallback }) => {
+        const month = typeof stored === 'string' ? stored : fallback;
+        return isValidMonthKey(month, fy, fiscalYears) ? month : '';
+      },
+    },
+  );
+
+  const availableNewClientMonths = useMemo(
+    () => getAvailableFyMonths(activeFY, fiscalYears),
+    [activeFY, fiscalYears],
+  );
+
+  const filteredNewClients = useMemo(() => {
+    if (!newClientsMonth) return newClients;
+    return newClients.filter((c) => {
+      const created = c.created_at ? new Date(c.created_at) : null;
+      if (!created || Number.isNaN(created.getTime())) return false;
+      const calYear = getFyMonthCalendarYear(newClientsMonth, activeFY);
+      const monthNum = parseInt(newClientsMonth, 10);
+      return created.getFullYear() === calYear && created.getMonth() + 1 === monthNum;
+    });
+  }, [newClients, newClientsMonth, activeFY]);
 
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
   const prevFyLabel = getFyLabel(prevFySlug, fiscalYears);
@@ -206,8 +240,22 @@ export default function LeaderDashboard({ user }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <PlaceholderCard title="Shadow P&L" message="To Be Built — Revenue split by engagement leaders. Coming in the next phase." />
-          <PlaceholderCard title="Origination" message="To Be Built — Partner origination tracking. Coming in the next phase." />
+          <NewClientsCard
+            clients={filteredNewClients}
+            fyLabel={fyLabel}
+            isLoading={newClientsLoading}
+            selectedMonth={newClientsMonth}
+            onMonthChange={setNewClientsMonth}
+            availableMonths={availableNewClientMonths}
+          />
+          <AdditionalWorkCard
+            rows={additionalWork}
+            fyLabel={fyLabel}
+            leaderId={selectedLeaderId}
+            fiscalYear={activeFY}
+            canEdit={canEditFyActual}
+            isLoading={additionalWorkLoading}
+          />
         </div>
 
         {engLoading ? <SectionSkeleton className="h-56" /> : clients.length > 0 && (

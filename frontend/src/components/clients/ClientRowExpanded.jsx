@@ -4,7 +4,18 @@ import { formatIstDate } from '@/lib/datetime';
 import { formatAuditValue } from '@/lib/formatAuditValue';
 import { useFyEditAccess } from '@/hooks/useFyEditAccess';
 import { useClientActions } from '@/lib/ClientActionsContext';
+import { isActionOverdue } from '@/lib/isActionOverdue';
 import { toast } from 'sonner';
+
+const ACTION_STATUSES = ['Pending', 'In Progress', 'Completed', 'Abandoned'];
+
+function statusClass(status) {
+  const s = status === 'Done' ? 'Completed' : status;
+  if (s === 'Completed') return 'bg-emerald-100 text-emerald-700';
+  if (s === 'In Progress') return 'bg-blue-100 text-blue-700';
+  if (s === 'Abandoned') return 'bg-muted text-muted-foreground';
+  return 'bg-amber-100 text-amber-700';
+}
 
 function formatHistoryDate(iso) {
   if (!iso) return '';
@@ -158,10 +169,11 @@ export default function ClientRowExpanded({
   onDeleteAction,
   onUpdateRemarks,
 }) {
-  const [newAction, setNewAction] = useState({ description: '', deadline: '' });
+  const [newAction, setNewAction] = useState({ description: '', deadline: '', remarks: '' });
   const [adding, setAdding] = useState(false);
   const { canEdit, lockedMessage } = useFyEditAccess();
-  const { isAddingAction } = useClientActions() || {};
+  const ctx = useClientActions() || {};
+  const { isAddingAction, updateActionStatus, updateAction } = ctx;
   const clientActions = actions.filter((a) => (
     (a.engagementId && client.id && String(a.engagementId) === String(client.id))
     || a.clientNum === client.num
@@ -182,8 +194,9 @@ export default function ClientRowExpanded({
         engagementId: client.id,
         description: newAction.description.trim(),
         deadline: newAction.deadline,
+        remarks: newAction.remarks.trim(),
       });
-      setNewAction({ description: '', deadline: '' });
+      setNewAction({ description: '', deadline: '', remarks: '' });
     } catch {
       // toast is handled by the mutation
     } finally {
@@ -203,32 +216,57 @@ export default function ClientRowExpanded({
 
           {clientActions.length > 0 ? (
             <div className="space-y-1.5 mb-3 max-h-56 overflow-y-auto">
-              {clientActions.map((a) => (
-                <div key={a.id} className="flex items-center gap-2 text-xs bg-white border border-border/60 rounded-lg px-3 py-2">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase shrink-0 ${
-                    a.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
-                    a.status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
-                    'bg-amber-100 text-amber-700'
-                  }`}>{a.status}</span>
-                  <span className="flex-1 text-slate-700 min-w-0 break-words">{a.description}</span>
-                  {a.deadline && (
-                    <span className="flex items-center gap-1 text-muted-foreground text-[10px] shrink-0">
-                      <Calendar className="w-3 h-3" />
-                      {a.deadline}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => {
-                      if (!canEdit) { toast.error(lockedMessage); return; }
-                      onDeleteAction(a.id);
-                    }}
-                    className="text-muted-foreground hover:text-red-500 transition-colors shrink-0"
-                    title="Remove action"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+              {clientActions.map((a) => {
+                const overdue = isActionOverdue(a.deadline, a.status);
+                return (
+                  <div key={a.id} className="flex flex-col gap-1.5 text-xs bg-white border border-border/60 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase shrink-0 border-0 cursor-pointer disabled:cursor-default ${statusClass(a.status)}`}
+                        value={a.status === 'Done' ? 'Completed' : (a.status || 'Pending')}
+                        disabled={!canEdit || !updateActionStatus}
+                        onChange={(e) => {
+                          if (!canEdit) { toast.error(lockedMessage); return; }
+                          updateActionStatus?.(a.id, e.target.value);
+                        }}
+                      >
+                        {ACTION_STATUSES.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      <span className="flex-1 text-slate-700 min-w-0 break-words">{a.description}</span>
+                      {a.deadline && (
+                        <span className={`flex items-center gap-1 text-[10px] shrink-0 ${overdue ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                          <Calendar className="w-3 h-3" />
+                          {a.deadline}
+                          {overdue ? ' · Overdue' : ''}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (!canEdit) { toast.error(lockedMessage); return; }
+                          onDeleteAction(a.id);
+                        }}
+                        className="text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+                        title="Remove action"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <input
+                      className="w-full text-[11px] border border-border/50 rounded px-2 py-1 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+                      placeholder="Remarks…"
+                      defaultValue={a.remarks || ''}
+                      disabled={!canEdit || !updateAction}
+                      onBlur={(e) => {
+                        const next = e.target.value.trim();
+                        if (!canEdit || next === (a.remarks || '')) return;
+                        updateAction?.(a.id, { remarks: next });
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground italic mb-3">No action points yet.</p>
@@ -241,6 +279,13 @@ export default function ClientRowExpanded({
               value={newAction.description}
               onChange={(e) => setNewAction((p) => ({ ...p, description: e.target.value }))}
               onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+              disabled={busy || !canEdit}
+            />
+            <input
+              className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="Remarks (optional)"
+              value={newAction.remarks}
+              onChange={(e) => setNewAction((p) => ({ ...p, remarks: e.target.value }))}
               disabled={busy || !canEdit}
             />
             <div className="flex items-center gap-2">

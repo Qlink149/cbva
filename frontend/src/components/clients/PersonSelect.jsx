@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { displayPersonName, mergePersonOptions, namesMatch } from '@/lib/personNames';
+import { displayPersonName, mergePersonOptions, namesMatch, personNameMatchesQuery } from '@/lib/personNames';
 
 export default function PersonSelect({
   value = '',
@@ -31,9 +31,9 @@ export default function PersonSelect({
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return allOptions;
-    return allOptions.filter((name) => name.toLowerCase().includes(q));
+    return allOptions.filter((name) => personNameMatchesQuery(name, q));
   }, [allOptions, search]);
 
   const displayLabel = displayPersonName(value, 'short');

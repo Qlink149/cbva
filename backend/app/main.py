@@ -32,6 +32,8 @@ from app.routers import (
     assessments,
     financial_years,
     client_meetings,
+    additional_work,
+    new_clients,
     consolidated,
     audit,
     kra,
@@ -115,6 +117,8 @@ app.include_router(baselines.router,   prefix="/api/baselines",    tags=["Baseli
 app.include_router(el_summary.router,  prefix="/api/el-summary",   tags=["ELSummary"])
 app.include_router(financial_years.router, prefix="/api/financial-years", tags=["FinancialYears"])
 app.include_router(client_meetings.router, prefix="/api/client-meetings", tags=["ClientMeetings"])
+app.include_router(additional_work.router, prefix="/api/additional-work", tags=["AdditionalWork"])
+app.include_router(new_clients.router, prefix="/api/new-clients", tags=["NewClients"])
 app.include_router(assessments.router, prefix="/api/assessments",  tags=["Assessments"])
 app.include_router(firmwide.router,    prefix="/api/firmwide",     tags=["Firmwide"])
 app.include_router(consolidated.router, prefix="/api/consolidated-summary", tags=["Consolidated"])

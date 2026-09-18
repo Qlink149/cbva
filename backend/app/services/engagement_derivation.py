@@ -167,6 +167,11 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
     - Past monthly rows → from consolidated sheet
     - Current month row → live engagement totals
     """
+    from app.services.fiscal_year import is_fy_editable
+
+    if not await is_fy_editable(fiscal_year, None):
+        return False
+
     totals = await aggregate_engagements(leader_id, fiscal_year)
     eng_count = await database.db.engagements.count_documents(
         {"leader_id": leader_id, "fiscal_year": fiscal_year, "is_archived": False}

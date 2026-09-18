@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { useLeaders } from '@/hooks/useLeaders';
+import { useLeaders, useLeader } from '@/hooks/useLeaders';
 import { useAuth } from '@/lib/AuthContext';
 import { getFyLabel } from '@/lib/fiscalYear';
 import { getAvailableFyMonths } from '@/lib/fyMonths';
@@ -19,6 +19,8 @@ export default function LeaderFYSelector({
   const { data: leaders = [], isLoading } = useLeaders({ enabled: user?.role !== 'user' });
 
   const showLeaderDropdown = showLeader && user?.role !== 'user';
+  const showLeaderLabel = showLeader && user?.role === 'user';
+  const { data: scopedLeader } = useLeader(showLeaderLabel ? selectedLeaderId : null);
 
   const availableMonths = useMemo(
     () => getAvailableFyMonths(activeFY, fiscalYears),
@@ -27,12 +29,25 @@ export default function LeaderFYSelector({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {showLeaderLabel && (
+        <div
+          className="text-sm px-3 py-1.5 min-w-[140px] border border-border rounded-md bg-muted/30"
+          aria-label="Leader"
+        >
+          <span className="font-medium text-foreground">{user?.full_name}</span>
+          {scopedLeader?.name && (
+            <span className="text-muted-foreground text-xs ml-1">({scopedLeader.name})</span>
+          )}
+        </div>
+      )}
+
       {showLeaderDropdown && (
         <select
           value={selectedLeaderId ?? ''}
           onChange={e => setSelectedLeaderId(e.target.value)}
           disabled={isLoading}
           className={`${selectClass} min-w-[140px]`}
+          aria-label="Leader"
         >
           {isLoading ? (
             <option value="">Loading…</option>
@@ -64,6 +79,7 @@ export default function LeaderFYSelector({
           onChange={e => setActiveFY(e.target.value)}
           disabled={fyLoading || !fiscalYears.length}
           className={`${selectClass} min-w-[120px]`}
+          aria-label="Fiscal year"
         >
           {fyLoading ? (
             <option value="">Loading FY…</option>

@@ -28,6 +28,7 @@ ENTITY_COLLECTIONS: dict[str, tuple[str, str | None]] = {
     "collection": ("collection_entries", "leader_id"),
     "collection_transaction": ("collection_transactions", "leader_id"),
     "client_meeting": ("client_meetings", "leader_id"),
+    "additional_work": ("additional_work", "leader_id"),
     "engagement_action": ("engagement_actions", "leader_id"),
     "pipeline_snapshot": ("pipeline_snapshots", "leader_id"),
     "bluesky_entry": ("blue_sky_entries", "leader_id"),

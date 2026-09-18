@@ -1,0 +1,15 @@
+{
+  "name": "cbva-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:only": "playwright test",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

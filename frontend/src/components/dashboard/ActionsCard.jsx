@@ -1,23 +1,14 @@
 import React, { useMemo } from 'react';
 import { ListChecks, AlertCircle } from 'lucide-react';
-
-function parseDueDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+import { isActionOverdue } from '@/lib/isActionOverdue';
 
 export default function ActionsCard({ actions = [], fyLabel = '', isLoading = false }) {
   const { overdue, upcoming } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const open = actions.filter((a) => a.status !== 'Closed' && a.status !== 'Done');
     const overdueItems = [];
     const upcomingItems = [];
-    open.forEach((a) => {
-      const due = parseDueDate(a.due_date || a.deadline);
-      if (due && due < today) overdueItems.push(a);
-      else upcomingItems.push(a);
+    actions.forEach((a) => {
+      if (isActionOverdue(a.due_date || a.deadline, a.status)) overdueItems.push(a);
+      else if (!['Completed', 'Done', 'Abandoned', 'Closed'].includes(a.status)) upcomingItems.push(a);
     });
     return { overdue: overdueItems, upcoming: upcomingItems };
   }, [actions]);

@@ -46,15 +46,21 @@ async def list_tasks(
 
 @router.post("/", response_model=TaskResponse, status_code=201)
 async def create_task(body: TaskCreate, current_user: dict = Depends(get_current_user)):
-    leader_id = current_user.get("leader_id")
+    # Prefer explicit leader from UI (admin/management selector); fall back to user's own leader
+    leader_id = body.leader_id or current_user.get("leader_id")
     if not leader_id:
-        raise HTTPException(status_code=400, detail="User has no associated leader")
+        raise HTTPException(
+            status_code=400,
+            detail="Select a leader before creating a task (or link this user to a leader).",
+        )
     enforce_leader_write_scope(current_user, leader_id)
     if body.fiscal_year:
         await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
+    payload = body.model_dump()
+    payload.pop("leader_id", None)
     doc = {
-        **body.model_dump(),
+        **payload,
         "leader_id": leader_id,
         "created_by_id": current_user["_id"],
         "status": "Pending",
@@ -63,11 +69,15 @@ async def create_task(body: TaskCreate, current_user: dict = Depends(get_current
     }
     result = await database.db.tasks.insert_one(doc)
     doc["_id"] = result.inserted_id
-    await audit_service.log_create(
-        "task", doc, current_user,
-        label=doc["title"],
-        leader_id=leader_id,
-    )
+    try:
+        await audit_service.log_create(
+            "task", doc, current_user,
+            label=doc["title"],
+            leader_id=leader_id,
+            fiscal_year=body.fiscal_year,
+        )
+    except Exception:
+        pass
     return _serialize(doc)
 
 

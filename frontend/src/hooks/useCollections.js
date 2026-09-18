@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut } from '@/api/client';
 
-export const useCollections = (leaderId, fiscalYear) =>
-  useQuery({
+export const useCollections = (leaderId, fiscalYear, options = {}) => {
+  const { enabled: enabledOverride, ...rest } = options;
+  return useQuery({
     queryKey: ['collections', leaderId, fiscalYear],
     queryFn: () => apiGet('/api/collections', { leader_id: leaderId, fiscal_year: fiscalYear }),
-    enabled: !!leaderId && !!fiscalYear,
+    enabled: enabledOverride ?? (!!leaderId && !!fiscalYear),
     staleTime: 60_000,
+    ...rest,
   });
+};
 
 /** Upsert planned target for a month (creates the collection_entries row if absent). */
 export const useSetMonthlyPlan = (leaderId, fiscalYear) => {

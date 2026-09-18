@@ -4,7 +4,7 @@ from datetime import datetime
 
 from app.schemas.provenance import DataProvenance
 
-ELStatus = Literal["Signed", "Not Signed", "Waived", "NA", "DS", "—"]
+ELStatus = Literal["Signed", "Not Signed", "Waived", "Waiver Requested", "NA"]
 ClientScope = Literal["Domestic", "International"]
 RemarkMode = Literal["edit", "add"]
 FiscalYear = str
@@ -22,7 +22,7 @@ class EngagementCreate(BaseModel):
     name: str = Field(..., min_length=1)
     model: str = "—"
     rel_partner: str = ""
-    el_status: ELStatus = "—"
+    el_status: ELStatus = "NA"
     green: int = Field(0, ge=0)
     amber: int = Field(0, ge=0)
     blue_sky: int = Field(0, ge=0)

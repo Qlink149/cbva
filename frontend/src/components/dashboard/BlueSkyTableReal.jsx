@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CloudSun } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
 
 function fmtCell(val) {
   if (val === null || val === undefined || val === '') return '—';
@@ -54,11 +55,8 @@ function AmountCell({ value, onChange, disabled, className = '' }) {
   }
 
   function commit() {
-    const parsed = parseFloat(draft);
-    if (!isNaN(parsed) && parsed >= 0) {
-      const next = Math.round(parsed);
-      if (next !== (value ?? 0)) onChange?.(next);
-    }
+    const next = parseRupeeInput(draft);
+    if (next != null && next !== (value ?? 0)) onChange?.(next);
     setEditing(false);
   }
 
@@ -132,7 +130,7 @@ export default function BlueSkyTableReal({
         </div>
         {onUpdateAmounts && (
           <p className="text-[11px] text-muted-foreground mt-2">
-            Click Opening / Additional / Converted on any month (including prior months) to edit · Closing is auto-calculated
+            Opening is locked from prior closing · Click Additional / Converted to edit · Closing is auto-calculated
           </p>
         )}
       </div>
@@ -171,9 +169,8 @@ export default function BlueSkyTableReal({
                   </td>
                   <AmountCell
                     value={row.opening}
-                    disabled={!editable}
+                    disabled
                     className={noData ? 'text-muted-foreground' : 'text-muted-foreground'}
-                    onChange={(v) => onUpdateAmounts?.(row, { opening: v })}
                   />
                   <AmountCell
                     value={row.additional}
@@ -205,10 +202,10 @@ export default function BlueSkyTableReal({
             <tfoot>
               <tr className="bg-muted/30 border-t border-border">
                 <td className="py-3 text-xs font-bold uppercase text-foreground col-num">Total</td>
-                <td className="py-3 text-right font-tabular font-bold text-foreground col-num">{fmtCell(totals.opening)}</td>
+                <td className="py-3 text-right font-tabular font-bold text-muted-foreground col-num">—</td>
                 <td className="py-3 text-right font-tabular font-bold text-cbva-navy col-num">{fmtCell(totals.additional)}</td>
                 <td className="py-3 text-right font-tabular font-bold text-emerald-700 col-num">{fmtCell(totals.converted)}</td>
-                <td className="py-3 text-right font-tabular font-bold text-foreground col-num">{fmtCell(totals.closing)}</td>
+                <td className="py-3 text-right font-tabular font-bold text-muted-foreground col-num">—</td>
                 <td></td>
               </tr>
             </tfoot>

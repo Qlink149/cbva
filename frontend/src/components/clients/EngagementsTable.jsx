@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useDeferredValue, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useDeferredValue, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2, Columns3 } from 'lucide-react';
@@ -23,7 +23,15 @@ import {
   applyEngagementFilters,
   countActiveEngagementFilters,
   pruneMonthlyFilters,
+  parseEngagementFiltersFromUrl,
 } from '@/lib/engagementFilters';
+import { useLeaderFyScopedState } from '@/hooks/useLeaderFyScopedState';
+import {
+  PAGE_FILTER_SCOPES,
+  buildScopedKey,
+  readScopedJson,
+  isValidMonthKeys,
+} from '@/lib/pageFilterStorage';
 import PersonSelect from '@/components/clients/PersonSelect';
 import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
 import { useLeader } from '@/hooks/useLeaders';
@@ -37,6 +45,7 @@ import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/compone
 import {
   COL_WIDTH,
   DEFAULT_COLUMN_VISIBILITY,
+  initialColumnVisibility,
   TOGGLEABLE_IDENTITY_COLUMNS,
   STICKY_EDGE_SHADOW_CLASS,
   buildEngagementColumns,
@@ -400,6 +409,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const isFy2526 = activeFY === '2526';
   const canEdit = isFyEditable(activeFY, fiscalYears, user?.role) && !isFy2526;
+  const isAdminView = user?.role === 'admin' || user?.role === 'management';
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const { data: selectedLeader } = useLeader(selectedLeaderId);
 
@@ -418,40 +428,92 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
-  const [columnVisibility, setColumnVisibility] = useState(DEFAULT_COLUMN_VISIBILITY);
+  const [columnVisibility, setColumnVisibility] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.ENG_COLUMN_VISIBILITY,
+    () => initialColumnVisibility(user?.role),
+    {
+      validate: (stored, { fallback }) => {
+        if (!stored || typeof stored !== 'object') return fallback;
+        const next = { ...fallback };
+        TOGGLEABLE_IDENTITY_COLUMNS.forEach((col) => {
+          if (typeof stored[col.key] === 'boolean') next[col.key] = stored[col.key];
+        });
+        return next;
+      },
+    },
+  );
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState(() => {
-    try {
-      const raw = searchParams.get('ef');
-      if (!raw) return DEFAULT_ENGAGEMENT_FILTERS;
-      const parsed = JSON.parse(decodeURIComponent(raw));
-      return { ...DEFAULT_ENGAGEMENT_FILTERS, ...parsed, financials: { ...DEFAULT_ENGAGEMENT_FILTERS.financials, ...(parsed.financials || {}) } };
-    } catch {
-      return DEFAULT_ENGAGEMENT_FILTERS;
-    }
-  });
+  const urlFallbackAppliedKeys = useRef(new Set());
+
+  const [engState, setEngState] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.ENG_FILTERS,
+    (fy) => ({
+      filters: DEFAULT_ENGAGEMENT_FILTERS,
+      selectedMonths: [getDefaultMonthKey(fy)],
+    }),
+    {
+      validate: (stored, { activeFY: fy, fallback }) => {
+        if (!stored || typeof stored !== 'object') return fallback;
+        const selectedMonths = isValidMonthKeys(stored.selectedMonths, fy, fiscalYears)
+          ? stored.selectedMonths
+          : fallback.selectedMonths;
+        return {
+          filters: {
+            ...DEFAULT_ENGAGEMENT_FILTERS,
+            ...(stored.filters || {}),
+            financials: {
+              ...DEFAULT_ENGAGEMENT_FILTERS.financials,
+              ...(stored.filters?.financials || {}),
+            },
+          },
+          selectedMonths,
+        };
+      },
+    },
+  );
+
+  const filters = engState.filters;
+  const selectedMonths = engState.selectedMonths;
   const deferredFilters = useDeferredValue(filters);
 
-  // Selected months for the Planned vs Collected section (default: previous month)
-  const [selectedMonths, setSelectedMonths] = useState(() => [getDefaultMonthKey(activeFY)]);
+  const setFilters = useCallback((updater) => {
+    setEngState((prev) => ({
+      ...prev,
+      filters: typeof updater === 'function' ? updater(prev.filters) : updater,
+    }));
+  }, [setEngState]);
+
+  const setSelectedMonths = useCallback((updater) => {
+    setEngState((prev) => ({
+      ...prev,
+      selectedMonths: typeof updater === 'function' ? updater(prev.selectedMonths) : updater,
+    }));
+  }, [setEngState]);
+
+  // One-time URL ?ef= fallback when no sessionStorage entry exists (shared links)
   useEffect(() => {
-    setSelectedMonths([getDefaultMonthKey(activeFY)]);
-  }, [activeFY]);
+    if (!selectedLeaderId || !activeFY) return;
+    const storageKey = buildScopedKey(PAGE_FILTER_SCOPES.ENG_FILTERS, selectedLeaderId, activeFY);
+    if (urlFallbackAppliedKeys.current.has(storageKey)) return;
+    urlFallbackAppliedKeys.current.add(storageKey);
+
+    const stored = readScopedJson(storageKey, null);
+    if (stored) return;
+
+    const urlFilters = parseEngagementFiltersFromUrl(searchParams.get('ef'));
+    if (urlFilters) {
+      setEngState((prev) => ({ ...prev, filters: urlFilters }));
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('ef');
+        return next;
+      }, { replace: true });
+    }
+  }, [selectedLeaderId, activeFY, searchParams, setSearchParams, setEngState]);
 
   useEffect(() => {
     setFilters((prev) => pruneMonthlyFilters(prev, selectedMonths));
-  }, [selectedMonths]);
-
-  // Persist filters in URL (survives sidebar navigation)
-  useEffect(() => {
-    const active = countActiveEngagementFilters(filters, selectedMonths);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (active === 0) next.delete('ef');
-      else next.set('ef', encodeURIComponent(JSON.stringify(filters)));
-      return next;
-    }, { replace: true });
-  }, [filters, selectedMonths, setSearchParams]);
+  }, [selectedMonths, setFilters]);
 
   // Prior-FY actual collected (engagement.collected), matched by client name
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
@@ -723,30 +785,32 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               </span>
             )}
           </button>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowColumns((v) => !v)}
-              className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-medium transition-colors ${showColumns ? 'bg-cbva-navy text-white border-cbva-navy' : 'bg-white text-foreground border-border hover:bg-muted'}`}
-            >
-              <Columns3 className="w-4 h-4" />
-              Columns
-            </button>
-            {showColumns && (
-              <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-lg border border-border bg-white p-2 shadow-lg">
-                {TOGGLEABLE_IDENTITY_COLUMNS.map((col) => (
-                  <label key={col.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
-                    <input
-                      type="checkbox"
-                      checked={columnVisibility[col.key]}
-                      onChange={() => setColumnVisibility((prev) => ({ ...prev, [col.key]: !prev[col.key] }))}
-                    />
-                    {col.label}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
+          {isAdminView && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowColumns((v) => !v)}
+                className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-medium transition-colors ${showColumns ? 'bg-cbva-navy text-white border-cbva-navy' : 'bg-white text-foreground border-border hover:bg-muted'}`}
+              >
+                <Columns3 className="w-4 h-4" />
+                Columns
+              </button>
+              {showColumns && (
+                <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-lg border border-border bg-white p-2 shadow-lg">
+                  {TOGGLEABLE_IDENTITY_COLUMNS.map((col) => (
+                    <label key={col.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                      <input
+                        type="checkbox"
+                        checked={columnVisibility[col.key]}
+                        onChange={() => setColumnVisibility((prev) => ({ ...prev, [col.key]: !prev[col.key] }))}
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <input
             className="text-sm border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring w-72"
             placeholder="Search clients..."

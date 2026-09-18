@@ -19,6 +19,7 @@ export function ClientActionsProvider({ children }) {
     createAction,
     deleteAction,
     patchActionStatus,
+    patchAction,
   } = useEngagementActions(selectedLeaderId, activeFY);
 
   const clientNameById = useMemo(() => {
@@ -45,24 +46,22 @@ export function ClientActionsProvider({ children }) {
     [clientActions, clientNameById, clientNameByNum],
   );
 
-  const addAction = useCallback(async ({ clientNum, description, deadline, engagementId }) => {
+  const addAction = useCallback(async ({ clientNum, description, deadline, engagementId, remarks }) => {
     if (!engagementId || !selectedLeaderId || !activeFY) {
       toast.error('Cannot add action point — missing client or year.');
       throw new Error('missing client or year');
     }
-    const num = Number(clientNum);
-    if (!Number.isFinite(num)) {
-      toast.error('Cannot add action point — invalid client.');
-      throw new Error('invalid client num');
-    }
-    return createAction.mutateAsync({
+    const body = {
       engagement_id: engagementId,
       leader_id: selectedLeaderId,
       fiscal_year: activeFY,
-      engagement_num: num,
       description,
       deadline: deadline || null,
-    });
+      remarks: remarks || '',
+    };
+    const num = Number(clientNum);
+    if (Number.isFinite(num)) body.engagement_num = num;
+    return createAction.mutateAsync(body);
   }, [createAction, selectedLeaderId, activeFY]);
 
   const removeAction = useCallback((id) => {
@@ -72,6 +71,10 @@ export function ClientActionsProvider({ children }) {
   const updateActionStatus = useCallback((id, status) => {
     patchActionStatus.mutate({ id, status });
   }, [patchActionStatus]);
+
+  const updateAction = useCallback((id, fields) => {
+    patchAction.mutate({ id, ...fields });
+  }, [patchAction]);
 
   const updateEngagement = useCallback((vars) => {
     updateMutation.mutate(vars);
@@ -94,6 +97,7 @@ export function ClientActionsProvider({ children }) {
     addAction,
     deleteAction: removeAction,
     updateActionStatus,
+    updateAction,
     updateEngagement,
     deleteEngagement,
     updateRemarks,
@@ -108,6 +112,7 @@ export function ClientActionsProvider({ children }) {
     addAction,
     removeAction,
     updateActionStatus,
+    updateAction,
     updateEngagement,
     deleteEngagement,
     updateRemarks,

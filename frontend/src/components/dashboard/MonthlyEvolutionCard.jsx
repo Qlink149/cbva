@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
 import {
   FY_MONTHS,
   getCurrentMonthKey,
@@ -54,16 +55,13 @@ function EditableAmountCell({ value, onSave, disabled, className = '' }) {
   }
 
   function commit() {
-    const trimmed = draft.trim().replace(/,/g, '');
+    const trimmed = draft.trim();
     if (trimmed === '') {
       setEditing(false);
       return;
     }
-    const parsed = Number(trimmed);
-    if (!Number.isNaN(parsed) && parsed >= 0) {
-      const next = Math.round(parsed);
-      if (value == null || next !== Number(value)) onSave?.(next);
-    }
+    const next = parseRupeeInput(trimmed);
+    if (next != null && (value == null || next !== Number(value))) onSave?.(next);
     setEditing(false);
   }
 

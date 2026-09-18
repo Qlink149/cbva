@@ -111,8 +111,29 @@ export const useUpdateEngagement = (leaderId, fiscalYear) => {
       }
       return { previous };
     },
-    onError: (err, _vars, context) => {
-      if (context?.previous) {
+    onError: (err, vars, context) => {
+      // Restore only the failed row so a concurrent edit on another client is not wiped.
+      if (context?.previous != null && vars?.id) {
+        qc.setQueryData(engKey(leaderId, fiscalYear), (current) => {
+          if (!current) return context.previous;
+          const prevBody = Array.isArray(context.previous)
+            ? context.previous
+            : (context.previous.data ?? context.previous);
+          const prevList = Array.isArray(prevBody) ? prevBody : (prevBody?.data ?? []);
+          const oldRow = prevList.find((e) => String(e.id) === String(vars.id));
+          if (!oldRow) return context.previous;
+
+          const patchList = (list) =>
+            list.map((e) => (String(e.id) === String(vars.id) ? oldRow : e));
+
+          if (Array.isArray(current)) return patchList(current);
+          const body = current.data ?? current;
+          if (Array.isArray(body)) {
+            return { ...current, data: patchList(body) };
+          }
+          return context.previous;
+        });
+      } else if (context?.previous) {
         qc.setQueryData(engKey(leaderId, fiscalYear), context.previous);
       }
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to save engagement');

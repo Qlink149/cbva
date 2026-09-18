@@ -3,7 +3,7 @@ import { ChevronDown, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { displayPartnerNames, relationshipPartnerList } from '@/lib/relationshipPartners';
-import { mergePersonOptions, namesMatch } from '@/lib/personNames';
+import { mergePersonOptions, namesMatch, personNameMatchesQuery } from '@/lib/personNames';
 
 export default function PersonMultiSelect({
   value = '',
@@ -36,9 +36,8 @@ export default function PersonMultiSelect({
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return allOptions;
-    return allOptions.filter((name) => name.toLowerCase().includes(q));
+    if (!search.trim()) return allOptions;
+    return allOptions.filter((name) => personNameMatchesQuery(name, search));
   }, [allOptions, search]);
 
   const trimmedCustom = customDraft.trim();

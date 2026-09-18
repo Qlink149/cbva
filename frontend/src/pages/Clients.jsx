@@ -22,7 +22,9 @@ export default function Clients({ user }) {
             <Skeleton className="h-4 w-48 mt-2" />
           ) : (
             <p className="text-sm text-muted-foreground mt-1">
-              {fyLabel} · {clients.length} clients{leader?.name ? ` · ${leader.name}` : ''}
+              {activeFY === '2526'
+                ? `${fyLabel} · Month-level view${leader?.name ? ` · ${leader.name}` : ''}`
+                : `${fyLabel} · ${clients.length} clients${leader?.name ? ` · ${leader.name}` : ''}`}
             </p>
           )}
         </div>

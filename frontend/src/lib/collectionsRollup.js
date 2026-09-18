@@ -3,6 +3,8 @@
  * from engagements (monthly_plan) + collection_transactions.
  */
 
+import { FY_MONTHS } from '@/lib/fyMonths';
+
 /** Group transactions into map[engagementId][monthKey] = sum(amount_collected). */
 export function groupTxByEngagementMonth(transactions = []) {
   const map = {};
@@ -51,4 +53,55 @@ export function buildClientMonthRows(engagements = [], txMap = {}, months = []) 
   });
 
   return { rows, totals };
+}
+
+/** Leader-month actuals from GET /api/collections rows (FY2526 import path). */
+export function leaderMonthActualsFromCollectionApi(rows = []) {
+  const map = {};
+  rows.forEach((r) => {
+    map[r.month_key] = r.actual ?? r.collected ?? 0;
+  });
+  return map;
+}
+
+/**
+ * Month-aligned YoY rows from two GET /api/collections datasets (prior vs current FY).
+ * Uses actual ?? collected per month_key; includes YTD summary.
+ */
+export function buildYoYMonthRows(priorRows = [], currentRows = []) {
+  const priorMap = leaderMonthActualsFromCollectionApi(priorRows);
+  const currentMap = leaderMonthActualsFromCollectionApi(currentRows);
+
+  const rows = FY_MONTHS.map(({ key, label, full }) => {
+    const prior = priorMap[key] ?? 0;
+    const current = currentMap[key] ?? 0;
+    const delta = current - prior;
+    const deltaPct = prior !== 0 ? (delta / prior) * 100 : (current !== 0 ? null : 0);
+    return { month_key: key, monthLabel: label, monthFull: full, prior, current, delta, deltaPct };
+  });
+
+  const ytd = rows.reduce(
+    (acc, r) => ({
+      prior: acc.prior + r.prior,
+      current: acc.current + r.current,
+      delta: acc.delta + r.delta,
+    }),
+    { prior: 0, current: 0, delta: 0 },
+  );
+  ytd.deltaPct = ytd.prior !== 0 ? (ytd.delta / ytd.prior) * 100 : (ytd.current !== 0 ? null : 0);
+
+  return { rows, ytd };
+}
+
+/** Closed historical FY: Green = Total = Collected (annual), no Amber/Blue, Balance 0. */
+export function historicalYearEngagementTotals(ytdCollected) {
+  const n = ytdCollected || 0;
+  return {
+    green: n,
+    amber: 0,
+    blueSky: 0,
+    total: n,
+    collected: n,
+    balance: 0,
+  };
 }

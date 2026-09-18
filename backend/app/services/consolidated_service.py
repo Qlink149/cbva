@@ -253,6 +253,59 @@ def _sum_cells(values: dict[str, float | None]) -> float | None:
     return sum(nums) if nums else None
 
 
+HISTORICAL_FY = "2526"
+
+
+def _annual_collected_by_code(bundles: dict[str, dict]) -> dict[str, float | None]:
+    out: dict[str, float | None] = {}
+    for code in COLUMN_CODES:
+        lid = CODE_TO_LEADER[code]
+        if not lid:
+            out[code] = None
+            continue
+        actual = bundles.get(lid, {}).get("actual")
+        out[code] = float(actual) if actual else None
+    return out
+
+
+def _apply_closed_fy2526_rules(
+    matrix: list[dict[str, Any]], bundles: dict[str, dict], report_fy: str
+) -> list[dict[str, Any]]:
+    """Closed FY2526: Green/Total = annual collected; hide Amber/Blue plan rows."""
+    if report_fy != HISTORICAL_FY:
+        return matrix
+
+    annual = _annual_collected_by_code(bundles)
+    for item in matrix:
+        if item.get("kind") != "data":
+            continue
+        row_key = item.get("row_key") or ""
+        if not row_key.startswith("fy2526_"):
+            continue
+
+        tone = item.get("tone")
+        label = (item.get("label") or "").strip().lower()
+
+        if tone in ("amber", "bluesky"):
+            item["hidden"] = True
+            item["values"] = {c: None for c in COLUMN_CODES}
+            item["total"] = None
+            continue
+
+        is_plan_green = tone == "green" and _is_dynamic_row(row_key, report_fy)
+        is_plan_total = (
+            label == "total"
+            and _is_dynamic_row(row_key, report_fy)
+            and any(part in row_key for part in ("_initial_", "_board_", "_monthly_"))
+        )
+        if is_plan_green or is_plan_total:
+            values = {c: annual.get(c) for c in COLUMN_CODES}
+            item["values"] = values
+            item["total"] = _sum_cells(values)
+
+    return matrix
+
+
 async def ensure_imported_matrix(
     report_fy: str, *, user: dict | None = None
 ) -> list[dict[str, Any]]:
@@ -322,6 +375,8 @@ async def get_consolidated_summary(report_fy: str) -> dict[str, Any]:
         item["total"] = _sum_cells(values)
         item["is_dynamic"] = bool(row_key and _is_dynamic_row(row_key, report_fy))
         matrix.append(item)
+
+    matrix = _apply_closed_fy2526_rules(matrix, bundles, report_fy)
 
     columns = [{"code": c, "leader_id": CODE_TO_LEADER[c]} for c in COLUMN_CODES]
     return {

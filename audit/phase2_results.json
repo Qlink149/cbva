@@ -1,0 +1,432 @@
+{
+  "tx_2526_count": 0,
+  "leaders_in_db": [
+    {
+      "_id": "manan",
+      "name": "Manan Mathuria"
+    },
+    {
+      "_id": "varun",
+      "name": "Varun Chaturvedi"
+    },
+    {
+      "_id": "priyesh",
+      "name": "Priyesh Vira"
+    },
+    {
+      "_id": "ritesh",
+      "name": "Ritesh Thakkar"
+    },
+    {
+      "_id": "np",
+      "name": "Nirav Poddar"
+    },
+    {
+      "_id": "abhitan",
+      "name": "Abhitan Mehta"
+    },
+    {
+      "_id": "amol",
+      "name": "Amol Haryan"
+    },
+    {
+      "_id": "vinay",
+      "name": "Vinay Sethy"
+    },
+    {
+      "_id": "biu",
+      "name": "BIU"
+    },
+    {
+      "_id": "ak",
+      "name": "Amitabh Khemka"
+    }
+  ],
+  "entry_count": 108,
+  "receipt_stats": {
+    "receipt_rows": 1309,
+    "outstanding_rows": 9,
+    "by_leader": {
+      "AH": {
+        "n": 246,
+        "revenue": 78259952.67,
+        "gross": 84507573.3,
+        "gst": 5243443.37,
+        "tds": 3673258.91,
+        "forex": 1004177.26
+      },
+      "NP": {
+        "n": 127,
+        "revenue": 93933020.76,
+        "gross": 110104932.05,
+        "gst": 16158574.04,
+        "tds": 9093404.0,
+        "forex": 13337.25
+      },
+      "AK": {
+        "n": 103,
+        "revenue": 21414813.83,
+        "gross": 25265735.06,
+        "gst": 3850921.23,
+        "tds": 2141341.0,
+        "forex": 0.0
+      },
+      "MM": {
+        "n": 191,
+        "revenue": 90317710.17,
+        "gross": 104784094.64,
+        "gst": 14466384.47,
+        "tds": 8158701.96,
+        "forex": 0.0
+      },
+      "VP": {
+        "n": 14,
+        "revenue": 1485000.0,
+        "gross": 1752300.0,
+        "gst": 267300.0,
+        "tds": 118500.0,
+        "forex": 0.0
+      },
+      "VC": {
+        "n": 238,
+        "revenue": 126385145.81,
+        "gross": 148388649.83,
+        "gst": 22043295.01,
+        "tds": 12045810.26,
+        "forex": -39790.99
+      },
+      "PV": {
+        "n": 189,
+        "revenue": 147207821.1,
+        "gross": 175272372.3,
+        "gst": 28058175.0,
+        "tds": 14543925.0,
+        "forex": 6376.2
+      },
+      "RT": {
+        "n": 171,
+        "revenue": 128330590.86,
+        "gross": 148848492.21,
+        "gst": 20517901.35,
+        "tds": 12726066.27,
+        "forex": 0.0
+      },
+      "SP": {
+        "n": 12,
+        "revenue": 8627012.2,
+        "gross": 10179860.0,
+        "gst": 1552847.8,
+        "tds": 862780.0,
+        "forex": 0.0
+      },
+      "AM": {
+        "n": 13,
+        "revenue": 4561167.0,
+        "gross": 5382177.06,
+        "gst": 821010.06,
+        "tds": 456116.7,
+        "forex": 0.0
+      },
+      "VS": {
+        "n": 5,
+        "revenue": 3150000.0,
+        "gross": 3690000.0,
+        "gst": 540000.0,
+        "tds": 315000.0,
+        "forex": 0.0
+      }
+    }
+  },
+  "mismatches": [
+    {
+      "id": "P2-CONSOL-ACTUAL-AH",
+      "area": "Collections FY25-26",
+      "leader": "AH",
+      "period": "FY25-26 consolidated hist actual",
+      "sheet": 78259952.67,
+      "db": 77681025.66677965,
+      "api_ui": 77681025.66677965,
+      "diff": -578927.0032203496,
+      "classification": "TIME_SNAPSHOT_MISMATCH",
+      "root_cause": "consolidated_summaries fy2526_board_actual_collections_fy_25_26 (77681025.66677965) differs from sheet (78259952.67); collection_entries may still match. Imported xlsx likely older than expected CSV.",
+      "location": "db.consolidated_summaries; consolidated_import.py; GET /api/consolidated-summary (static hist row)",
+      "proposed_fix": "Re-import Business_Plan Summary Actual Collections FY25-26 from current sheet"
+    },
+    {
+      "id": "P2-LEADER-TOTAL-SP",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "FY25-26 TOTAL",
+      "sheet": 8627012.2,
+      "db": null,
+      "api_ui": 8627012.20338983,
+      "diff": 8627012.2,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "Leader code SP has no leaders document / collection_entries; sheet has \u20b98627012.2",
+      "location": "leaders collection; CODE_TO_LEADER in consolidated_service.py",
+      "proposed_fix": "Create leader for SP and load FY2526 monthly collected from sheet"
+    },
+    {
+      "id": "P2-LEADER-TOTAL-VP",
+      "area": "Collections FY25-26",
+      "leader": "VP",
+      "period": "FY25-26 TOTAL",
+      "sheet": 1485000.0,
+      "db": null,
+      "api_ui": 1485000.0,
+      "diff": 1485000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "Leader code VP has no leaders document / collection_entries; sheet has \u20b91485000.0",
+      "location": "leaders collection; CODE_TO_LEADER in consolidated_service.py",
+      "proposed_fix": "Create leader for VP and load FY2526 monthly collected from sheet"
+    },
+    {
+      "id": "P2-FIRM-TOTAL",
+      "area": "Collections FY25-26",
+      "leader": "TOTAL",
+      "period": "FY25-26",
+      "sheet": 703672234.4,
+      "db": 693560221.0,
+      "api_ui": 703093307.401695,
+      "diff": -10112013.399999976,
+      "classification": "DB_DATA_ERROR",
+      "root_cause": "Sum of collection_entries.collected across present leaders != sheet firm Revenue",
+      "location": "db.collection_entries fiscal_year=2526",
+      "proposed_fix": "Include missing leaders (SP/VP) and fix any month residuals"
+    },
+    {
+      "id": "P2-LM-VP-2025-04",
+      "area": "Collections FY25-26",
+      "leader": "VP",
+      "period": "2025-04",
+      "sheet": 900000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 900000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for VP in month 2025-04",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add VP leader and month collected=900000.0"
+    },
+    {
+      "id": "P2-LM-VP-2025-05",
+      "area": "Collections FY25-26",
+      "leader": "VP",
+      "period": "2025-05",
+      "sheet": 475000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 475000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for VP in month 2025-05",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add VP leader and month collected=475000.0"
+    },
+    {
+      "id": "P2-LM-VP-2025-06",
+      "area": "Collections FY25-26",
+      "leader": "VP",
+      "period": "2025-06",
+      "sheet": 50000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 50000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for VP in month 2025-06",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add VP leader and month collected=50000.0"
+    },
+    {
+      "id": "P2-LM-SP-2025-07",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "2025-07",
+      "sheet": 390000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 390000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for SP in month 2025-07",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add SP leader and month collected=390000.0"
+    },
+    {
+      "id": "P2-LM-VP-2025-07",
+      "area": "Collections FY25-26",
+      "leader": "VP",
+      "period": "2025-07",
+      "sheet": 60000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 60000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for VP in month 2025-07",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add VP leader and month collected=60000.0"
+    },
+    {
+      "id": "P2-LM-SP-2025-08",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "2025-08",
+      "sheet": 2746000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 2746000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for SP in month 2025-08",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add SP leader and month collected=2746000.0"
+    },
+    {
+      "id": "P2-LM-SP-2025-09",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "2025-09",
+      "sheet": 3067000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 3067000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for SP in month 2025-09",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add SP leader and month collected=3067000.0"
+    },
+    {
+      "id": "P2-LM-SP-2026-01",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "2026-01",
+      "sheet": 1212000.0,
+      "db": null,
+      "api_ui": null,
+      "diff": 1212000.0,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for SP in month 2026-01",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add SP leader and month collected=1212000.0"
+    },
+    {
+      "id": "P2-LM-SP-2026-03",
+      "area": "Collections FY25-26",
+      "leader": "SP",
+      "period": "2026-03",
+      "sheet": 1212012.2,
+      "db": null,
+      "api_ui": null,
+      "diff": 1212012.2,
+      "classification": "MISSING_IN_DB",
+      "root_cause": "No leader/entries for SP in month 2026-03",
+      "location": "leaders / collection_entries",
+      "proposed_fix": "Add SP leader and month collected=1212012.2"
+    },
+    {
+      "id": "P2-RECEIPT-LEVEL",
+      "area": "Collections FY25-26",
+      "leader": "ALL",
+      "period": "FY25-26",
+      "sheet": 1309,
+      "db": 0,
+      "api_ui": null,
+      "diff": null,
+      "classification": "CANNOT_VERIFY_NO_SOURCE",
+      "root_cause": "collection_transactions has 0 docs for fiscal_year=2526; schema has no Date/Invoice/Gross/GST/TDS/Forex. FY25-26 actuals exist only as monthly aggregates on collection_entries (9 leaders). Sheet has 1309 receipt rows + 9 O/S summary rows.",
+      "location": "schemas/collection_transaction.py; db.collection_transactions",
+      "proposed_fix": "If row-level audit is required, import receipts with Date, Invoice No., party, amounts, partner"
+    }
+  ],
+  "side_by_side_leader": [
+    {
+      "leader": "AH",
+      "sheet": 78259952.67,
+      "db_entries": 78259952.0,
+      "consol_import": 77681025.66677965,
+      "status": "PASS"
+    },
+    {
+      "leader": "AK",
+      "sheet": 21414813.83,
+      "db_entries": 21414814.0,
+      "consol_import": 21414813.830508474,
+      "status": "PASS"
+    },
+    {
+      "leader": "AM",
+      "sheet": 4561167.0,
+      "db_entries": 4561167.0,
+      "consol_import": 4561167.0,
+      "status": "PASS"
+    },
+    {
+      "leader": "MM",
+      "sheet": 90317710.17,
+      "db_entries": 90317710.0,
+      "consol_import": 90317710.16847458,
+      "status": "PASS"
+    },
+    {
+      "leader": "NP",
+      "sheet": 93933020.76,
+      "db_entries": 93933021.0,
+      "consol_import": 93933020.76271187,
+      "status": "PASS"
+    },
+    {
+      "leader": "PV",
+      "sheet": 147207821.1,
+      "db_entries": 147207821.0,
+      "consol_import": 147207821.1,
+      "status": "PASS"
+    },
+    {
+      "leader": "RT",
+      "sheet": 128330590.86,
+      "db_entries": 128330591.0,
+      "consol_import": 128330590.8559322,
+      "status": "PASS"
+    },
+    {
+      "leader": "SP",
+      "sheet": 8627012.2,
+      "db_entries": null,
+      "consol_import": 8627012.20338983,
+      "status": "FAIL"
+    },
+    {
+      "leader": "VC",
+      "sheet": 126385145.81,
+      "db_entries": 126385145.0,
+      "consol_import": 126385145.8138983,
+      "status": "PASS"
+    },
+    {
+      "leader": "VP",
+      "sheet": 1485000.0,
+      "db_entries": null,
+      "consol_import": 1485000.0,
+      "status": "FAIL"
+    },
+    {
+      "leader": "VS",
+      "sheet": 3150000.0,
+      "db_entries": 3150000.0,
+      "consol_import": 3150000.0,
+      "status": "PASS"
+    },
+    {
+      "leader": "TOTAL",
+      "sheet": 703672234.4,
+      "db_entries": 693560221.0,
+      "consol_import": 703093307.401695,
+      "status": "FAIL"
+    }
+  ],
+  "month_fail_count": 9,
+  "month_rows_sample_fails": [],
+  "month_pass_count": 108,
+  "month_compare_count": 108,
+  "db_total": 693560221.0,
+  "sheet_total": 703672234.4,
+  "consol_total": 703093307.401695,
+  "tds_total": 64134904.09016949
+}

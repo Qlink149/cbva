@@ -1,0 +1,23 @@
+﻿leader     fy        eng_collected  entry_collected     tx_collected   diff_eng_entry    diff_eng_tx  notes
+--------------------------------------------------------------------------------------------------------------
+abhitan    2526                  0        4,561,167                0       -4,561,167              0  entries only; fy2526 import on entries
+abhitan    2627         12,009,000                0       12,009,000       12,009,000              0  
+ak         2526                  0       21,414,814                0      -21,414,814              0  entries only; fy2526 import on entries
+ak         2627                  0                0                0                0              0  
+amol       2526       78,259,952.0       78,259,952                0              0.0   78,259,952.0  fy2526 import on entries
+amol       2627         25,077,988                0       25,077,988       25,077,988              0  
+biu        2627          3,508,580                0        3,508,580        3,508,580              0  
+manan      2526       90,317,710.0       90,317,710                0              0.0   90,317,710.0  fy2526 import on entries
+manan      2627         14,850,238                0       14,850,238       14,850,238              0  
+np         2526   93,933,021.00000001       93,933,021                0 1.4901161193847656e-08 93,933,021.00000001  fy2526 import on entries
+np         2627         17,321,675                0       17,321,675       17,321,675              0  
+priyesh    2526        147,207,821      147,207,821                0                0    147,207,821  fy2526 import on entries
+priyesh    2627         32,897,545                0       32,897,545       32,897,545              0  
+ritesh     2526        128,330,591      128,330,591                0                0    128,330,591  fy2526 import on entries
+ritesh     2627                  0                0                0                0              0  
+varun      2526                  0      126,385,145                0     -126,385,145              0  entries only; fy2526 import on entries
+varun      2627         46,308,471                0       46,308,471       46,308,471              0  
+vinay      2526                  0        3,150,000                0       -3,150,000              0  entries only; fy2526 import on entries
+vinay      2627          5,540,250                0        5,540,250        5,540,250              0  
+
+Wrote C:\Users\pc\Desktop\clara\cbva\audit\collected_sources_comparison.csv (20 rows)

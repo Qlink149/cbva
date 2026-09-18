@@ -32,6 +32,11 @@ describe('parseLakhInputToRupees (modal round-trip)', () => {
     assert.equal(parseLakhInputToRupees('180'), 18_000_000);
   });
 
+  it('treats comma-grouped input as rupees not lakhs', () => {
+    assert.equal(parseLakhInputToRupees('18,00,000'), 1_800_000);
+    assert.equal(parseLakhInputToRupees('50,00,000'), 5_000_000);
+  });
+
   it('preview matches save', () => {
     assert.equal(lakhDraftToRupees('18'), parseLakhInputToRupees('18'));
   });

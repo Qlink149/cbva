@@ -1,0 +1,98 @@
+{
+  "el_status_distinct": [
+    "NA",
+    "Not Signed",
+    "Signed",
+    "Waived"
+  ],
+  "el_status_retired_count": 0,
+  "financial_years": [
+    {
+      "slug": "2526",
+      "is_editable": false,
+      "is_current": false
+    },
+    {
+      "slug": "2627",
+      "is_editable": true,
+      "is_current": true
+    }
+  ],
+  "fy2526_collection_entries_firm_total": 693560221,
+  "fy2526_gap_vs_sheet": -10112013,
+  "leaders_sp_vp_ak_biu": [
+    {
+      "id": "sp",
+      "name": null,
+      "exists": false
+    },
+    {
+      "id": "vp",
+      "name": null,
+      "exists": false
+    },
+    {
+      "id": "ak",
+      "name": "Amitabh Khemka",
+      "exists": true
+    },
+    {
+      "id": "biu",
+      "name": "BIU",
+      "exists": true
+    }
+  ],
+  "engagement_actions_count": 0,
+  "additional_work_count": 0,
+  "engagement_change_log_count": 0,
+  "d5_np_rt": {
+    "np": {
+      "engagements": {
+        "green": 55830200,
+        "amber": 14157750,
+        "blue_sky": 30012050,
+        "total": 100000000
+      },
+      "july_snap": {
+        "green": 55830200,
+        "amber": 14157750,
+        "blue_sky": 30012050,
+        "total": 100000000
+      },
+      "aug_snap": {
+        "green": 54688900,
+        "amber": 11052000,
+        "blue_sky": 34259100,
+        "total": 100000000
+      },
+      "eng_bs_vs_aug_snap_bs": -4247050
+    },
+    "rt": {
+      "engagements": {
+        "green": 0,
+        "amber": 0,
+        "blue_sky": 0,
+        "total": 0
+      },
+      "july_snap": {
+        "green": null,
+        "amber": null,
+        "blue_sky": null,
+        "total": null
+      },
+      "aug_snap": {
+        "green": null,
+        "amber": null,
+        "blue_sky": null,
+        "total": null
+      },
+      "eng_bs_vs_aug_snap_bs": null
+    }
+  },
+  "firm_aug_2026_snap_total": 1003461020,
+  "firm_aug_gap_vs_sheet": -13174000,
+  "ak_board_snap": {
+    "green": 0,
+    "total": 0
+  }
+}

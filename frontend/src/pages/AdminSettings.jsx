@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Settings, Users, Building2, Briefcase, Calendar, Target, ClipboardList } from 'lucide-react';
 import { formatINR } from '@/lib/formatCurrency';
+import { parseAmountInput } from '@/lib/parseAmount';
 import { useBaselines } from '@/hooks/useBaselines';
 import {
   useAdminUsers, useCreateUser, useUpdateUser, useDeactivateUser,
@@ -339,9 +340,7 @@ function FYTab() {
 }
 
 function parseAmount(val) {
-  if (val === '' || val == null) return 0;
-  const n = Number(String(val).replace(/,/g, ''));
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+  return parseAmountInput(val, { allowEmpty: false }) ?? 0;
 }
 
 function PlanAmountFields({ title, form, setForm }) {

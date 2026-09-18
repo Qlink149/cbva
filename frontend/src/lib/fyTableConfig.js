@@ -21,6 +21,19 @@ export const DEFAULT_COLUMN_VISIBILITY = {
   elStatus: true,
 };
 
+export const LEADER_COLUMN_VISIBILITY = {
+  manager: false,
+  relPartner: false,
+  elStatus: false,
+};
+
+export function initialColumnVisibility(role) {
+  if (role === 'admin' || role === 'management') {
+    return { ...DEFAULT_COLUMN_VISIBILITY };
+  }
+  return { ...LEADER_COLUMN_VISIBILITY };
+}
+
 /** Single source of truth for engagement table column widths (T5). */
 export const COL_WIDTH = {
   num: 32,
@@ -52,6 +65,7 @@ export function buildEngagementColumns({
   showScope,
   monthCount = 0,
   visibility = DEFAULT_COLUMN_VISIBILITY,
+  hideAmberBlueSky = false,
 } = {}) {
   const vis = { ...DEFAULT_COLUMN_VISIBILITY, ...visibility };
   const cols = [];
@@ -67,8 +81,10 @@ export function buildEngagementColumns({
   if (vis.elStatus) push('elStatus', COL_WIDTH.elStatus, true);
   push('prevActualCollected', COL_WIDTH.prevActualCollected);
   push('green', COL_WIDTH.green);
-  push('amber', COL_WIDTH.amber);
-  push('blueSky', COL_WIDTH.blueSky);
+  if (!hideAmberBlueSky) {
+    push('amber', COL_WIDTH.amber);
+    push('blueSky', COL_WIDTH.blueSky);
+  }
   push('total', COL_WIDTH.total);
   push('collected', COL_WIDTH.collected);
   if (collectionsOpen) {

@@ -3,6 +3,20 @@ import { plannedForMonth, collectedForMonth } from '@/lib/collectionsRollup';
 
 export const EMPTY_FILTER = '__empty__';
 
+export function parseEngagementFiltersFromUrl(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw));
+    return {
+      ...DEFAULT_ENGAGEMENT_FILTERS,
+      ...parsed,
+      financials: { ...DEFAULT_ENGAGEMENT_FILTERS.financials, ...(parsed.financials || {}) },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const DEFAULT_ENGAGEMENT_FILTERS = {
   name: '',
   manager: [],
