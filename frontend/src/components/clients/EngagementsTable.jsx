@@ -918,6 +918,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('elStatus')}`} style={frozenHeader('elStatus')}></th>
                 )}
                 <th colSpan={5} className="border-b-0 h-9" style={{ minWidth: 570, background: HDR_BG }}></th>
+                <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}></th>
                 <th className="text-center px-3 text-[10px] leading-tight uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50 h-9" style={{ minWidth: 120, background: HDR_BG }}>
                   Collected <span className="font-normal normal-case">(Finance Actuals)</span>
                 </th>
@@ -934,7 +935,10 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     <button onClick={() => setCollectionsOpen(true)} className="ml-2 text-cbva-navy hover:text-cbva-navy/80 font-medium inline-flex"><ChevronRight className="w-3 h-3" /></button>
                   </th>
                 )}
-                <th colSpan={2} className="border-b-0 h-9" style={{ background: HDR_BG }}></th>
+                {!collectionsOpen && (
+                  <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}></th>
+                )}
+                <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.expand), background: HDR_BG }}></th>
               </tr>
               <tr className="[&>th]:border-b [&>th]:border-border" style={{ background: HDR_BG }}>
                 <th className={`${stickyHeaderLeft} left-0 text-left py-3 px-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium ${stickyEdgeClass('num')}`} style={frozenHeader('num')}>#</th>
@@ -1061,6 +1065,15 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   style={{ ...widthStyle(COL_WIDTH.total), background: HDR_BG }}
                 />
                 <ColumnHeaderFilter
+                  label="Remarks"
+                  type="text"
+                  filterKey="remarks"
+                  filters={filters}
+                  setFilters={setFilters}
+                  className="text-muted-foreground"
+                  style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}
+                />
+                <ColumnHeaderFilter
                   label="Collected (?)"
                   align="right"
                   type="range"
@@ -1131,15 +1144,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}
                   />
                 )}
-                <ColumnHeaderFilter
-                  label="Remarks"
-                  type="text"
-                  filterKey="remarks"
-                  filters={filters}
-                  setFilters={setFilters}
-                  className="text-muted-foreground"
-                  style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}
-                />
                 <th className="py-3 px-3" style={{ ...widthStyle(COL_WIDTH.expand), background: HDR_BG }}></th>
               </tr>
             </thead>
@@ -1217,6 +1221,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" />
                       <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} />
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
+                      <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td
                         className="py-3 px-3 text-right font-tabular text-muted-foreground text-xs"
                         title={isFy2526 ? 'Month totals from Collections tab; per-client split not available for FY2526' : 'Sum of collection transactions'}
@@ -1263,7 +1268,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           {client.balance == null ? '-' : client.balance === 0 ? <span className="text-emerald-600">{formatINRFull(0)}</span> : <span className="text-red-600">{formatINRFull(client.balance)}</span>}
                         </td>
                       )}
-                      <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td className="py-3 px-3">
                         <button
                           type="button"
@@ -1319,6 +1323,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>
                 )}
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{totals.total > 0 ? formatINRFull(totals.total) : '-'}</td>
+                <td className={`${stickyFooter} py-3 px-3`}></td>
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{totals.collected > 0 ? formatINRFull(totals.collected) : '-'}</td>
                 {collectionsOpen && <>
                   {selectedMonths.map((mk) => {
@@ -1338,7 +1343,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                 {!collectionsOpen && (
                   <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-xs border-l border-border/40 ${totals.balance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatINRFull(totals.balance)}</td>
                 )}
-                <td className={`${stickyFooter} py-3 px-3`}></td>
                 <td className={`${stickyFooter} py-3 px-3`}></td>
               </tr>
             </tfoot>

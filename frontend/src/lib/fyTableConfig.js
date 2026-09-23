@@ -1,5 +1,5 @@
 export const ENGAGEMENT_COLUMNS = {
-  base: ['num', 'name', 'manager', 'relPartner', 'elStatus', 'green', 'amber', 'blueSky', 'total', 'collected', 'balance', 'remarks'],
+  base: ['num', 'name', 'manager', 'relPartner', 'elStatus', 'green', 'amber', 'blueSky', 'total', 'remarks', 'collected', 'balance'],
   monthCols: ['mayCol', 'juneCol', 'julyCol'],
 };
 
@@ -86,6 +86,7 @@ export function buildEngagementColumns({
     push('blueSky', COL_WIDTH.blueSky);
   }
   push('total', COL_WIDTH.total);
+  push('remarks', COL_WIDTH.remarks);
   push('collected', COL_WIDTH.collected);
   if (collectionsOpen) {
     for (let i = 0; i < monthCount; i += 1) {
@@ -95,7 +96,6 @@ export function buildEngagementColumns({
     }
   }
   push('balance', COL_WIDTH.balance);
-  push('remarks', COL_WIDTH.remarks);
   push('expand', COL_WIDTH.expand);
   return cols;
 }
