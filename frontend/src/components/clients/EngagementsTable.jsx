@@ -40,6 +40,7 @@ import { displayPartnerNames } from '@/lib/relationshipPartners';
 import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 import { useEngagementChanges } from '@/hooks/useEngagementMeta';
 import { useAuth } from '@/lib/AuthContext';
+import { useMonthEditAccess } from '@/hooks/useMonthEditAccess';
 import { toast } from 'sonner';
 import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/components/ui/LoadingState';
 import {
@@ -342,13 +343,14 @@ function CollectedMonthCell({ value, onSetAmount, pending }) {
   );
 }
 
-function EditableCell({ value, onChange, color, colVisible = true }) {
+function EditableCell({ value, onChange, color, colVisible = true, disabled = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
   if (!colVisible) return null;
 
   function startEdit() {
+    if (disabled) return;
     setDraft(value != null ? String(value) : '0');
     setEditing(true);
   }
@@ -377,9 +379,9 @@ function EditableCell({ value, onChange, color, colVisible = true }) {
   const isNavy = color === '#1e3a5f';
   return (
     <td
-      className={`py-3 px-3 text-right font-tabular text-xs cursor-pointer hover:opacity-80 transition-opacity ${isNavy ? 'text-white' : 'text-black'}`}
+      className={`py-3 px-3 text-right font-tabular text-xs transition-opacity ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-80'} ${isNavy ? 'text-white' : 'text-black'}`}
       style={color ? { backgroundColor: color } : {}}
-      title="Click to edit"
+      title={disabled ? 'Locked for this month' : 'Click to edit'}
       onClick={startEdit}
     >
       {value != null && value > 0 ? formatINRFull(value) : '-'}
@@ -409,6 +411,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const isFy2526 = activeFY === '2526';
   const canEdit = isFyEditable(activeFY, fiscalYears, user?.role) && !isFy2526;
+  const { canEditStatus, canEditMonth, monthLockedMessage } = useMonthEditAccess();
   const isAdminView = user?.role === 'admin' || user?.role === 'management';
   const { teamMembers } = useTeam(selectedLeaderId, activeFY);
   const { data: selectedLeader } = useLeader(selectedLeaderId);
@@ -577,10 +580,19 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   function updateField(clientId, field, newVal) {
+    const statusFields = ['green', 'amber', 'blueSky'];
+    if (statusFields.includes(field) && !canEditStatus) {
+      toast.error(canEdit ? monthLockedMessage : 'This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
     guardEdit(() => updateEngagement({ id: clientId, [field]: newVal }));
   }
 
   function updateMonthPlan(clientId, monthKey, newVal) {
+    if (!canEditMonth(monthKey)) {
+      toast.error(canEdit ? monthLockedMessage : 'This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
     guardEdit(() => updateEngagement({ id: clientId, monthlyPlan: { [monthKey]: newVal } }));
   }
 
@@ -1217,9 +1229,9 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       <td className="py-3 px-3 text-right font-tabular text-xs text-emerald-800" title={prevActualCollected == null ? 'No confident prior-year match' : `Actual collected from ${prevFyLabel}`}>
                         {prevActualCollected == null ? <span className="text-muted-foreground/60 italic">TBD</span> : formatINRFull(prevActualCollected)}
                       </td>
-                      <EditableCell value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" />
-                      <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" />
-                      <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} />
+                      <EditableCell value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" disabled={!canEditStatus} />
+                      <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" disabled={!canEditStatus} />
+                      <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} disabled={!canEditStatus} />
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
                       <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td
@@ -1237,7 +1249,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           const variance = collected - planned;
                           return (
                             <React.Fragment key={mk}>
-                              <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} />
+                              <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} disabled={!canEditMonth(mk)} />
                               {isFy2526 ? (
                                 <td className="py-3 px-3 text-right font-tabular text-muted-foreground/60 text-xs">—</td>
                               ) : (
