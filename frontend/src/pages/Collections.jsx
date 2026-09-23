@@ -13,9 +13,12 @@ import CollectionsRollupTable from '@/components/collections/CollectionsRollupTa
 import CollectionsYoYTable from '@/components/collections/CollectionsYoYTable';
 import CollectionsTableReal from '@/components/dashboard/CollectionsTableReal';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
+import ManualEntryToggle from '@/components/shared/ManualEntryToggle';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
 
 export default function Collections() {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit } = useFyEditAccess();
   const isFy2526 = activeFY === '2526';
   const prevFy = getPrevFySlug(activeFY, fiscalYears);
   const showYoY = activeFY === '2627' && !!prevFy;
@@ -68,6 +71,14 @@ export default function Collections() {
         </div>
         <LeaderFYSelector />
       </div>
+
+      <ManualEntryToggle
+        leaderId={selectedLeaderId}
+        fiscalYear={activeFY}
+        entryType="additional_work"
+        sourceTab="collections"
+        canEdit={canEdit}
+      />
 
       {isLoading && (
         <div className="space-y-3">

@@ -12,20 +12,25 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
-from app.services.fiscal_year import assert_fy_editable
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 from app.services.fy_calendar import FY_MONTH_KEYS
 
 router = APIRouter()
 
 
 def _serialize(doc: dict) -> dict:
+    logged_month = doc.get("logged_month") or doc.get("month_key", "")
     return {
         "id": str(doc["_id"]),
         "leader_id": doc["leader_id"],
         "fiscal_year": doc["fiscal_year"],
         "engagement_id": doc.get("engagement_id"),
         "client_name": doc.get("client_name", ""),
-        "month_key": doc.get("month_key", ""),
+        "month_key": doc.get("month_key", logged_month),
+        "logged_month": logged_month,
+        "nature_of_work": doc.get("nature_of_work", ""),
+        "entry_type": doc.get("entry_type", "additional_work"),
+        "source_tab": doc.get("source_tab", ""),
         "amount": int(doc.get("amount") or 0),
         "notes": doc.get("notes", ""),
         "created_at": serialize_datetime(doc.get("created_at")),
@@ -54,10 +59,14 @@ async def create_additional_work(
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
     await assert_fy_editable(body.fiscal_year, current_user)
-    if body.month_key not in FY_MONTH_KEYS:
-        raise HTTPException(status_code=400, detail="Invalid month_key")
+    month_key = body.logged_month or body.month_key
+    if month_key not in FY_MONTH_KEYS:
+        raise HTTPException(status_code=400, detail="Invalid logged_month")
+    assert_month_unlocked(body.fiscal_year, month_key, current_user)
     now = datetime.now(timezone.utc)
     doc = body.model_dump()
+    doc["month_key"] = month_key
+    doc["logged_month"] = month_key
     doc["created_at"] = now
     doc["updated_at"] = now
     result = await database.db.additional_work.insert_one(doc)

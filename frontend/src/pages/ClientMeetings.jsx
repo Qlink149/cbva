@@ -12,6 +12,7 @@ import {
   FY_MONTH_KEYS,
 } from '@/hooks/useClientMeetings';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
+import ManualEntryToggle from '@/components/shared/ManualEntryToggle';
 import { useFyEditAccess } from '@/hooks/useFyEditAccess';
 import { MEETING_QUARTER_GROUPS } from '@/lib/meetingMonths';
 import { getFyMonthLabelYear } from '@/lib/fyMonths';
@@ -208,6 +209,14 @@ export default function ClientMeetings() {
           </div>
         </div>
       </div>
+
+      <ManualEntryToggle
+        leaderId={selectedLeaderId}
+        fiscalYear={activeFY}
+        entryType="additional_work"
+        sourceTab="meetings"
+        canEdit={canEdit}
+      />
 
       <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
         <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
