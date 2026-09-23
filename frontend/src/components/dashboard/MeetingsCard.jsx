@@ -1,12 +1,7 @@
 import React, { useMemo } from 'react';
 import { CalendarClock, AlertCircle } from 'lucide-react';
-
-const QUARTERS = [
-  { key: 'q1', label: 'Q1 (Apr–Jun)' },
-  { key: 'q2', label: 'Q2 (Jul–Sep)' },
-  { key: 'q3', label: 'Q3 (Oct–Dec)' },
-  { key: 'q4', label: 'Q4 (Jan–Mar)' },
-];
+import { FY_MONTHS } from '@/lib/fyMonths';
+import { resolveMeetingMonthly } from '@/lib/meetingMonths';
 
 export default function MeetingsCard({ meetings = [], fyLabel = '', isLoading = false }) {
   const { overdue, upcoming } = useMemo(() => {
@@ -14,11 +9,13 @@ export default function MeetingsCard({ meetings = [], fyLabel = '', isLoading = 
     const upcomingItems = [];
     meetings.forEach((m) => {
       if (m.frequency === 'Waiver') return;
-      QUARTERS.forEach((q) => {
-        const status = m[q.key];
-        const date = m[`${q.key}Date`] || '';
-        if (status === 'Overdue') overdueItems.push({ client: m.client, quarter: q.label, date });
-        else if (status === 'Planned') upcomingItems.push({ client: m.client, quarter: q.label, date });
+      const monthly = m.monthly || resolveMeetingMonthly(m);
+      FY_MONTHS.forEach(({ key, label }) => {
+        const cell = monthly[key] || {};
+        const status = cell.status;
+        const date = cell.date || '';
+        if (status === 'Overdue') overdueItems.push({ client: m.client, monthLabel: label, date });
+        else if (status === 'Planned') upcomingItems.push({ client: m.client, monthLabel: label, date });
       });
     });
     return { overdue: overdueItems, upcoming: upcomingItems };
@@ -64,11 +61,11 @@ export default function MeetingsCard({ meetings = [], fyLabel = '', isLoading = 
               <ul className="space-y-1">
                 {overdue.map((item, i) => (
                   <li
-                    key={`${item.client}-${item.quarter}-${i}`}
+                    key={`${item.client}-${item.monthLabel}-${i}`}
                     className="flex items-center justify-between gap-3 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-red-700 truncate">{item.client}</span>
-                    <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{item.date || item.quarter}</span>
+                    <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{item.date || item.monthLabel}</span>
                   </li>
                 ))}
               </ul>
@@ -80,18 +77,21 @@ export default function MeetingsCard({ meetings = [], fyLabel = '', isLoading = 
               Upcoming ({upcoming.length})
             </p>
             {upcoming.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">None planned.</p>
+              <p className="text-xs text-slate-400 italic">None upcoming.</p>
             ) : (
-              <ul className="space-y-1">
-                {upcoming.map((item, i) => (
+              <ul className="space-y-1 max-h-40 overflow-y-auto">
+                {upcoming.slice(0, 8).map((item, i) => (
                   <li
-                    key={`${item.client}-${item.quarter}-${i}`}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-white border border-slate-200 px-3 py-1.5"
+                    key={`${item.client}-${item.monthLabel}-${i}`}
+                    className="flex items-center justify-between gap-3 rounded-lg bg-white border border-slate-200/80 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-slate-700 truncate">{item.client}</span>
-                    <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">{item.date || item.quarter}</span>
+                    <span className="text-[10px] text-slate-500 whitespace-nowrap">{item.date || item.monthLabel}</span>
                   </li>
                 ))}
+                {upcoming.length > 8 && (
+                  <li className="text-[11px] text-slate-400 pt-1">+{upcoming.length - 8} more</li>
+                )}
               </ul>
             )}
           </div>

@@ -1,26 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
+import { resolveMeetingMonthly, FY_MONTH_KEYS } from '@/lib/meetingMonths';
 
-const normalize = (m) => ({
-  id: m.id,
-  client: m.client_name,
-  frequency: m.meeting_frequency || 'Quarterly',
-  q1: m.q1_status || '',
-  q2: m.q2_status || '',
-  q3: m.q3_status || '',
-  q4: m.q4_status || '',
-  q1Date: m.q1_date || '',
-  q2Date: m.q2_date || '',
-  q3Date: m.q3_date || '',
-  q4Date: m.q4_date || '',
-  remarks: m.notes || '',
-  minutes: m.minutes || '',
-  datesTillPeriod: m.dates_till_period || '',
-  nextPeriod: m.next_period || '',
-  responsiblePerson: m.responsible_person || '',
-  activity: m.activity || '',
-  sortOrder: m.sort_order ?? 0,
-});
+const normalize = (m) => {
+  const monthly = resolveMeetingMonthly(m);
+  return {
+    id: m.id,
+    client: m.client_name,
+    frequency: m.meeting_frequency || 'Quarterly',
+    monthly,
+    remarks: m.notes || '',
+    minutes: m.minutes || '',
+    datesTillPeriod: m.dates_till_period || '',
+    nextPeriod: m.next_period || '',
+    responsiblePerson: m.responsible_person || '',
+    activity: m.activity || '',
+    sortOrder: m.sort_order ?? 0,
+  };
+};
 
 const toApi = (fields) => {
   const out = {};
@@ -28,14 +25,7 @@ const toApi = (fields) => {
   if (fields.frequency != null) out.meeting_frequency = fields.frequency;
   if (fields.remarks != null) out.notes = fields.remarks;
   if (fields.minutes != null) out.minutes = fields.minutes;
-  if (fields.q1 != null) out.q1_status = fields.q1;
-  if (fields.q2 != null) out.q2_status = fields.q2;
-  if (fields.q3 != null) out.q3_status = fields.q3;
-  if (fields.q4 != null) out.q4_status = fields.q4;
-  if (fields.q1Date != null) out.q1_date = fields.q1Date;
-  if (fields.q2Date != null) out.q2_date = fields.q2Date;
-  if (fields.q3Date != null) out.q3_date = fields.q3Date;
-  if (fields.q4Date != null) out.q4_date = fields.q4Date;
+  if (fields.monthly_status != null) out.monthly_status = fields.monthly_status;
   return out;
 };
 
@@ -73,3 +63,5 @@ export const useDeleteClientMeeting = () => {
     onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['client-meetings', vars.leaderId, vars.fiscalYear] }),
   });
 };
+
+export { FY_MONTH_KEYS };

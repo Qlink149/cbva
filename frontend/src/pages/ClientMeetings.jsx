@@ -9,18 +9,15 @@ import {
   useCreateClientMeeting,
   useUpdateClientMeeting,
   useDeleteClientMeeting,
+  FY_MONTH_KEYS,
 } from '@/hooks/useClientMeetings';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { MEETING_QUARTER_GROUPS } from '@/lib/meetingMonths';
+import { getFyMonthLabelYear } from '@/lib/fyMonths';
 import { toast } from 'sonner';
 
-const QUARTERS = [
-  { key: 'q1', label: 'Q1 (Apr–Jun)' },
-  { key: 'q2', label: 'Q2 (Jul–Sep)' },
-  { key: 'q3', label: 'Q3 (Oct–Dec)' },
-  { key: 'q4', label: 'Q4 (Jan–Mar)' },
-];
-
+const HDR_BG = '#F8FAFC';
 const FREQ_OPTIONS = ['Monthly', 'Quarterly', 'Custom', 'Waiver'];
 const STATUS_OPTIONS = ['Planned', 'Completed', 'Overdue'];
 
@@ -41,15 +38,15 @@ function StatusCell({ value, onChange, disabled }) {
   }
   return (
     <div className="relative">
-      <button className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${style} whitespace-nowrap`} onClick={() => setOpen(v => !v)}>
+      <button type="button" className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${style} whitespace-nowrap`} onClick={() => setOpen((v) => !v)}>
         {value || '—'}
       </button>
       {open && (
         <div className="absolute z-30 left-0 top-6 bg-white border border-border rounded-lg shadow-lg py-1 min-w-[110px]">
-          {STATUS_OPTIONS.map(s => (
-            <button key={s} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors" onClick={() => { onChange(s); setOpen(false); }}>{s}</button>
+          {STATUS_OPTIONS.map((s) => (
+            <button key={s} type="button" className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors" onClick={() => { onChange(s); setOpen(false); }}>{s}</button>
           ))}
-          <button className="block w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors" onClick={() => { onChange(''); setOpen(false); }}>Clear</button>
+          <button type="button" className="block w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors" onClick={() => { onChange(''); setOpen(false); }}>Clear</button>
         </div>
       )}
     </div>
@@ -67,11 +64,13 @@ export default function ClientMeetings() {
   const deleteMeeting = useDeleteClientMeeting();
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ client: '', frequency: 'Quarterly', q1: '', q2: '', q3: '', q4: '', remarks: '' });
+  const [newRow, setNewRow] = useState({ client: '', frequency: 'Quarterly', remarks: '' });
   const [expandedIds, setExpandedIds] = useState(() => new Set());
 
+  const bodyColSpan = 2 + FY_MONTH_KEYS.length + 2;
+
   function toggleExpand(id) {
-    setExpandedIds(prev => {
+    setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -85,6 +84,19 @@ export default function ClientMeetings() {
       return;
     }
     updateMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY, [field]: val });
+  }
+
+  function updateMonthField(id, monthKey, patch) {
+    if (!canEdit) {
+      toast.error(lockedMessage);
+      return;
+    }
+    updateMeeting.mutate({
+      id,
+      leaderId: selectedLeaderId,
+      fiscalYear: activeFY,
+      monthly_status: { [monthKey]: patch },
+    });
   }
 
   function addRow() {
@@ -102,14 +114,11 @@ export default function ClientMeetings() {
       client_name: newRow.client,
       meeting_frequency: newRow.frequency,
       notes: newRow.remarks,
-      q1_status: newRow.q1,
-      q2_status: newRow.q2,
-      q3_status: newRow.q3,
-      q4_status: newRow.q4,
+      monthly_status: {},
       sort_order: meetings.length + 1,
     }, {
       onSuccess: () => {
-        setNewRow({ client: '', frequency: 'Quarterly', q1: '', q2: '', q3: '', q4: '', remarks: '' });
+        setNewRow({ client: '', frequency: 'Quarterly', remarks: '' });
         setShowAdd(false);
         toast.success('Client meeting added');
       },
@@ -127,12 +136,12 @@ export default function ClientMeetings() {
     deleteMeeting.mutate({ id, leaderId: selectedLeaderId, fiscalYear: activeFY });
   }
 
-  const activeMeetings = meetings.filter(m => m.frequency !== 'Waiver');
-  const waived = meetings.filter(m => m.frequency === 'Waiver').length;
-  const allStatuses = activeMeetings.flatMap(m => [m.q1, m.q2, m.q3, m.q4]);
-  const upcoming = allStatuses.filter(s => s === 'Planned').length;
-  const overdue = allStatuses.filter(s => s === 'Overdue').length;
-  const completed = allStatuses.filter(s => s === 'Completed').length;
+  const activeMeetings = meetings.filter((m) => m.frequency !== 'Waiver');
+  const waived = meetings.filter((m) => m.frequency === 'Waiver').length;
+  const allStatuses = activeMeetings.flatMap((m) => FY_MONTH_KEYS.map((mk) => m.monthly?.[mk]?.status || ''));
+  const upcoming = allStatuses.filter((s) => s === 'Planned').length;
+  const overdue = allStatuses.filter((s) => s === 'Overdue').length;
+  const completed = allStatuses.filter((s) => s === 'Completed').length;
 
   if (isLoading) {
     return (
@@ -204,6 +213,7 @@ export default function ClientMeetings() {
         <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">Meeting Schedule</h2>
           <button
+            type="button"
             onClick={() => {
               if (!canEdit) {
                 toast.error(lockedMessage);
@@ -220,101 +230,121 @@ export default function ClientMeetings() {
           <p className="p-8 text-center text-sm text-muted-foreground">No client meetings for {fyLabel}.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: 900 }}>
+            <table className="w-full text-sm border-separate" style={{ minWidth: 1400, borderSpacing: 0 }}>
               <thead>
-                <tr className="bg-muted/30 border-b border-border">
-                  <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium sticky left-0 bg-muted/30 z-10" style={{ minWidth: 180 }}>Client Name</th>
-                  <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium" style={{ minWidth: 120 }}>Frequency</th>
-                  {QUARTERS.map(q => (
-                    <th key={q.key} className="text-center py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap" style={{ minWidth: 130 }}>{q.label}</th>
+                <tr style={{ background: HDR_BG, height: 36 }}>
+                  <th rowSpan={2} className="sticky left-0 z-30 text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 180 }}>Client Name</th>
+                  <th rowSpan={2} className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 100 }}>Frequency</th>
+                  {MEETING_QUARTER_GROUPS.map((g) => (
+                    <th key={g.key} colSpan={g.months.length} className="text-center py-2 px-2 text-[11px] uppercase tracking-wider text-cbva-navy font-semibold border-l border-border/40" style={{ background: HDR_BG }}>
+                      {g.label}
+                    </th>
                   ))}
-                  <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium col-remarks">Remarks</th>
-                  <th className="py-3 px-3 w-8"></th>
+                  <th rowSpan={2} className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 140 }}>Remarks</th>
+                  <th rowSpan={2} className="border-b border-border w-8" style={{ background: HDR_BG }} />
+                </tr>
+                <tr className="[&>th]:border-b [&>th]:border-border" style={{ background: HDR_BG }}>
+                  {MEETING_QUARTER_GROUPS.flatMap((g) =>
+                    g.months.map((mk) => (
+                      <th key={mk} className="text-center py-2 px-1 text-[10px] uppercase tracking-wider text-muted-foreground font-medium border-l border-border/40" style={{ background: HDR_BG, minWidth: 88 }}>
+                        {getFyMonthLabelYear(mk, activeFY).split(' ')[0]}
+                      </th>
+                    )),
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {meetings.map(m => {
+                {meetings.map((m) => {
                   const isWaived = m.frequency === 'Waiver';
                   const isExpanded = expandedIds.has(m.id);
                   return (
-                  <React.Fragment key={m.id}>
-                  <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${isWaived ? 'bg-muted/20' : ''}`}>
-                    <td className={`py-3 px-4 font-medium text-foreground text-xs sticky left-0 z-10 ${isWaived ? 'bg-muted/40' : 'bg-white'}`}>
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => toggleExpand(m.id)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0" title="Meeting minutes">
-                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        </button>
-                        <span className={`truncate ${isWaived ? 'text-muted-foreground' : ''}`}>{m.client}</span>
-                        {isWaived && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 whitespace-nowrap">Waived</span>}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <select disabled={!canEdit} className="text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:opacity-60 disabled:cursor-not-allowed" value={m.frequency} onChange={e => updateField(m.id, 'frequency', e.target.value)}>
-                        {FREQ_OPTIONS.map(f => <option key={f}>{f}</option>)}
-                      </select>
-                    </td>
-                    {QUARTERS.map(q => (
-                      <td key={q.key} className={`py-3 px-4 text-center ${isWaived ? 'opacity-50' : ''}`}>
-                        <div className="flex flex-col items-center gap-1">
-                          <input
-                            type="date"
-                            disabled={isWaived || !canEdit}
-                            className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed"
-                            value={m[`${q.key}Date`] || ''}
-                            onChange={e => updateField(m.id, `${q.key}Date`, e.target.value)}
-                          />
-                          <StatusCell value={m[q.key]} onChange={v => updateField(m.id, q.key, v)} disabled={isWaived || !canEdit} />
-                        </div>
-                      </td>
-                    ))}
-                    <td className="py-3 px-4">
-                      <input disabled={!canEdit} className="w-full text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground disabled:opacity-60" placeholder="Add remark..." maxLength={60} value={m.remarks} onChange={e => updateField(m.id, 'remarks', e.target.value)} />
-                    </td>
-                    <td className="py-3 px-3">
-                      {canEdit && (
-                        <button onClick={() => removeRow(m.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
-                      )}
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="border-b border-border/50 bg-muted/10">
-                      <td colSpan={8} className="px-4 py-3">
-                        <div className="flex items-start gap-2">
-                          <FileText className="w-3.5 h-3.5 text-muted-foreground mt-1 shrink-0" />
-                          <div className="flex-1">
-                            <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Meeting Minutes</label>
-                            <textarea
-                              disabled={!canEdit}
-                              className="mt-1 w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px] resize-y disabled:opacity-60"
-                              placeholder="Record meeting minutes, key decisions and action items..."
-                              defaultValue={m.minutes}
-                              onBlur={e => { if (canEdit && e.target.value !== m.minutes) updateField(m.id, 'minutes', e.target.value); }}
-                            />
+                    <React.Fragment key={m.id}>
+                      <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${isWaived ? 'bg-muted/20' : ''}`}>
+                        <td className={`py-3 px-4 font-medium text-foreground text-xs sticky left-0 z-10 border-b border-border/40 ${isWaived ? 'bg-muted/40' : 'bg-card'}`}>
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => toggleExpand(m.id)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0" title="Meeting minutes">
+                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            </button>
+                            <span className={`truncate ${isWaived ? 'text-muted-foreground' : ''}`}>{m.client}</span>
+                            {isWaived && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60 whitespace-nowrap">Waived</span>}
                           </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </React.Fragment>
+                        </td>
+                        <td className="py-3 px-4 border-b border-border/40">
+                          <select disabled={!canEdit} className="text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:opacity-60 disabled:cursor-not-allowed" value={m.frequency} onChange={(e) => updateField(m.id, 'frequency', e.target.value)}>
+                            {FREQ_OPTIONS.map((f) => <option key={f}>{f}</option>)}
+                          </select>
+                        </td>
+                        {FY_MONTH_KEYS.map((mk) => {
+                          const cell = m.monthly?.[mk] || { status: '', date: '' };
+                          return (
+                            <td key={mk} className={`py-2 px-1 text-center border-b border-border/40 border-l border-border/30 ${isWaived ? 'opacity-50' : ''}`}>
+                              <div className="flex flex-col items-center gap-1">
+                                <input
+                                  type="date"
+                                  disabled={isWaived || !canEdit}
+                                  className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed w-full max-w-[108px]"
+                                  value={cell.date || ''}
+                                  onChange={(e) => updateMonthField(m.id, mk, { date: e.target.value })}
+                                />
+                                <StatusCell
+                                  value={cell.status}
+                                  onChange={(v) => updateMonthField(m.id, mk, { status: v })}
+                                  disabled={isWaived || !canEdit}
+                                />
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td className="py-3 px-4 border-b border-border/40">
+                          <input disabled={!canEdit} className="w-full text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground disabled:opacity-60" placeholder="Add remark..." maxLength={60} value={m.remarks} onChange={(e) => updateField(m.id, 'remarks', e.target.value)} />
+                        </td>
+                        <td className="py-3 px-3 border-b border-border/40">
+                          {canEdit && (
+                            <button type="button" onClick={() => removeRow(m.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                          )}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-border/50 bg-muted/10">
+                          <td colSpan={bodyColSpan} className="px-4 py-3">
+                            <div className="flex items-start gap-2">
+                              <FileText className="w-3.5 h-3.5 text-muted-foreground mt-1 shrink-0" />
+                              <div className="flex-1">
+                                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Meeting Minutes</label>
+                                <textarea
+                                  disabled={!canEdit}
+                                  className="mt-1 w-full text-xs border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px] resize-y disabled:opacity-60"
+                                  placeholder="Record meeting minutes, key decisions and action items..."
+                                  defaultValue={m.minutes}
+                                  onBlur={(e) => { if (canEdit && e.target.value !== m.minutes) updateField(m.id, 'minutes', e.target.value); }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 {showAdd && (
                   <tr className="border-b border-border/50 bg-blue-50/30">
                     <td className="py-2 px-4 sticky left-0 bg-blue-50/30 z-10">
-                      <input autoFocus className="w-full text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Client name *" value={newRow.client} onChange={e => setNewRow(r => ({ ...r, client: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') addRow(); if (e.key === 'Escape') setShowAdd(false); }} />
+                      <input autoFocus className="w-full text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Client name *" value={newRow.client} onChange={(e) => setNewRow((r) => ({ ...r, client: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') addRow(); if (e.key === 'Escape') setShowAdd(false); }} />
                     </td>
                     <td className="py-2 px-4">
-                      <select className="text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none" value={newRow.frequency} onChange={e => setNewRow(r => ({ ...r, frequency: e.target.value }))}>
-                        {FREQ_OPTIONS.map(f => <option key={f}>{f}</option>)}
+                      <select className="text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none" value={newRow.frequency} onChange={(e) => setNewRow((r) => ({ ...r, frequency: e.target.value }))}>
+                        {FREQ_OPTIONS.map((f) => <option key={f}>{f}</option>)}
                       </select>
                     </td>
-                    {QUARTERS.map(q => <td key={q.key} className="py-2 px-4 text-center text-xs text-muted-foreground">—</td>)}
+                    {FY_MONTH_KEYS.map((mk) => (
+                      <td key={mk} className="py-2 px-1 text-center text-xs text-muted-foreground border-l border-border/30">—</td>
+                    ))}
                     <td className="py-2 px-4">
-                      <input className="w-full text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none" placeholder="Remarks..." maxLength={60} value={newRow.remarks} onChange={e => setNewRow(r => ({ ...r, remarks: e.target.value }))} />
+                      <input className="w-full text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none" placeholder="Remarks..." maxLength={60} value={newRow.remarks} onChange={(e) => setNewRow((r) => ({ ...r, remarks: e.target.value }))} />
                     </td>
                     <td className="py-2 px-3 flex gap-1">
-                      <button onClick={addRow} className="text-status-green hover:text-status-green/80 transition-colors"><CheckCircle2 className="w-4 h-4" /></button>
-                      <button onClick={() => setShowAdd(false)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={addRow} className="text-status-green hover:text-status-green/80 transition-colors"><CheckCircle2 className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => setShowAdd(false)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>
                 )}
