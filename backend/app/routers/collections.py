@@ -15,7 +15,7 @@ from app.services.fy_calendar import (
 )
 from app.services.engagement_derivation import planned_by_month_from_engagements
 from app.services import audit_service
-from app.services.fiscal_year import assert_fy_editable
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 
 router = APIRouter()
 
@@ -120,6 +120,7 @@ async def set_monthly_plan(
     as_of = date.today()
     if not is_fy_month_elapsed(body.month_key, body.fiscal_year, as_of):
         raise HTTPException(status_code=400, detail="Cannot set plan for a future/unavailable month")
+    assert_month_unlocked(body.fiscal_year, body.month_key, current_user, as_of)
 
     month_label = _month_label(body.month_key, body.fiscal_year)
     sort_order = FY_MONTH_KEYS.index(body.month_key) + 1 if body.month_key in FY_MONTH_KEYS else 0
@@ -186,6 +187,11 @@ async def update_collection_entry(
     enforce_leader_write_scope(current_user, existing["leader_id"])
     if existing.get("fiscal_year"):
         await assert_fy_editable(existing["fiscal_year"], current_user)
+
+    if body.planned is not None and existing.get("fiscal_year"):
+        mk = _key_from_entry_month(existing.get("month", ""))
+        if mk:
+            assert_month_unlocked(existing["fiscal_year"], mk, current_user)
 
     updates: dict = {}
     planned = body.planned if body.planned is not None else existing.get("planned", 0)

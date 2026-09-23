@@ -73,6 +73,53 @@ def is_future_fy_month(fiscal_year: str, month_key: str, as_of: date | None = No
     return not is_fy_month_elapsed(month_key, fiscal_year, as_of)
 
 
+MONTH_FULL_NAMES = {
+    "04": "April", "05": "May", "06": "June", "07": "July",
+    "08": "August", "09": "September", "10": "October", "11": "November",
+    "12": "December", "01": "January", "02": "February", "03": "March",
+}
+
+
+def month_key_from_label(label: str) -> str | None:
+    """Parse 'April 2025' style labels to FY month keys."""
+    if not label:
+        return None
+    for key, name in MONTH_FULL_NAMES.items():
+        if label.startswith(name):
+            return key
+    return None
+
+
+def get_month_lock_date(fiscal_year: str, month_key: str) -> date | None:
+    """
+    First calendar date when the target FY month becomes locked (20th of the
+    month after the target month's calendar period).
+    """
+    cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
+    if cal_year is None or month_key not in FY_MONTH_KEYS:
+        return None
+    month_num = int(month_key)
+    if month_num == 12:
+        return date(cal_year + 1, 1, 20)
+    return date(cal_year, month_num + 1, 20)
+
+
+def is_month_locked(
+    fiscal_year: str,
+    month_key: str,
+    user: dict | None = None,
+    as_of: date | None = None,
+) -> bool:
+    """True when status/projection edits for month_key should be blocked."""
+    if user and user.get("role") == "admin":
+        return False
+    lock_date = get_month_lock_date(fiscal_year, month_key)
+    if lock_date is None:
+        return False
+    as_of = as_of or date.today()
+    return as_of >= lock_date
+
+
 def get_available_fy_month_keys(fiscal_year: str, as_of: date | None = None) -> list[str]:
     """
     FY months visible in dashboards for a given fiscal year.

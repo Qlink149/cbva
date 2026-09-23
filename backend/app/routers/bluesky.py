@@ -11,7 +11,7 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
-from app.services.fiscal_year import assert_fy_editable
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 from app.services.fy_calendar import (
     FY_MONTH_KEYS,
     get_available_fy_month_keys,
@@ -181,6 +181,7 @@ async def upsert_bluesky(
     available = get_available_fy_month_keys(body.fiscal_year, as_of)
     if body.month_key not in available:
         raise HTTPException(status_code=400, detail="Month is outside the editable FY window")
+    assert_month_unlocked(body.fiscal_year, body.month_key, current_user, as_of)
 
     month_label = _month_label(body.month_key, body.fiscal_year)
     sort_order = FY_MONTH_KEYS.index(body.month_key) + 1
@@ -267,6 +268,10 @@ async def update_bluesky(
         raise HTTPException(status_code=404, detail="BlueSky entry not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await assert_fy_editable(existing["fiscal_year"], current_user)
+    mk = existing.get("month_key") or _key_from_month_label(existing.get("month", ""))
+    projection_fields = {"additional", "converted"}
+    if mk and any(k in body.model_dump(exclude_unset=True) for k in projection_fields):
+        assert_month_unlocked(existing["fiscal_year"], mk, current_user)
     # Opening is locked — strip from client updates; recompute closing from stored opening only.
     updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "opening"}
     updates["updated_at"] = datetime.now(timezone.utc)

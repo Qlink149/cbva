@@ -10,7 +10,7 @@ from app.core import database
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.dependencies.pagination import pagination_params
 from app.services.fy_calendar import get_fy_month_calendar_year
-from app.services.fiscal_year import assert_fy_editable
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 from app.services.bluesky_service import compute_converted_from_pipeline
 
 router = APIRouter()
@@ -386,6 +386,17 @@ async def update_engagement(
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates.pop("remarks", None)
+
+    fy = existing["fiscal_year"]
+    status_fields = {"green", "amber", "blue_sky"}
+    if any(f in updates for f in status_fields):
+        current_mk = f"{date.today().month:02d}"
+        assert_month_unlocked(fy, current_mk, current_user)
+
+    if body.monthly_plan is not None:
+        for mk, val in body.monthly_plan.items():
+            if val is not None and mk in FY_MONTH_KEYS:
+                assert_month_unlocked(fy, mk, current_user)
 
     # Merge partial monthly_plan updates into the existing (legacy-seeded) map
     if body.monthly_plan is not None:

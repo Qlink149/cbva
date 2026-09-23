@@ -11,7 +11,8 @@ from app.core import database
 from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope, require_roles
 from app.services.engagement_derivation import materialize_leader_derived_data
-from app.services.fiscal_year import assert_fy_editable
+from app.services.fy_calendar import month_key_from_label
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 from app.services import audit_service
 
 router = APIRouter()
@@ -213,6 +214,11 @@ async def update_snapshot(
     enforce_leader_write_scope(current_user, existing["leader_id"])
     await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    status_fields = {"green", "amber", "blue_sky"}
+    if any(f in updates for f in status_fields) and existing.get("snapshot_type") == "monthly":
+        mk = existing.get("month_key") or month_key_from_label(existing.get("label", ""))
+        if mk:
+            assert_month_unlocked(existing["fiscal_year"], mk, current_user)
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.pipeline_snapshots.find_one_and_update(
         {"_id": ObjectId(snapshot_id)}, {"$set": updates}, return_document=True

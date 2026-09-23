@@ -4,6 +4,7 @@ from datetime import datetime, timezone, date
 from fastapi import HTTPException
 from app.core import database
 from app.core.serialization import serialize_datetime
+from app.services.fy_calendar import is_month_locked
 
 
 def calendar_fy_slug(as_of: date | None = None) -> str:
@@ -55,6 +56,18 @@ async def assert_fy_editable(fiscal_year: str, user: dict) -> None:
         status_code=403,
         detail="This fiscal year is locked for editing. Ask an admin to enable editing in Admin Settings.",
     )
+
+
+def assert_month_unlocked(fiscal_year: str, month_key: str, user: dict, as_of: date | None = None) -> None:
+    """Raise 403 when month_key is past the 20th-of-next-month hard-lock (admins bypass)."""
+    if is_month_locked(fiscal_year, month_key, user, as_of):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This month's status and projections are locked for editing. "
+                "Data freezes on the 20th of the following month. Ask an admin if you need changes."
+            ),
+        )
 
 
 async def list_active_financial_years() -> list[dict]:
