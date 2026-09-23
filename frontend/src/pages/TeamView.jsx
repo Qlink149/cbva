@@ -174,7 +174,12 @@ export default function TeamView({ user }) {
 
       {/* Team Member Cards */}
       <div>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Team Members</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-foreground">Team Members</h2>
+          <p className="text-xs text-muted-foreground">
+            {currentHeadcount} member{currentHeadcount !== 1 ? 's' : ''}
+          </p>
+        </div>
         {teamMembers.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground bg-card rounded-xl border border-border/60">
             <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
