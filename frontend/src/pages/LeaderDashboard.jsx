@@ -247,6 +247,9 @@ export default function LeaderDashboard({ user }) {
             selectedMonth={newClientsMonth}
             onMonthChange={setNewClientsMonth}
             availableMonths={availableNewClientMonths}
+            leaderId={selectedLeaderId}
+            fiscalYear={activeFY}
+            canEdit={canEditFyActual}
           />
           <AdditionalWorkCard
             rows={additionalWork}

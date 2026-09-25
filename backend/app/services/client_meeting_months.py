@@ -11,6 +11,32 @@ QUARTER_MONTHS = {
 
 EMPTY_MONTH = {"status": "", "date": ""}
 
+QUARTER_KEYS = ("q1", "q2", "q3", "q4")
+
+
+def quarter_has_data(doc: dict, quarter: str) -> bool:
+    """True when qN_status or qN_date is non-empty after strip."""
+    status = str(doc.get(f"{quarter}_status") or "").strip()
+    date_val = str(doc.get(f"{quarter}_date") or "").strip()
+    return bool(status or date_val)
+
+
+def quarter_data_flags(doc: dict) -> dict[str, bool]:
+    return {q: quarter_has_data(doc, q) for q in QUARTER_KEYS}
+
+
+def resolve_monthly_from_quarterly(doc: dict) -> dict[str, dict]:
+    """Force quarterly→monthly mapping; ignores existing monthly_status."""
+    monthly: dict[str, dict] = {}
+    for q, months in QUARTER_MONTHS.items():
+        status = doc.get(f"{q}_status", "") or ""
+        date_val = doc.get(f"{q}_date", "") or ""
+        for mk in months:
+            monthly[mk] = {"status": status, "date": date_val}
+    for mk in FY_MONTH_KEYS:
+        monthly.setdefault(mk, EMPTY_MONTH.copy())
+    return monthly
+
 
 def resolve_monthly_status(doc: dict) -> dict[str, dict]:
     """Return month_key → {status, date}, seeding from quarterly fields when absent."""

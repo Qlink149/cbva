@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { UserPlus } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import ManualEntryToggle from '@/components/shared/ManualEntryToggle';
 
 const selectClass = 'text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-ring';
 
@@ -11,6 +12,9 @@ export default function NewClientsCard({
   selectedMonth = '',
   onMonthChange,
   availableMonths = [],
+  leaderId,
+  fiscalYear,
+  canEdit = false,
 }) {
   const total = useMemo(
     () => clients.reduce((s, c) => s + (c.total || 0), 0),
@@ -58,6 +62,15 @@ export default function NewClientsCard({
         </div>
       </div>
 
+      <ManualEntryToggle
+        leaderId={leaderId}
+        fiscalYear={fiscalYear}
+        entryType="new_client"
+        sourceTab="dashboard"
+        canEdit={canEdit}
+        label="Add new client"
+      />
+
       {clients.length === 0 ? (
         <p className="text-sm text-slate-400 italic">No new engagements created this FY yet.</p>
       ) : (
@@ -67,7 +80,12 @@ export default function NewClientsCard({
               key={c.id}
               className="flex items-center justify-between gap-3 rounded-lg bg-white border border-slate-200/80 px-3 py-1.5"
             >
-              <span className="text-xs font-medium text-slate-700 truncate">{c.name}</span>
+              <span className="text-xs font-medium text-slate-700 truncate">
+                {c.name}
+                {c.nature_of_work && (
+                  <span className="text-slate-400 font-normal ml-1.5">{c.nature_of_work}</span>
+                )}
+              </span>
               <span className="text-[10px] font-tabular text-slate-500 whitespace-nowrap">
                 {formatINRFull(c.total || 0)}
               </span>

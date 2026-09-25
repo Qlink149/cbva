@@ -31,6 +31,19 @@ export default function TeamMetrics({ hiringReqs = [], teamMembers = [], approve
       });
   }, [teamMembers, approvedByDesignation]);
 
+  const headcountTotals = useMemo(
+    () =>
+      headcountRows.reduce(
+        (acc, r) => ({
+          existing: acc.existing + r.existing,
+          boardApproved: acc.boardApproved + r.boardApproved,
+          vacancies: acc.vacancies + r.vacancies,
+        }),
+        { existing: 0, boardApproved: 0, vacancies: 0 }
+      ),
+    [headcountRows]
+  );
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
       <div className="px-6 py-4 border-b border-border/60">
@@ -92,6 +105,16 @@ export default function TeamMetrics({ hiringReqs = [], teamMembers = [], approve
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-muted/30 border-t border-border">
+                    <td className="py-2.5 px-4 text-xs font-bold uppercase tracking-wider text-foreground">Total</td>
+                    <td className="py-2.5 px-2 text-center font-bold text-foreground">{headcountTotals.existing}</td>
+                    <td className="py-2.5 px-2 text-center font-bold text-foreground">{headcountTotals.boardApproved}</td>
+                    <td className={`py-2.5 px-2 text-center font-bold ${headcountTotals.vacancies > 0 ? 'text-status-amber' : 'text-foreground'}`}>
+                      {headcountTotals.vacancies}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

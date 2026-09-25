@@ -1,10 +1,8 @@
 ﻿import React from 'react';
 import EngagementsTable from '@/components/clients/EngagementsTable';
-import ManualEntryToggle from '@/components/shared/ManualEntryToggle';
 import { useClientActions } from '@/lib/ClientActionsContext';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useLeader } from '@/hooks/useLeaders';
-import { useFyEditAccess } from '@/hooks/useFyEditAccess';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 import { getFyLabel } from '@/lib/fiscalYear';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,9 +11,7 @@ export default function Clients({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
   const { data: leader } = useLeader(selectedLeaderId);
   const { clients, isLoading } = useClientActions();
-  const { canEdit: fyCanEdit } = useFyEditAccess();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
-  const canEdit = fyCanEdit && activeFY !== '2526';
 
   return (
     <div className="space-y-6 pb-12">
@@ -34,15 +30,6 @@ export default function Clients({ user }) {
         </div>
         <LeaderFYSelector />
       </div>
-
-      <ManualEntryToggle
-        leaderId={selectedLeaderId}
-        fiscalYear={activeFY}
-        entryType="new_client"
-        sourceTab="engagements"
-        canEdit={canEdit}
-        label="Add entry"
-      />
 
       <EngagementsTable key={`${selectedLeaderId}-${activeFY}`} fiscalYear={activeFY} fyLabel={fyLabel} />
     </div>

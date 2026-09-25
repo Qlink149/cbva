@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CloudSun } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
 import { parseRupeeInput } from '@/lib/parseAmount';
+import { useMonthEditAccess } from '@/hooks/useMonthEditAccess';
 
 function fmtCell(val) {
   if (val === null || val === undefined || val === '') return '—';
@@ -98,9 +99,10 @@ export default function BlueSkyTableReal({
   onUpdateRemarks,
   onUpdateAmounts,
 }) {
+  const { canEditMonth } = useMonthEditAccess();
   const firstWithData = blueSkyRows.find((r) => r.has_data !== false && r.opening != null);
   const openingChip = firstWithData?.opening ?? totals?.opening;
-  const canEditRow = (row) => !!row.month_key && typeof onUpdateAmounts === 'function';
+  const canEditRow = (row) => !!row.month_key && typeof onUpdateAmounts === 'function' && canEditMonth(row.month_key);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">

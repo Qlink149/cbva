@@ -12,11 +12,17 @@ import {
   FY_MONTH_KEYS,
 } from '@/hooks/useClientMeetings';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
-import ManualEntryToggle from '@/components/shared/ManualEntryToggle';
 import { useFyEditAccess } from '@/hooks/useFyEditAccess';
 import { MEETING_QUARTER_GROUPS } from '@/lib/meetingMonths';
 import { getFyMonthLabelYear } from '@/lib/fyMonths';
 import { toast } from 'sonner';
+
+const ROLLUP_DOT_STYLES = {
+  Completed: 'bg-status-green',
+  Overdue: 'bg-red-500',
+  Planned: 'bg-cbva-navy',
+  '': 'bg-muted-foreground/30',
+};
 
 const HDR_BG = '#F8FAFC';
 const FREQ_OPTIONS = ['Monthly', 'Quarterly', 'Custom', 'Waiver'];
@@ -67,8 +73,15 @@ export default function ClientMeetings() {
   const [showAdd, setShowAdd] = useState(false);
   const [newRow, setNewRow] = useState({ client: '', frequency: 'Quarterly', remarks: '' });
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [collapsedQuarters, setCollapsedQuarters] = useState(
+    () => new Set(MEETING_QUARTER_GROUPS.map((g) => g.key)),
+  );
 
-  const bodyColSpan = 2 + FY_MONTH_KEYS.length + 2;
+  const visibleMonthCols = MEETING_QUARTER_GROUPS.reduce(
+    (sum, g) => sum + (collapsedQuarters.has(g.key) ? 1 : g.months.length),
+    0,
+  );
+  const bodyColSpan = 2 + visibleMonthCols + 2;
 
   function toggleExpand(id) {
     setExpandedIds((prev) => {
@@ -77,6 +90,23 @@ export default function ClientMeetings() {
       else next.add(id);
       return next;
     });
+  }
+
+  function toggleQuarter(key) {
+    setCollapsedQuarters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function expandAllQuarters() {
+    setCollapsedQuarters(new Set());
+  }
+
+  function collapseAllQuarters() {
+    setCollapsedQuarters(new Set(MEETING_QUARTER_GROUPS.map((g) => g.key)));
   }
 
   function updateField(id, field, val) {
@@ -210,30 +240,29 @@ export default function ClientMeetings() {
         </div>
       </div>
 
-      <ManualEntryToggle
-        leaderId={selectedLeaderId}
-        fiscalYear={activeFY}
-        entryType="additional_work"
-        sourceTab="meetings"
-        canEdit={canEdit}
-      />
-
       <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-        <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-sm font-semibold text-foreground">Meeting Schedule</h2>
-          <button
-            type="button"
-            onClick={() => {
-              if (!canEdit) {
-                toast.error(lockedMessage);
-                return;
-              }
-              setShowAdd(true);
-            }}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium ${!canEdit ? 'opacity-50' : ''}`}
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Client
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 text-xs">
+              <button type="button" onClick={expandAllQuarters} className="px-2 py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">Expand all</button>
+              <span className="text-border">|</span>
+              <button type="button" onClick={collapseAllQuarters} className="px-2 py-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">Collapse all</button>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!canEdit) {
+                  toast.error(lockedMessage);
+                  return;
+                }
+                setShowAdd(true);
+              }}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium ${!canEdit ? 'opacity-50' : ''}`}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Client
+            </button>
+          </div>
         </div>
         {meetings.length === 0 && !showAdd ? (
           <p className="p-8 text-center text-sm text-muted-foreground">No client meetings for {fyLabel}.</p>
@@ -244,22 +273,35 @@ export default function ClientMeetings() {
                 <tr style={{ background: HDR_BG, height: 36 }}>
                   <th rowSpan={2} className="sticky left-0 z-30 text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 180 }}>Client Name</th>
                   <th rowSpan={2} className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 100 }}>Frequency</th>
-                  {MEETING_QUARTER_GROUPS.map((g) => (
-                    <th key={g.key} colSpan={g.months.length} className="text-center py-2 px-2 text-[11px] uppercase tracking-wider text-cbva-navy font-semibold border-l border-border/40" style={{ background: HDR_BG }}>
-                      {g.label}
-                    </th>
-                  ))}
+                  {MEETING_QUARTER_GROUPS.map((g) => {
+                    const isCollapsed = collapsedQuarters.has(g.key);
+                    return (
+                      <th key={g.key} colSpan={isCollapsed ? 1 : g.months.length} className="text-center py-2 px-2 text-[11px] uppercase tracking-wider text-cbva-navy font-semibold border-l border-border/40" style={{ background: HDR_BG }}>
+                        <button type="button" onClick={() => toggleQuarter(g.key)} className="inline-flex items-center gap-1 hover:text-cbva-navy/80 transition-colors">
+                          {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {g.label}
+                        </button>
+                      </th>
+                    );
+                  })}
                   <th rowSpan={2} className="text-left py-3 px-4 text-[11px] uppercase tracking-wider text-muted-foreground font-medium border-b border-border" style={{ background: HDR_BG, minWidth: 140 }}>Remarks</th>
                   <th rowSpan={2} className="border-b border-border w-8" style={{ background: HDR_BG }} />
                 </tr>
                 <tr className="[&>th]:border-b [&>th]:border-border" style={{ background: HDR_BG }}>
-                  {MEETING_QUARTER_GROUPS.flatMap((g) =>
-                    g.months.map((mk) => (
+                  {MEETING_QUARTER_GROUPS.flatMap((g) => {
+                    if (collapsedQuarters.has(g.key)) {
+                      return [
+                        <th key={g.key} className="text-center py-2 px-1 text-[10px] uppercase tracking-wider text-muted-foreground font-medium border-l border-border/40" style={{ background: HDR_BG, minWidth: 88 }}>
+                          Status
+                        </th>,
+                      ];
+                    }
+                    return g.months.map((mk) => (
                       <th key={mk} className="text-center py-2 px-1 text-[10px] uppercase tracking-wider text-muted-foreground font-medium border-l border-border/40" style={{ background: HDR_BG, minWidth: 88 }}>
                         {getFyMonthLabelYear(mk, activeFY).split(' ')[0]}
                       </th>
-                    )),
-                  )}
+                    ));
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -283,26 +325,52 @@ export default function ClientMeetings() {
                             {FREQ_OPTIONS.map((f) => <option key={f}>{f}</option>)}
                           </select>
                         </td>
-                        {FY_MONTH_KEYS.map((mk) => {
-                          const cell = m.monthly?.[mk] || { status: '', date: '' };
-                          return (
-                            <td key={mk} className={`py-2 px-1 text-center border-b border-border/40 border-l border-border/30 ${isWaived ? 'opacity-50' : ''}`}>
-                              <div className="flex flex-col items-center gap-1">
-                                <input
-                                  type="date"
-                                  disabled={isWaived || !canEdit}
-                                  className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed w-full max-w-[108px]"
-                                  value={cell.date || ''}
-                                  onChange={(e) => updateMonthField(m.id, mk, { date: e.target.value })}
-                                />
-                                <StatusCell
-                                  value={cell.status}
-                                  onChange={(v) => updateMonthField(m.id, mk, { status: v })}
-                                  disabled={isWaived || !canEdit}
-                                />
-                              </div>
-                            </td>
-                          );
+                        {MEETING_QUARTER_GROUPS.flatMap((g) => {
+                          if (collapsedQuarters.has(g.key)) {
+                            const statuses = g.months.map((mk) => m.monthly?.[mk]?.status || '');
+                            const completedCount = statuses.filter((s) => s === 'Completed').length;
+                            const hasOverdue = statuses.some((s) => s === 'Overdue');
+                            const countColor = isWaived
+                              ? 'text-muted-foreground'
+                              : hasOverdue
+                                ? 'text-red-600'
+                                : completedCount === g.months.length
+                                  ? 'text-status-green'
+                                  : 'text-muted-foreground';
+                            return [
+                              <td key={g.key} className={`py-2 px-1 text-center border-b border-border/40 border-l border-border/30 ${isWaived ? 'opacity-50' : ''}`}>
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className="flex items-center gap-0.5">
+                                    {statuses.map((s, i) => (
+                                      <span key={i} className={`w-1.5 h-1.5 rounded-full ${ROLLUP_DOT_STYLES[s] || ROLLUP_DOT_STYLES['']}`} />
+                                    ))}
+                                  </div>
+                                  <span className={`text-[10px] font-medium ${countColor}`}>{completedCount}/{g.months.length}</span>
+                                </div>
+                              </td>,
+                            ];
+                          }
+                          return g.months.map((mk) => {
+                            const cell = m.monthly?.[mk] || { status: '', date: '' };
+                            return (
+                              <td key={mk} className={`py-2 px-1 text-center border-b border-border/40 border-l border-border/30 ${isWaived ? 'opacity-50' : ''}`}>
+                                <div className="flex flex-col items-center gap-1">
+                                  <input
+                                    type="date"
+                                    disabled={isWaived || !canEdit}
+                                    className="text-[10px] border border-transparent hover:border-border rounded px-1 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-foreground disabled:cursor-not-allowed w-full max-w-[108px]"
+                                    value={cell.date || ''}
+                                    onChange={(e) => updateMonthField(m.id, mk, { date: e.target.value })}
+                                  />
+                                  <StatusCell
+                                    value={cell.status}
+                                    onChange={(v) => updateMonthField(m.id, mk, { status: v })}
+                                    disabled={isWaived || !canEdit}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          });
                         })}
                         <td className="py-3 px-4 border-b border-border/40">
                           <input disabled={!canEdit} className="w-full text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground disabled:opacity-60" placeholder="Add remark..." maxLength={60} value={m.remarks} onChange={(e) => updateField(m.id, 'remarks', e.target.value)} />
@@ -345,9 +413,13 @@ export default function ClientMeetings() {
                         {FREQ_OPTIONS.map((f) => <option key={f}>{f}</option>)}
                       </select>
                     </td>
-                    {FY_MONTH_KEYS.map((mk) => (
-                      <td key={mk} className="py-2 px-1 text-center text-xs text-muted-foreground border-l border-border/30">—</td>
-                    ))}
+                    {MEETING_QUARTER_GROUPS.flatMap((g) =>
+                      collapsedQuarters.has(g.key)
+                        ? [<td key={g.key} className="py-2 px-1 text-center text-xs text-muted-foreground border-l border-border/30">—</td>]
+                        : g.months.map((mk) => (
+                            <td key={mk} className="py-2 px-1 text-center text-xs text-muted-foreground border-l border-border/30">—</td>
+                          )),
+                    )}
                     <td className="py-2 px-4">
                       <input className="w-full text-xs border border-border rounded px-2 py-1 bg-white focus:outline-none" placeholder="Remarks..." maxLength={60} value={newRow.remarks} onChange={(e) => setNewRow((r) => ({ ...r, remarks: e.target.value }))} />
                     </td>

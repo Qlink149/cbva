@@ -3,6 +3,7 @@ import { Briefcase } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
 import { parseRupeeInput } from '@/lib/parseAmount';
 import { useCreateAdditionalWork } from '@/hooks/useAdditionalWork';
+import { useMonthEditAccess } from '@/hooks/useMonthEditAccess';
 import { toast } from 'sonner';
 
 const MONTH_LABELS = {
@@ -20,11 +21,14 @@ export default function AdditionalWorkCard({
   isLoading = false,
 }) {
   const createMutation = useCreateAdditionalWork(leaderId, fiscalYear);
+  const { canEditMonth, monthLockedMessage } = useMonthEditAccess();
   const [clientName, setClientName] = useState('');
+  const [natureOfWork, setNatureOfWork] = useState('');
   const [amountDraft, setAmountDraft] = useState('');
   const [monthKey, setMonthKey] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
 
   const total = useMemo(() => rows.reduce((s, r) => s + (r.amount || 0), 0), [rows]);
+  const monthEditable = useMemo(() => canEditMonth(monthKey), [canEditMonth, monthKey]);
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -32,10 +36,19 @@ export default function AdditionalWorkCard({
       toast.error('This fiscal year is locked for editing.');
       return;
     }
+    if (!monthEditable) {
+      toast.error(monthLockedMessage);
+      return;
+    }
     const name = clientName.trim();
+    const nature = natureOfWork.trim();
     const amount = parseRupeeInput(amountDraft);
     if (!name) {
       toast.error('Client name is required');
+      return;
+    }
+    if (!nature) {
+      toast.error('Nature of work is required');
       return;
     }
     if (amount == null || amount < 0) {
@@ -45,11 +58,14 @@ export default function AdditionalWorkCard({
     try {
       await createMutation.mutateAsync({
         client_name: name,
+        nature_of_work: nature,
         month_key: monthKey,
         amount,
+        source_tab: 'dashboard',
         notes: '',
       });
       setClientName('');
+      setNatureOfWork('');
       setAmountDraft('');
     } catch (err) {
       toast.error(err?.response?.data?.detail || err?.message || 'Failed to add additional work');
@@ -92,6 +108,9 @@ export default function AdditionalWorkCard({
             >
               <span className="text-xs font-medium text-slate-700 truncate">
                 {r.client_name}
+                {r.nature_of_work && (
+                  <span className="text-slate-400 font-normal ml-1.5">{r.nature_of_work}</span>
+                )}
                 <span className="text-slate-400 font-normal ml-1.5">
                   {MONTH_LABELS[r.month_key] || r.month_key}
                 </span>
@@ -112,6 +131,12 @@ export default function AdditionalWorkCard({
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
           />
+          <input
+            className="flex-1 min-w-[120px] text-xs border border-slate-200 rounded px-2 py-1.5 bg-white"
+            placeholder="Nature of work"
+            value={natureOfWork}
+            onChange={(e) => setNatureOfWork(e.target.value)}
+          />
           <select
             className="text-xs border border-slate-200 rounded px-2 py-1.5 bg-white"
             value={monthKey}
@@ -129,7 +154,7 @@ export default function AdditionalWorkCard({
           />
           <button
             type="submit"
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || !monthEditable}
             className="text-xs font-medium px-2.5 py-1.5 rounded bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
           >
             Add
