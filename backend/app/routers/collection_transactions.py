@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from app.schemas.collection_transaction import CollectionTransactionCreate, CollectionTransactionResponse
 from app.core import database
@@ -108,6 +108,20 @@ async def create_collection_transaction(
     old_balance = engagement.get("balance", 0)
 
     now = datetime.now(timezone.utc)
+
+    # Idempotency guard: a duplicate of the same write (double-click, retry,
+    # slow-network double-submit) arriving within a short window is treated
+    # as the same request rather than a second transaction.
+    dedupe_window_start = now - timedelta(seconds=10)
+    duplicate = await database.db.collection_transactions.find_one({
+        "engagement_id": body.engagement_id,
+        "month": body.month,
+        "amount_collected": body.amount_collected,
+        "created_at": {"$gte": dedupe_window_start},
+    })
+    if duplicate:
+        return _serialize(duplicate)
+
     doc = {
         "leader_id": body.leader_id,
         "fiscal_year": body.fiscal_year,

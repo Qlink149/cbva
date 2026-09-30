@@ -301,6 +301,7 @@ function RemarkCell({ value, onChange }) {
 function CollectedMonthCell({ value, onSetAmount, pending }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const committingRef = useRef(false);
 
   function startEdit() {
     setDraft(value > 0 ? String(value) : '0');
@@ -308,9 +309,19 @@ function CollectedMonthCell({ value, onSetAmount, pending }) {
   }
 
   async function commit() {
+    if (committingRef.current) return;
     const next = parseRupeeInput(draft);
-    if (next != null && next !== (value || 0)) await onSetAmount(next);
-    setEditing(false);
+    if (next == null || next === (value || 0)) {
+      setEditing(false);
+      return;
+    }
+    committingRef.current = true;
+    try {
+      await onSetAmount(next);
+    } finally {
+      committingRef.current = false;
+      setEditing(false);
+    }
   }
 
   if (editing) {
@@ -324,7 +335,7 @@ function CollectedMonthCell({ value, onSetAmount, pending }) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') commit();
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
             if (e.key === 'Escape') setEditing(false);
           }}
         />
@@ -552,6 +563,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   const addTransaction = useAddTransaction(selectedLeaderId, activeFY);
   const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
   const [settingCollectedKey, setSettingCollectedKey] = useState(null);
+  const inFlightCollectedKeysRef = useRef(new Set());
 
   const elStatusOptions = useMemo(() => {
     const s = new Set(clients.map(c => c.elStatus).filter(Boolean));
@@ -620,6 +632,8 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     if (isFy2526) return;
     if (!selectedLeaderId || !activeFY || !client?.id) return;
     const key = `${client.id}:${monthKey}`;
+    if (inFlightCollectedKeysRef.current.has(key)) return;
+    inFlightCollectedKeysRef.current.add(key);
     setSettingCollectedKey(key);
     try {
       const existing = transactions.filter(
@@ -640,6 +654,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
         });
       }
     } finally {
+      inFlightCollectedKeysRef.current.delete(key);
       setSettingCollectedKey(null);
     }
   }
