@@ -60,7 +60,7 @@ export default function NavDrawer({ open, onClose, sections = [] }) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
               <img
-                src="https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png"
+                src="/cbv-logo.png"
                 alt="CBVA"
                 className="h-12 w-auto"
               />

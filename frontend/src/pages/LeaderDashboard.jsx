@@ -139,7 +139,7 @@ export default function LeaderDashboard({ user }) {
               </p>
             </div>
             <img
-              src="https://media.base44.com/images/public/69fe2ae7dcf5259c46299cee/e5b8e8806_CBV_Logo1.png"
+              src="/cbv-logo.png"
               alt="CBV & Associates LLP"
               className="h-28 object-contain"
             />
@@ -166,7 +166,7 @@ export default function LeaderDashboard({ user }) {
             </p>
           </div>
           <img
-            src="https://media.base44.com/images/public/69fe2ae7dcf5259c46299cee/e5b8e8806_CBV_Logo1.png"
+            src="/cbv-logo.png"
             alt="CBV & Associates LLP"
             className="h-28 object-contain"
           />
