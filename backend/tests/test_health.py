@@ -29,3 +29,23 @@ async def test_ready_503_when_ping_fails(client, monkeypatch):
     res = await client.get("/health/ready")
     assert res.status_code == 503
     assert res.json()["db"] == "down"
+
+
+@pytest.mark.asyncio
+async def test_consolidated_summary_503_when_not_seeded(client, seed_users, monkeypatch):
+    from bson import ObjectId
+    from app.services import consolidated_service
+    from tests.conftest import auth_header
+
+    async def _nothing(*a, **k):
+        return []
+
+    monkeypatch.setattr(consolidated_service, "ensure_imported_matrix", _nothing)
+    admin_id = ObjectId()
+    await database.db.users.insert_one({
+        "_id": admin_id, "full_name": "Adm", "email": "adm2@test.com", "password_hash": "x",
+        "role": "admin", "leader_id": None, "is_active": True, "refresh_token_hashes": [],
+    })
+    res = await client.get("/api/consolidated-summary/?fiscal_year=2627", headers=auth_header(admin_id, "admin", None))
+    assert res.status_code == 503
+    assert "not seeded" in res.json()["detail"]
