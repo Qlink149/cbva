@@ -42,6 +42,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./cloudflare-ips.conf:/etc/caddy/cloudflare-ips.conf:ro
+      - ./certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
     mem_limit: 128m
