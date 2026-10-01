@@ -32,6 +32,10 @@ async def test_preflight_allowed_origin_succeeds():
     "https://evil.example.com",
     "https://anything.vercel.app",
     "https://preview.cbva.pages.dev",
+    "https://abc123.cbva.pages.dev",
+    "null",
+    "https://localhost:5173",           # same host, wrong scheme
+    "http://localhost:5173.evil.io",  # suffix trick
 ])
 async def test_preflight_other_origin_rejected(origin):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -47,3 +51,31 @@ async def test_preflight_disallowed_header_rejected():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         res = await ac.options("/api/auth/login", headers=headers)
     assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_preflight_patch_with_authorization_header_allowed():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.options("/api/engagements/abc/remarks", headers=_preflight_headers(ALLOWED, "PATCH"))
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == ALLOWED
+    allowed_headers = res.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed_headers and "content-type" in allowed_headers
+    assert "PATCH" in res.headers["access-control-allow-methods"]
+
+
+@pytest.mark.asyncio
+async def test_no_credentials_header_on_actual_responses():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/health", headers={"Origin": ALLOWED})
+        pre = await ac.options("/health", headers=_preflight_headers(ALLOWED, "GET"))
+    assert res.headers["access-control-allow-origin"] == ALLOWED
+    assert "access-control-allow-credentials" not in res.headers
+    assert "access-control-allow-credentials" not in pre.headers
+
+
+@pytest.mark.asyncio
+async def test_actual_request_from_other_origin_gets_no_acao():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/health", headers={"Origin": "https://evil.example.com"})
+    assert "access-control-allow-origin" not in res.headers
