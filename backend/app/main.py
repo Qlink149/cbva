@@ -12,7 +12,7 @@ import sys
 from app.core.config import settings
 from app.core.database import connect_db, close_db, ensure_db_connected
 from app.services.audit_service import request_id_ctx
-from app.core.limiter import limiter
+from app.core.limiter import limiter, client_ip
 from app.routers import (
     auth,
     leaders,
@@ -96,7 +96,7 @@ async def ensure_db_middleware(request: Request, call_next):
 async def log_requests(request: Request, call_next):
     response = await call_next(request)
     if response.status_code >= 400:
-        logger.warning("{} {} -> {}", request.method, request.url.path, response.status_code)
+        logger.warning("{} {} -> {} ip={}", request.method, request.url.path, response.status_code, client_ip(request))
     return response
 
 app.add_middleware(

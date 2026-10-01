@@ -1,43 +1,75 @@
+import ipaddress
 import time
 
 from fastapi import HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.core.config import settings
+
+_TRUSTED_NETWORKS = settings.trusted_proxy_networks
+
+
+def _is_trusted_peer(peer: str | None) -> bool:
+    try:
+        addr = ipaddress.ip_address(peer or "")
+    except ValueError:
+        return False
+    return any(addr in net for net in _TRUSTED_NETWORKS)
+
 
 def client_ip(request: Request) -> str:
-    """Real client IP.
+    """Real client IP for rate-limit buckets and logs.
 
-    CF-Connecting-IP is trusted only because the API container's port is never published:
-    Caddy (which is fed by Cloudflare) is the sole peer. Do not expose uvicorn directly.
+    CF-Connecting-IP is honoured ONLY when the immediate TCP peer is a trusted proxy (Caddy on the
+    compose network, see TRUSTED_PROXY_CIDRS). Caddy overwrites that header with the Cloudflare-verified
+    client IP. A direct connection from anywhere else cannot choose its own bucket: the header is
+    ignored and the peer address is used. Requires uvicorn to NOT rewrite request.client from
+    X-Forwarded-For (i.e. no --forwarded-allow-ips '*').
     """
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip:
-        return cf_ip.strip()
-    return get_remote_address(request)
+    peer = get_remote_address(request)
+    cf_ip = (request.headers.get("cf-connecting-ip") or "").strip()
+    if cf_ip and _is_trusted_peer(peer):
+        try:
+            return str(ipaddress.ip_address(cf_ip))
+        except ValueError:
+            pass
+    return peer
 
 
 limiter = Limiter(key_func=client_ip)
 
 
 class _AttemptWindow:
-    """Tiny in-process sliding window (single-worker deployment; resets on restart)."""
+    """Tiny in-process sliding window (single-worker deployment; resets on restart).
 
-    def __init__(self, limit: int, window_seconds: int, max_keys: int = 10_000):
+    Memory is bounded: expired keys are swept every `sweep_every` calls, and the table is hard-capped.
+    """
+
+    def __init__(self, limit: int, window_seconds: int, max_keys: int = 10_000, sweep_every: int = 256):
         self.limit = limit
         self.window = window_seconds
         self.max_keys = max_keys
+        self.sweep_every = sweep_every
+        self._calls = 0
         self._hits: dict[str, list[float]] = {}
+
+    def _sweep(self, now: float) -> None:
+        for k in [k for k, v in self._hits.items() if not v or now - v[-1] >= self.window]:
+            del self._hits[k]
 
     def check(self, key: str) -> None:
         now = time.monotonic()
+        self._calls += 1
+        if self._calls % self.sweep_every == 0 or len(self._hits) >= self.max_keys:
+            self._sweep(now)
         hits = [t for t in self._hits.get(key, []) if now - t < self.window]
         if len(hits) >= self.limit:
             self._hits[key] = hits
             raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
         hits.append(now)
         if len(self._hits) >= self.max_keys and key not in self._hits:
-            self._hits.clear()  # crude bound on memory
+            self._hits.clear()  # last-resort cap
         self._hits[key] = hits
 
     def reset(self) -> None:

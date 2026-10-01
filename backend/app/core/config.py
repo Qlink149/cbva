@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     FRONTEND_ORIGIN: str = "http://localhost:5173,http://127.0.0.1:5173"
     # Optional regex for preview URLs. Leave unset in production.
     CORS_ORIGIN_REGEX: str | None = None
+    # Peers allowed to vouch for the client IP via CF-Connecting-IP (the Caddy container on the compose
+    # network). Anything else connecting directly cannot influence rate-limit buckets.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     # First-admin bootstrap (python -m app.cli bootstrap). Not read by the API itself.
     ADMIN_EMAIL: str | None = None
     ADMIN_PASSWORD: str | None = None
@@ -55,6 +58,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.FRONTEND_ORIGIN.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_networks(self) -> list:
+        import ipaddress
+        return [ipaddress.ip_network(c.strip(), strict=False) for c in self.TRUSTED_PROXY_CIDRS.split(",") if c.strip()]
 
     @property
     def is_prod(self) -> bool:

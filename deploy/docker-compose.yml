@@ -1,5 +1,5 @@
 # Runs on the VPS in /opt/cbva. The API port is NOT published: Caddy is the only peer, which is
-# what makes --forwarded-allow-ips '*' and trusting CF-Connecting-IP safe. Never add `ports:` to api.
+# what lets the app trust CF-Connecting-IP (only from private-network peers). Never add `ports:` to api.
 name: cbva
 
 services:

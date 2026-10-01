@@ -25,7 +25,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=4).status == 200 else 1)"
 
-# One worker: 1 vCPU / 1 GB. --forwarded-allow-ips '*' is only safe because port 8000
-# is never published to the host; Caddy is the sole peer on the compose network.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", \
-     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log"]
+# One worker: 1 vCPU / 1 GB. Do NOT add --forwarded-allow-ips '*': uvicorn would then rewrite
+# request.client from X-Forwarded-For and the app could no longer tell Caddy (the trusted peer allowed to
+# vouch for CF-Connecting-IP, see TRUSTED_PROXY_CIDRS) from an arbitrary client. Port 8000 is never published.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1",      "--no-access-log"]
