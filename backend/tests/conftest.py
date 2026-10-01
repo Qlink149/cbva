@@ -5,9 +5,17 @@ from httpx import AsyncClient, ASGITransport
 from bson import ObjectId
 from datetime import datetime, timezone
 
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only-0123456789abcdef")
 os.environ.setdefault("DATABASE_NAME", "cbva_test")
 os.environ.setdefault("MONGODB_URL", "mongodb://localhost:27017")
+os.environ.setdefault("FRONTEND_ORIGIN", "http://localhost:5173")
+os.environ.setdefault("ENV", "dev")
+
+# Teardown below calls delete_many({}) on real collections: never run against a non-test DB.
+if not os.environ["DATABASE_NAME"].endswith("_test"):
+    raise RuntimeError(
+        f"Refusing to run tests: DATABASE_NAME={os.environ['DATABASE_NAME']!r} does not end with '_test'."
+    )
 
 from app.main import app
 from app.core import database

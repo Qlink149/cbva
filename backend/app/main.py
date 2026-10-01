@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from loguru import logger
+import asyncio
 import os
 import sys
 
@@ -59,11 +61,16 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
+_app_kwargs: dict = {} if os.getenv("VERCEL") else {"lifespan": lifespan}
+if settings.is_prod:
+    # No public API docs / schema in production.
+    _app_kwargs.update(docs_url=None, redoc_url=None, openapi_url=None)
+
 app = FastAPI(
     title="CBVA API",
     version="1.0.0",
     description="CBV & Associates LLP Business Planning Platform",
-    **({} if os.getenv("VERCEL") else {"lifespan": lifespan}),
+    **_app_kwargs,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -80,7 +87,8 @@ async def audit_request_id_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def ensure_db_middleware(request: Request, call_next):
-    await ensure_db_connected()
+    if not request.url.path.startswith("/health"):
+        await ensure_db_connected()
     return await call_next(request)
 
 
@@ -94,10 +102,12 @@ async def log_requests(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
+    # Auth is a Bearer header (no cookies, axios has no withCredentials) -> credentials not needed.
+    allow_credentials=False,
+    # PATCH is used by actions / engagements remarks / engagement-actions routers.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(auth.router,        prefix="/api/auth",         tags=["Auth"])
@@ -130,4 +140,20 @@ app.include_router(appraisals.router,  prefix="/api/appraisals",   tags=["Apprai
 
 @app.get("/health")
 async def health():
+    """Liveness: process is up. Does not touch Mongo."""
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness: Mongo answers a ping within 2s, else 503."""
+    from app.core import database
+
+    try:
+        if database.db is None:
+            await asyncio.wait_for(database.connect_db(), timeout=8)
+        await asyncio.wait_for(database.db.command("ping"), timeout=2)
+    except Exception as exc:
+        logger.warning("Readiness check failed: {}", exc)
+        return JSONResponse(status_code=503, content={"status": "unavailable", "db": "down"})
+    return {"status": "ok", "db": "up", "version": "1.0.0"}

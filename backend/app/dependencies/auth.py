@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
+from app.core.security import JWTError
 from bson import ObjectId
 from app.core.security import decode_token
 from app.core import database

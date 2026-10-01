@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import bcrypt
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError as JWTError  # noqa: F401  (re-exported for callers)
 from app.core.config import settings
 
 

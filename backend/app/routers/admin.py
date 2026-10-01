@@ -108,11 +108,14 @@ async def update_user(user_id: str, body: UserUpdate, current_user: dict = Depen
     updates = {k: v for k, v in body.model_dump().items() if v is not None and k != "password"}
     if body.password:
         updates["password_hash"] = hash_password(body.password)
+    # Password change or deactivation invalidates existing refresh tokens.
+    if body.password or updates.get("is_active") is False:
+        updates["refresh_token_hashes"] = []
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.users.find_one_and_update(
         {"_id": ObjectId(user_id)}, {"$set": updates}, return_document=True
     )
-    audit_updates = {k: v for k, v in updates.items() if k != "password_hash"}
+    audit_updates = {k: v for k, v in updates.items() if k not in ("password_hash", "refresh_token_hashes")}
     derived: list[dict] = []
     action = "updated"
     if body.password:
@@ -137,7 +140,7 @@ async def deactivate_user(user_id: str, current_user: dict = Depends(require_rol
         raise HTTPException(status_code=404, detail="User not found")
     await database.db.users.update_one(
         {"_id": ObjectId(user_id)},
-        {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
+        {"$set": {"is_active": False, "refresh_token_hashes": [], "updated_at": datetime.now(timezone.utc)}},
     )
     await audit_service.log_delete(
         "user", existing, current_user,

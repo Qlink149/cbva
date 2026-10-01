@@ -11,7 +11,7 @@ from app.core.security import (
 )
 from app.core import database
 from app.dependencies.auth import get_current_user
-from app.core.limiter import limiter
+from app.core.limiter import limiter, login_email_limiter
 from app.services import audit_service
 from loguru import logger
 
@@ -40,6 +40,7 @@ async def _store_refresh_token(user_id: ObjectId, refresh_token: str) -> None:
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login(request: Request, body: LoginRequest):
+    login_email_limiter.check(body.email.strip().lower())
     user = await database.db.users.find_one({"email": body.email, "is_active": True})
     if not user or not verify_password(body.password, user["password_hash"]):
         logger.warning("Failed login attempt for {}", body.email)
@@ -79,7 +80,8 @@ async def me(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/refresh")
-async def refresh(body: RefreshRequest):
+@limiter.limit("30/minute")
+async def refresh(request: Request, body: RefreshRequest):
     try:
         payload = decode_token(body.refresh_token)
         if payload.get("type") != "refresh":

@@ -1,6 +1,7 @@
 """Fiscal year helpers — DB is source of truth."""
 
 from datetime import datetime, timezone, date
+from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.core import database
 from app.core.serialization import serialize_datetime
@@ -9,7 +10,7 @@ from app.services.fy_calendar import is_month_locked
 
 def calendar_fy_slug(as_of: date | None = None) -> str:
     """Indian FY slug (Apr–Mar), e.g. Jul 2026 → '2627'."""
-    d = as_of or date.today()
+    d = as_of or datetime.now(ZoneInfo("Asia/Kolkata")).date()
     if d.month >= 4:
         start = d.year % 100
         end = (d.year + 1) % 100
