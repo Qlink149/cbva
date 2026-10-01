@@ -1,9 +1,20 @@
 import base44 from "@base44/vite-plugin"
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Production builds must point at a real API: no silent localhost fallback.
+  if (mode === 'production') {
+    const apiUrl = loadEnv(mode, process.cwd(), 'VITE_').VITE_API_URL || process.env.VITE_API_URL;
+    if (!apiUrl) {
+      throw new Error('VITE_API_URL is required for production builds (e.g. https://api.example.com).');
+    }
+    if (/localhost|127\.0\.0\.1/i.test(apiUrl)) {
+      throw new Error(`VITE_API_URL must not point at localhost in a production build (got "${apiUrl}").`);
+    }
+  }
+  return {
   logLevel: 'info',
   plugins: [
     base44({
@@ -28,4 +39,5 @@ export default defineConfig({
       },
     },
   },
+};
 });

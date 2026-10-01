@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/api/client';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+import { API_BASE_URL as BASE_URL } from '@/lib/apiBase';
 
 export const auditLogKey = (params) => ['audit-log', params];
 
