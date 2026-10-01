@@ -40,19 +40,20 @@ docker run -d --name "$API" --network "$NET" --read-only --tmpfs /tmp --memory 7
   -e FRONTEND_ORIGIN=https://app.example.com "$IMAGE" >/dev/null
 
 echo "--- non-root"
-uid="$(docker exec "$API" id -u)"; [ "$uid" != 0 ] && pass "uid=$uid" || fail "running as root"
+uid="$(docker exec "$API" id -u)"
+if [ "$uid" != 0 ]; then pass "uid=$uid"; else fail "running as root"; fi
 
 echo "--- stays up 60s on read-only rootfs"
 for _ in $(seq 1 12); do sleep 5; [ "$(docker inspect -f '{{.State.Running}}' "$API")" = true ] || { fail "container exited"; docker logs "$API" | tail -30; exit 1; }; done
 pass "up for 60s"
 ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$API")"
 code() { docker run --rm --network "$NET" curlimages/curl -s -o /dev/null -w '%{http_code}' -m "${2:-5}" "$1"; }
-[ "$(code http://$ip:8000/health)" = 200 ] && pass "/health 200" || fail "/health"
-[ "$(code http://$ip:8000/health/ready)" = 200 ] && pass "/health/ready 200 (mongo up)" || fail "/health/ready (mongo up)"
+expect "$(code "http://$ip:8000/health")" 200 "/health 200" "/health"
+expect "$(code "http://$ip:8000/health/ready")" 200 "/health/ready 200 (mongo up)" "/health/ready (mongo up)"
 
 echo "--- HEALTHCHECK"
 for _ in $(seq 1 12); do s="$(docker inspect -f '{{.State.Health.Status}}' "$API")"; [ "$s" = healthy ] && break; sleep 5; done
-[ "$s" = healthy ] && pass "health=healthy" || fail "health=$s"
+expect "$s" healthy "health=healthy" "health=$s"
 
 echo "--- 10 requests then docker stats"
 for p in /health /health/ready /api/auth/me /api/leaders/ /api/kra/categories /api/firmwide/summary /api/admin/users /docs /openapi.json /health; do code "http://$ip:8000$p" >/dev/null; done
@@ -60,17 +61,17 @@ docker stats --no-stream --format 'RSS/limit: {{.MemUsage}}  cpu: {{.CPUPerc}}' 
 
 echo "--- mongo down -> 503 within ~3s; recovery"
 docker stop "$MONGO" >/dev/null
-t0=$(date +%s.%N); c="$(code http://$ip:8000/health/ready 6)"; t1=$(date +%s.%N)
+t0=$(date +%s.%N); c="$(code "http://$ip:8000/health/ready" 6)"; t1=$(date +%s.%N)
 el="$(echo "$t1 - $t0" | bc 2>/dev/null || echo '?')"
-[ "$c" = 503 ] && pass "503 in ${el}s" || fail "expected 503 got $c"
-[ "$(code http://$ip:8000/health)" = 200 ] && pass "/health still 200 during outage" || fail "liveness during outage"
+expect "$c" 503 "503 in ${el}s" "expected 503 got $c"
+expect "$(code "http://$ip:8000/health")" 200 "/health still 200 during outage" "liveness during outage"
 docker start "$MONGO" >/dev/null; sleep 8
-[ "$(code http://$ip:8000/health/ready 6)" = 200 ] && pass "/health/ready recovers" || fail "no recovery"
+expect "$(code "http://$ip:8000/health/ready" 6)" 200 "/health/ready recovers" "no recovery"
 
 echo "--- SIGTERM"
 start=$(date +%s); docker stop "$API" >/dev/null; dur=$(( $(date +%s) - start ))
 ec="$(docker inspect -f '{{.State.ExitCode}}' "$API")"
-[ "$ec" = 0 ] && pass "exit code 0 in ${dur}s" || fail "exit code $ec"
+expect "$ec" 0 "exit code 0 in ${dur}s" "exit code $ec"
 docker logs "$API" 2>&1 | tail -6
 
-[ "$FAILED" = 0 ] && echo "SMOKE TEST PASSED" || { echo "SMOKE TEST FAILED"; exit 1; }
+if [ "$FAILED" = 0 ]; then echo "SMOKE TEST PASSED"; else echo "SMOKE TEST FAILED"; exit 1; fi
