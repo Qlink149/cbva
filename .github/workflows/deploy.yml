@@ -1,14 +1,16 @@
 name: backend-deploy
 
 on:
+  pull_request:
+    paths: ["backend/**", "deploy/**", ".github/workflows/deploy.yml"]
   push:
     branches: [main]
     paths: ["backend/**", "deploy/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/cbva-api
@@ -39,10 +41,12 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r requirements-dev.txt pip-audit
-      - run: pytest -q
+      - run: pytest -q -rs
       - name: Dependency audit (runtime deps incl. transitives)
         run: pip-audit -r requirements.txt
 
+  # Runs on every PR and push: builds the exact backend/Dockerfile and smoke-tests the container
+  # (non-root, read-only rootfs, health, SIGTERM). Pushes to GHCR only outside pull requests.
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -56,12 +60,25 @@ jobs:
       - id: meta
         run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
+      - name: Build image (local, for smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          load: true
+          tags: cbva-api:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container smoke test
+        run: SKIP_BUILD=1 IMAGE=cbva-api:smoke bash deploy/smoke-test.sh
       - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - name: Push image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
         with:
           context: backend
           push: true
@@ -69,20 +86,23 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Sync compose + Caddyfile
+      # Host key is pinned via SSH_HOST_FINGERPRINT (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`
+      # on the VPS, value like SHA256:abc...). The action refuses to connect on mismatch (no StrictHostKeyChecking=no).
+      - name: Sync compose, Caddyfile and Cloudflare ranges
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
           source: "deploy/docker-compose.yml,deploy/Caddyfile"
           target: /opt/cbva
           strip_components: 1
@@ -91,36 +111,53 @@ jobs:
         env:
           NEW_TAG: ${{ needs.build.outputs.tag }}
           GHCR_OWNER: ${{ github.repository_owner }}
-          GHCR_USER: ${{ github.actor }}
+          GHCR_USER: ${{ secrets.GHCR_PULL_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
           envs: NEW_TAG,GHCR_OWNER,GHCR_USER,GHCR_TOKEN
           script_stop: true
           script: |
             set -euo pipefail
             cd /opt/cbva
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export GHCR_OWNER
-            PREV_TAG="$(cat .current_tag 2>/dev/null || echo '')"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
+            PREV_TAG="$(cat .current_tag 2>/dev/null || true)"
+
+            wait_healthy() {
+              local st=none
+              for _ in $(seq 1 24); do
+                st="$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q api)" 2>/dev/null || echo none)"
+                [ "$st" = healthy ] && return 0
+                sleep 5
+              done
+              return 1
+            }
+
+            rollback() {
+              echo "::error::Deploy of ${NEW_TAG} failed; collecting logs"
+              docker compose logs --tail=80 api || true
+              if [ -n "$PREV_TAG" ]; then
+                echo "Rolling back to ${PREV_TAG}"
+                export TAG="$PREV_TAG"
+                docker compose pull api && docker compose up -d api
+                if wait_healthy; then echo "Rollback to ${PREV_TAG} healthy"; else echo "::error::Rollback to ${PREV_TAG} is NOT healthy"; fi
+              else
+                echo "::error::No previous tag recorded (first deploy); nothing to roll back to"
+              fi
+            }
+            # Any failure after this point (pull, up, health) restores the previous tag.
+            trap 'rc=$?; trap - ERR; rollback; exit $rc' ERR
+
             export TAG="$NEW_TAG"
             docker compose pull api
             docker compose up -d
-            ok=0
-            for i in $(seq 1 24); do
-              st="$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q api)" 2>/dev/null || echo none)"
-              if [ "$st" = "healthy" ]; then ok=1; break; fi
-              sleep 5
-            done
-            if [ "$ok" -ne 1 ]; then
-              echo "Health check failed for $NEW_TAG"; docker compose logs --tail=80 api || true
-              if [ -n "$PREV_TAG" ]; then
-                echo "Rolling back to $PREV_TAG"; export TAG="$PREV_TAG"; docker compose up -d api
-              fi
-              exit 1
-            fi
+            wait_healthy   # non-zero return trips the ERR trap -> rollback
+
             echo "$NEW_TAG" > .current_tag
-            [ -n "$PREV_TAG" ] && echo "$PREV_TAG" > .previous_tag || true
-            docker image prune -f
+            if [ -n "$PREV_TAG" ]; then echo "$PREV_TAG" > .previous_tag; fi
+            docker image prune -f >/dev/null
+            echo "Deployed ${NEW_TAG}"
