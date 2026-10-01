@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timezone, date
 from bson import ObjectId
 from app.schemas.engagement import EngagementCreate, EngagementUpdate, RemarksUpdate, EngagementResponse
-from app.core.serialization import serialize_datetime
+from app.core.serialization import serialize_datetime, today_ist
 from app.services.engagement_service import compute_totals
 from app.services.engagement_change_service import list_changes
 from app.services import audit_service
@@ -115,7 +115,7 @@ async def _auto_upsert_pipeline_snapshot(
     triggered_by: ObjectId | None = None,
 ) -> None:
     """Auto-upsert a monthly pipeline snapshot whenever any engagement is saved."""
-    today = date.today()
+    today = today_ist()
     month_key = f"{today.month:02d}"
     cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
     month_label = f"{MONTH_FULL_NAMES.get(month_key, month_key)} {cal_year}"
@@ -202,7 +202,7 @@ async def _auto_update_bluesky(
         return
 
     delta = new_blue_sky - old_blue_sky
-    today = date.today()
+    today = today_ist()
     month_key = f"{today.month:02d}"
     if month_key not in FY_MONTH_KEYS:
         return
@@ -390,7 +390,7 @@ async def update_engagement(
     fy = existing["fiscal_year"]
     status_fields = {"green", "amber", "blue_sky"}
     if any(f in updates for f in status_fields):
-        current_mk = f"{date.today().month:02d}"
+        current_mk = f"{today_ist().month:02d}"
         assert_month_unlocked(fy, current_mk, current_user)
 
     if body.monthly_plan is not None:

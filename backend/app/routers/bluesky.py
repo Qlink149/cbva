@@ -8,7 +8,7 @@ from app.schemas.bluesky import (
     BlueSkyListResponse,
 )
 from app.core import database
-from app.core.serialization import serialize_datetime
+from app.core.serialization import serialize_datetime, today_ist
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services import audit_service
 from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
@@ -118,7 +118,7 @@ async def list_bluesky(
     """
     enforce_leader_scope(current_user, leader_id)
 
-    as_of = date.today()
+    as_of = today_ist()
     available_keys = get_available_fy_month_keys(fiscal_year, as_of)
     current_mk = f"{as_of.month:02d}"
 
@@ -177,7 +177,7 @@ async def upsert_bluesky(
     if body.month_key not in FY_MONTH_KEYS:
         raise HTTPException(status_code=400, detail="Invalid month_key")
 
-    as_of = date.today()
+    as_of = today_ist()
     available = get_available_fy_month_keys(body.fiscal_year, as_of)
     if body.month_key not in available:
         raise HTTPException(status_code=400, detail="Month is outside the editable FY window")

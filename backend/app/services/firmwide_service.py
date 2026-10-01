@@ -1,4 +1,5 @@
 from datetime import date
+from app.core.serialization import today_ist
 
 from app.core import database
 from app.services.month_matching import month_field_regex, month_label_regex, pick_pipeline_snapshot
@@ -192,7 +193,7 @@ async def get_firmwide_dashboard_aggregate(fiscal_year: str) -> dict:
         return None
 
     from app.services.fy_calendar import get_fy_month_calendar_year
-    allowed_month_keys = get_available_fy_month_keys(fiscal_year, date.today())
+    allowed_month_keys = get_available_fy_month_keys(fiscal_year, today_ist())
 
     bluesky_by_key: dict[str, dict] = {}
     for doc in bluesky_docs:

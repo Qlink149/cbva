@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date
+from app.core.serialization import today_ist
 from typing import Any
 
 from app.core import database
@@ -90,7 +91,7 @@ def _pick_monthly(rows: list[dict], month_key: str) -> dict[str, float] | None:
 
 
 async def _leader_collections(leader_id: str, fiscal_year: str) -> dict[str, Any]:
-    as_of = date.today()
+    as_of = today_ist()
     allowed = get_available_fy_month_keys(fiscal_year, as_of)
 
     entry_docs = await database.db.collection_entries.find(

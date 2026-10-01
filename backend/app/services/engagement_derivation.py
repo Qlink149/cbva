@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from app.core.serialization import today_ist
 
 from app.core import database
 from app.services.fy_calendar import get_fy_month_calendar_year
@@ -186,7 +187,7 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
         return False
 
     now = datetime.now(timezone.utc)
-    today = date.today()
+    today = today_ist()
     current_mk = f"{today.month:02d}"
 
     # --- Monthly snapshots ---
