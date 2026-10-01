@@ -1,6 +1,8 @@
 import base44 from "@base44/vite-plugin"
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
+import fs from 'node:fs'
+import path from 'node:path'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -14,9 +16,25 @@ export default defineConfig(({ mode }) => {
       throw new Error(`VITE_API_URL must not point at localhost in a production build (got "${apiUrl}").`);
     }
   }
+  const apiOrigin = (() => {
+    const url = loadEnv(mode, process.cwd(), 'VITE_').VITE_API_URL || process.env.VITE_API_URL;
+    try { return url ? new URL(url).origin : null; } catch { return null; }
+  })();
+  // public/_headers ships with the placeholder https://api.example.com in connect-src. Rewrite it to the real
+  // API origin so a forgotten manual edit cannot make the deployed CSP block every API call.
+  const cspApiOrigin = {
+    name: 'csp-api-origin',
+    apply: 'build',
+    closeBundle() {
+      const f = path.resolve(process.cwd(), 'dist', '_headers');
+      if (!apiOrigin || !fs.existsSync(f)) return;
+      fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replaceAll('https://api.example.com', apiOrigin));
+    },
+  };
   return {
   logLevel: 'info',
   plugins: [
+    cspApiOrigin,
     base44({
       legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
       hmrNotifier: true,
