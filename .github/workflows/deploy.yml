@@ -70,7 +70,7 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Container smoke test
         run: SKIP_BUILD=1 IMAGE=cbva-api:smoke bash deploy/smoke-test.sh
-      - name: Edge test (real Caddyfile: spoofed forwarding headers stripped, real client IP)
+      - name: Edge test (real Caddyfile, spoofed forwarding headers stripped, real client IP)
         run: bash deploy/test/edge-test.sh
       - name: Full stack test, direct mode (real compose + Caddyfile + API image; rate limits per real IP)
         run: bash deploy/test/stack-test.sh
