@@ -69,3 +69,16 @@ async def test_malformed_fiscal_year_is_never_5xx(client, admin_headers, fy):
 async def test_invalid_id_answer_shape(client, admin_headers):
     res = await client.put("/api/tasks/not-an-object-id", headers=admin_headers, json={"title": "x"})
     assert res.status_code == 422 and res.json() == {"detail": "Invalid id"}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_baseline_is_409_not_500(client, admin_headers):
+    from tests.conftest import seed_editable_fy
+    await seed_editable_fy("2627")
+    await database.db.baseline_plans.create_index([("leader_id", 1), ("financial_year_id", 1)], unique=True)
+    body = {"leader_id": "manan", "financial_year_id": "2627", "baseline_total": 1}
+    first = await client.post("/api/baselines/", headers=admin_headers, json=body)
+    assert first.status_code == 201, first.text
+    second = await client.post("/api/baselines/", headers=admin_headers, json=body)
+    assert second.status_code == 409, second.text
+    assert await database.db.baseline_plans.count_documents({"leader_id": "manan"}) == 1
