@@ -6,32 +6,79 @@ from app.core import limiter as lim
 from app.core.limiter import _AttemptWindow, client_ip, login_email_limiter
 
 
-def _req(peer: str, cf: str | None = None) -> Request:
-    headers = [(b"cf-connecting-ip", cf.encode())] if cf is not None else []
-    return Request({"type": "http", "headers": headers, "client": (peer, 4242)})
+def _req(peer: str, **headers: str) -> Request:
+    """Request from TCP peer `peer`; keyword names use underscores for hyphens (x_real_ip -> x-real-ip)."""
+    raw = [(k.replace("_", "-").encode(), v.encode()) for k, v in headers.items()]
+    return Request({"type": "http", "headers": raw, "client": (peer, 4242)})
 
 
-# ---------------- key_func trust ----------------
+@pytest.fixture
+def cloudflare_mode(monkeypatch):
+    monkeypatch.setattr(lim, "_CLIENT_IP_HEADER", "cf-connecting-ip")
+
+
+# ---------------- which header is read (EDGE_MODE / CLIENT_IP_HEADER) ----------------
+
+def test_default_is_direct_mode_x_real_ip():
+    from app.core.config import Settings
+    s = Settings(_env_file=None, SECRET_KEY="k" * 40)
+    assert s.EDGE_MODE == "direct" and s.client_ip_header == "X-Real-IP"
+    assert lim._CLIENT_IP_HEADER == "x-real-ip"
+
+
+def test_cloudflare_mode_defaults_to_cf_header_and_override_wins():
+    from app.core.config import Settings
+    assert Settings(_env_file=None, SECRET_KEY="k" * 40, EDGE_MODE="cloudflare").client_ip_header == "CF-Connecting-IP"
+    assert Settings(_env_file=None, SECRET_KEY="k" * 40, EDGE_MODE="cloudflare", CLIENT_IP_HEADER="X-Real-IP").client_ip_header == "X-Real-IP"
+    assert Settings(_env_file=None, SECRET_KEY="k" * 40, CLIENT_IP_HEADER="").client_ip_header == "X-Real-IP"
+
+
+@pytest.mark.parametrize("bad", ["X Real IP", "X-Real-IP:", "a/b", "x_y!"])
+def test_invalid_header_name_rejected(bad):
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SECRET_KEY="k" * 40, CLIENT_IP_HEADER=bad)
+
+
+def test_invalid_edge_mode_rejected():
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SECRET_KEY="k" * 40, EDGE_MODE="both")
+
+
+# ---------------- key_func trust: direct mode (X-Real-IP) ----------------
 
 @pytest.mark.parametrize("peer", ["172.18.0.3", "10.1.2.3", "192.168.1.9", "127.0.0.1"])
-def test_cf_header_honoured_from_trusted_private_peer(peer):
-    assert client_ip(_req(peer, "198.51.100.7")) == "198.51.100.7"
+def test_x_real_ip_honoured_from_trusted_private_peer(peer):
+    assert client_ip(_req(peer, x_real_ip="198.51.100.7")) == "198.51.100.7"
 
 
 @pytest.mark.parametrize("peer", ["203.0.113.9", "8.8.8.8", "2001:db8::1"])
-def test_cf_header_ignored_from_untrusted_peer(peer):
-    assert client_ip(_req(peer, "198.51.100.7")) == peer
+def test_x_real_ip_ignored_from_untrusted_peer(peer):
+    assert client_ip(_req(peer, x_real_ip="198.51.100.7")) == peer
+
+
+def test_other_headers_never_used_in_direct_mode():
+    """A client cannot pick its bucket with CF-Connecting-IP or X-Forwarded-For, even via the trusted peer."""
+    r = _req("172.18.0.3", cf_connecting_ip="1.1.1.1", x_forwarded_for="2.2.2.2")
+    assert client_ip(r) == "172.18.0.3"
 
 
 def test_spoofed_header_cannot_change_bucket_for_direct_client():
-    a = client_ip(_req("203.0.113.9", "1.1.1.1"))
-    b = client_ip(_req("203.0.113.9", "2.2.2.2"))
-    assert a == b == "203.0.113.9"
+    keys = {client_ip(_req("203.0.113.9", x_real_ip=f"1.1.1.{i}", cf_connecting_ip=f"2.2.2.{i}")) for i in range(20)}
+    assert keys == {"203.0.113.9"}
 
 
-def test_invalid_cf_header_falls_back_to_peer():
-    assert client_ip(_req("172.18.0.3", "not-an-ip")) == "172.18.0.3"
-    assert client_ip(_req("172.18.0.3", "")) == "172.18.0.3"
+def test_two_real_ips_get_distinct_keys():
+    assert client_ip(_req("172.18.0.4", x_real_ip="198.51.100.1")) != client_ip(_req("172.18.0.4", x_real_ip="198.51.100.2"))
+
+
+def test_invalid_header_value_falls_back_to_peer():
+    assert client_ip(_req("172.18.0.3", x_real_ip="not-an-ip")) == "172.18.0.3"
+    assert client_ip(_req("172.18.0.3", x_real_ip="")) == "172.18.0.3"
+    assert client_ip(_req("172.18.0.3", x_real_ip="1.2.3.4, 5.6.7.8")) == "172.18.0.3"
 
 
 def test_no_header_uses_peer():
@@ -39,7 +86,18 @@ def test_no_header_uses_peer():
 
 
 def test_ipv6_client_via_trusted_peer():
-    assert client_ip(_req("172.18.0.3", "2001:db8::5")) == "2001:db8::5"
+    assert client_ip(_req("172.18.0.3", x_real_ip="2001:db8::5")) == "2001:db8::5"
+
+
+# ---------------- key_func trust: cloudflare mode (CF-Connecting-IP) ----------------
+
+def test_cloudflare_mode_reads_cf_header_only(cloudflare_mode):
+    assert client_ip(_req("172.18.0.3", cf_connecting_ip="198.51.100.7")) == "198.51.100.7"
+    assert client_ip(_req("172.18.0.3", x_real_ip="198.51.100.7")) == "172.18.0.3"
+
+
+def test_cloudflare_mode_still_ignored_from_untrusted_peer(cloudflare_mode):
+    assert client_ip(_req("203.0.113.9", cf_connecting_ip="198.51.100.7")) == "203.0.113.9"
 
 
 def test_limiter_uses_client_ip_key_func():
@@ -86,7 +144,7 @@ def test_window_hard_cap(monkeypatch):
 
 async def _login(client, email, ip, password="wrong"):
     return await client.post("/api/auth/login", json={"email": email, "password": password},
-                             headers={"CF-Connecting-IP": ip})
+                             headers={"X-Real-IP": ip})
 
 
 @pytest.mark.asyncio
@@ -132,7 +190,7 @@ async def test_per_ip_login_limit_is_per_client_not_global(client, seed_users):
 
 @pytest.mark.asyncio
 async def test_untrusted_peer_cannot_dodge_limit_by_rotating_header(client, seed_users, monkeypatch):
-    """Direct (untrusted) peer rotating CF-Connecting-IP still lands in ONE slowapi bucket."""
+    """Direct (untrusted) peer rotating X-Real-IP / CF-Connecting-IP still lands in ONE slowapi bucket."""
     login_email_limiter.reset()
     monkeypatch.setattr(lim, "_TRUSTED_NETWORKS", [])  # simulate: test peer is not the trusted proxy
     codes = [(await _login(client, f"rot{i}@test.com", f"198.18.0.{i + 1}")).status_code for i in range(7)]

@@ -11,7 +11,7 @@ async def _login(client, email="leader@test.com", password="password123", ip="20
     return await client.post(
         "/api/auth/login",
         json={"email": email, "password": password},
-        headers={"CF-Connecting-IP": ip},
+        headers={"X-Real-IP": ip},
     )
 
 
@@ -42,7 +42,7 @@ async def test_password_change_revokes_refresh_tokens(client, seed_users):
     assert res.status_code == 200
     user = await database.db.users.find_one({"_id": user["_id"]})
     assert user["refresh_token_hashes"] == []
-    res = await client.post("/api/auth/refresh", json={"refresh_token": refresh}, headers={"CF-Connecting-IP": "203.0.113.11"})
+    res = await client.post("/api/auth/refresh", json={"refresh_token": refresh}, headers={"X-Real-IP": "203.0.113.11"})
     assert res.status_code == 401
 
 
@@ -72,8 +72,8 @@ async def test_per_email_login_limit(client, seed_users):
     login_email_limiter.reset()
 
 
-def test_cf_connecting_ip_is_rate_limit_key():
-    scope = {"type": "http", "headers": [(b"cf-connecting-ip", b"198.51.100.7")], "client": ("10.0.0.5", 1234)}
+def test_client_ip_header_is_rate_limit_key():
+    scope = {"type": "http", "headers": [(b"x-real-ip", b"198.51.100.7")], "client": ("10.0.0.5", 1234)}
     assert client_ip(Request(scope)) == "198.51.100.7"
     scope["headers"] = []
     assert client_ip(Request(scope)) == "10.0.0.5"

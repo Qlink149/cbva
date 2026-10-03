@@ -130,7 +130,7 @@ async def test_access_token_cannot_be_used_to_refresh(client, seed_users):
 async def test_refresh_rotation_old_token_unusable(client, seed_users):
     login_email_limiter.reset()
     res = await client.post("/api/auth/login", json={"email": "leader@test.com", "password": "password123"},
-                            headers={"CF-Connecting-IP": "203.0.113.50"})
+                            headers={"X-Real-IP": "203.0.113.50"})
     assert res.status_code == 200
     old_refresh = res.json()["refresh_token"]
 
@@ -150,7 +150,7 @@ async def test_refresh_rotation_old_token_unusable(client, seed_users):
 async def test_logout_revokes_refresh(client, seed_users):
     login_email_limiter.reset()
     res = await client.post("/api/auth/login", json={"email": "leader@test.com", "password": "password123"},
-                            headers={"CF-Connecting-IP": "203.0.113.51"})
+                            headers={"X-Real-IP": "203.0.113.51"})
     data = res.json()
     res = await client.post("/api/auth/logout", headers={"Authorization": f"Bearer {data['access_token']}"})
     assert res.status_code == 204

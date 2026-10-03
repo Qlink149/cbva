@@ -8,6 +8,8 @@ from slowapi.util import get_remote_address
 from app.core.config import settings
 
 _TRUSTED_NETWORKS = settings.trusted_proxy_networks
+# Header Caddy sets to the real client IP: X-Real-IP (direct mode) or CF-Connecting-IP (cloudflare mode).
+_CLIENT_IP_HEADER = settings.client_ip_header.lower()
 
 
 def _is_trusted_peer(peer: str | None) -> bool:
@@ -21,17 +23,17 @@ def _is_trusted_peer(peer: str | None) -> bool:
 def client_ip(request: Request) -> str:
     """Real client IP for rate-limit buckets and logs.
 
-    CF-Connecting-IP is honoured ONLY when the immediate TCP peer is a trusted proxy (Caddy on the
-    compose network, see TRUSTED_PROXY_CIDRS). Caddy overwrites that header with the Cloudflare-verified
-    client IP. A direct connection from anywhere else cannot choose its own bucket: the header is
-    ignored and the peer address is used. Requires uvicorn to NOT rewrite request.client from
-    X-Forwarded-For (i.e. no --forwarded-allow-ips '*').
+    The configured header (CLIENT_IP_HEADER; X-Real-IP in direct mode, CF-Connecting-IP in cloudflare mode)
+    is honoured ONLY when the immediate TCP peer is a trusted proxy (Caddy on the compose network, see
+    TRUSTED_PROXY_CIDRS). Caddy strips whatever the client sent and sets the header itself. A connection from
+    anywhere else cannot choose its own bucket: every other header is ignored and the peer address is used.
+    Requires uvicorn to NOT rewrite request.client from X-Forwarded-For (--no-proxy-headers).
     """
     peer = get_remote_address(request)
-    cf_ip = (request.headers.get("cf-connecting-ip") or "").strip()
-    if cf_ip and _is_trusted_peer(peer):
+    claimed = (request.headers.get(_CLIENT_IP_HEADER) or "").strip()
+    if claimed and _is_trusted_peer(peer):
         try:
-            return str(ipaddress.ip_address(cf_ip))
+            return str(ipaddress.ip_address(claimed))
         except ValueError:
             pass
     return peer

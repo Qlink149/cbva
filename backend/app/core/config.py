@@ -24,7 +24,13 @@ class Settings(BaseSettings):
     FRONTEND_ORIGIN: str = "http://localhost:5173,http://127.0.0.1:5173"
     # Optional regex for preview URLs. Leave unset in production.
     CORS_ORIGIN_REGEX: str | None = None
-    # Peers allowed to vouch for the client IP via CF-Connecting-IP (the Caddy container on the compose
+    # Edge mode. direct: browsers -> Caddy (Let's Encrypt) -> api; Caddy sets X-Real-IP from the TCP peer.
+    # cloudflare: browsers -> Cloudflare -> Caddy -> api; Caddy forwards the Cloudflare-verified CF-Connecting-IP.
+    EDGE_MODE: Literal["direct", "cloudflare"] = "direct"
+    # Header carrying the real client IP. Default: X-Real-IP (direct) / CF-Connecting-IP (cloudflare).
+    # Honoured ONLY when the TCP peer is inside TRUSTED_PROXY_CIDRS.
+    CLIENT_IP_HEADER: str | None = None
+    # Peers allowed to vouch for the client IP via CLIENT_IP_HEADER (the Caddy container on the compose
     # network). Anything else connecting directly cannot influence rate-limit buckets.
     TRUSTED_PROXY_CIDRS: str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     # First-admin bootstrap (python -m app.cli bootstrap). Not read by the API itself.
@@ -47,8 +53,20 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be at least 32 characters (try: openssl rand -hex 32)")
         return v
 
+    @field_validator("CLIENT_IP_HEADER")
+    @classmethod
+    def _validate_header_name(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not all(c.isalnum() or c == "-" for c in v):
+            raise ValueError("CLIENT_IP_HEADER must be a plain HTTP header name (letters, digits, hyphen)")
+        return v
+
     @field_validator("CORS_ORIGIN_REGEX", "ADMIN_EMAIL", "ADMIN_PASSWORD", "MONGODB_URL_PROD_READ",
-                     "PROD_DATABASE_NAME", mode="before")
+                     "PROD_DATABASE_NAME", "CLIENT_IP_HEADER", mode="before")
     @classmethod
     def _empty_to_none(cls, v):
         if isinstance(v, str) and not v.strip():
@@ -58,6 +76,13 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.FRONTEND_ORIGIN.split(",") if o.strip()]
+
+    @property
+    def client_ip_header(self) -> str:
+        """Header the API reads the real client IP from (lower-cased by callers)."""
+        if self.CLIENT_IP_HEADER:
+            return self.CLIENT_IP_HEADER
+        return "CF-Connecting-IP" if self.EDGE_MODE == "cloudflare" else "X-Real-IP"
 
     @property
     def trusted_proxy_networks(self) -> list:
