@@ -44,7 +44,7 @@ jobs:
             pull_request)
               environment=""; deploy=false; extra_tag="" ;;
             push)
-              environment=production; deploy=true; extra_tag=latest ;;
+              environment=vultr-production; deploy=true; extra_tag=latest ;;
             workflow_dispatch)
               if [ "$INPUT_ENV" = production ]; then
                 echo "::error::Production deploys run only on push to main. Use environment=staging here, or re-run the push workflow run for main."
@@ -134,7 +134,7 @@ jobs:
             ${{ env.IMAGE }}:${{ needs.plan.outputs.extra_tag }}
           cache-from: type=gha
 
-  # One deploy job for both environments. The GitHub Environment (staging or production) supplies its own
+  # One deploy job for both environments. The GitHub Environment (staging or vultr-production) supplies its own
   # SSH_HOST, SSH_USER, SSH_KEY and SSH_HOST_FINGERPRINT; VULTR_CR_* are repository secrets.
   deploy:
     needs: [plan, build]

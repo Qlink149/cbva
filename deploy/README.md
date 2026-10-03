@@ -99,12 +99,12 @@ SECRET_KEY=$(openssl rand -hex 32)          # different on each server
 
 ### CI/CD: two environments (GitHub Actions `backend-deploy`)
 
-Create two GitHub **Environments** (Settings → Environments): `staging` and `production`. Each holds the SSH secrets of **its own** VPS
-(same secret names, different values), so the deploy job picks the right server from the environment name. Add required reviewers to `production` if you want a manual gate.
+Create two GitHub **Environments** (Settings → Environments): `staging` and `vultr-production`. Each holds the SSH secrets of **its own** VPS
+(same secret names, different values), so the deploy job picks the right server from the environment name. Add required reviewers to `vultr-production` if you want a manual gate.
 
 | Secret | Scope | Value |
 |---|---|---|
-| `SSH_HOST`, `SSH_USER` | Environment (`staging` / `production`) | that VPS's address, `deploy` |
+| `SSH_HOST`, `SSH_USER` | Environment (`staging` / `vultr-production`) | that VPS's address, `deploy` |
 | `SSH_KEY` | Environment | private key for `deploy` on that VPS |
 | `SSH_HOST_FINGERPRINT` | Environment | `SHA256:...` from the command above (pins that host's key) |
 | `VULTR_CR_USERNAME`, `VULTR_CR_API_KEY` | **Repository** | Vultr Container Registry credentials, used by CI to push and by the deploy step to log the VPS in and pull. Vultr panel → Container Registry → your registry → Docker/Kubernetes credentials |
