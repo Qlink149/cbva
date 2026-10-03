@@ -91,6 +91,7 @@ ENV=prod
 EDGE_MODE=direct
 SITE_ADDRESS=cbva-api.claraai.tech          # staging: cbva-api-staging.claraai.tech
 ACME_EMAIL=yogansh@claraai.tech
+#ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory   # uncomment for the FIRST issuance only, see 4a
 FRONTEND_ORIGIN=https://cbva.claraai.tech   # staging: https://cbva-staging.claraai.tech
 MONGODB_URL=...  DATABASE_NAME=cbva         # staging: cbva_staging, its own user
 SECRET_KEY=$(openssl rand -hex 32)          # different on each server
@@ -149,6 +150,34 @@ Remove `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env` after step 1. Bootstrap does
 
 **Do not `docker compose down -v`**: the `caddy_data` volume holds the issued certificate and ACME account; recreating it re-requests
 certificates and can hit Let's Encrypt's rate limits.
+
+## 4a. First real certificate: Let's Encrypt **staging**, then production
+
+Let's Encrypt production rate-limits failures (5 failed validations per hostname per hour) and duplicates; its **staging** CA has far higher limits
+and issues browser-untrusted test certificates. Do the first issuance of each hostname against staging, then switch.
+
+```bash
+# 1) in /opt/cbva/.env  (DNS must already resolve to this server and ports 80/443 must be open)
+ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+
+# 2) start; Caddy validates over HTTP-01 and stores a staging certificate
+docker compose up -d
+docker compose logs caddy | grep -iE "certificate obtained|acme-staging|error"
+curl -vkI https://cbva-api.claraai.tech/health 2>&1 | grep -iE "issuer|subject|HTTP/"   # issuer contains "(STAGING)"
+
+# 3) it worked -> switch to production: remove ACME_CA from .env (or set it to https://acme-v02.api.letsencrypt.org/directory),
+#    delete the staging certificate so Caddy cannot keep using it, and recreate Caddy
+docker compose exec caddy rm -rf /data/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory
+docker compose up -d --force-recreate caddy
+docker compose logs caddy | grep -iE "certificate obtained|error"
+curl -vkI https://cbva-api.claraai.tech/health 2>&1 | grep -iE "issuer"                  # now "Let's Encrypt" (no STAGING)
+```
+
+- `ACME_CA` unset (or empty) means Let's Encrypt **production**; `docker-compose.yml` substitutes the default for an empty value (Caddy alone would reject an empty one).
+- With `ACME_CA` set, that CA is the only issuer (no ZeroSSL fallback). The default is production Let's Encrypt only, too.
+- Step 3's `rm` matters: Caddy can keep serving any still-valid stored certificate whichever CA issued it, so without it browsers may keep seeing the staging certificate until it renews (UNVERIFIED: I could not issue a real certificate to test the switch, only the configuration; see VERIFICATION_REPORT.md).
+- Do **not** `docker compose down -v`; the `caddy_data` volume holds certificates and the ACME account.
+- Repeat per environment (staging server first, then production), each with its own hostname.
 
 ## 5. How the client IP is handled (why rate limits are per real client)
 

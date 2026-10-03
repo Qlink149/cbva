@@ -47,6 +47,7 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. cbva-api.claraai.tech}
       ACME_EMAIL: ${ACME_EMAIL:-yogansh@claraai.tech}
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}   # staging for the first issuance, see README §4a
     ports:
       - "80:80"      # ACME HTTP-01 validation + HTTP->HTTPS redirect: must be reachable from the internet
       - "443:443"

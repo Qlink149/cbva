@@ -7,6 +7,10 @@
 # The Cloudflare variant is kept in Caddyfile.cloudflare (EDGE_MODE=cloudflare, see README).
 {
 	email {$ACME_EMAIL:yogansh@claraai.tech}
+	# ACME directory. Unset = Let's Encrypt PRODUCTION. For the first real issuance set
+	#   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+	# (untrusted test certificates, generous rate limits), then unset it to switch to production. See README §4a.
+	acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
 	# Optional extra global options. Empty in production (the glob matches nothing). The local stack test
 	# mounts a file here to use Caddy's internal CA instead of Let's Encrypt.
 	import /etc/caddy/conf.d/*.global
