@@ -11,11 +11,14 @@ os.environ.setdefault("MONGODB_URL", "mongodb://localhost:27017")
 os.environ.setdefault("FRONTEND_ORIGIN", "http://localhost:5173")
 os.environ.setdefault("ENV", "dev")
 
-# Teardown below calls delete_many({}) on real collections: never run against a non-test DB.
-if not os.environ["DATABASE_NAME"].endswith("_test"):
-    raise RuntimeError(
-        f"Refusing to run tests: DATABASE_NAME={os.environ['DATABASE_NAME']!r} does not end with '_test'."
-    )
+# Teardown below calls delete_many({}) on real collections: never run against a non-test DB or a remote host.
+from tests.db_guard import check_test_database  # noqa: E402
+
+check_test_database(
+    os.environ["MONGODB_URL"],
+    os.environ["DATABASE_NAME"],
+    allow_remote=os.environ.get("ALLOW_REMOTE_TEST_DB") == "1",
+)
 
 from app.main import app
 from app.core import database
