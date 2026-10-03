@@ -1,4 +1,4 @@
-# Cloudflare Pages response headers. connect-src https://api.example.com is rewritten to the origin of VITE_API_URL at build time (vite.config.js).
+# Cloudflare Pages response headers (copy into public/ to use; see README.md here). connect-src https://api.example.com is rewritten to the origin of VITE_API_URL at build time (vite.config.js).
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' https://api.example.com; manifest-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   X-Content-Type-Options: nosniff

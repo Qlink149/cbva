@@ -8,6 +8,7 @@ const require = createRequire(process.env.PLAYWRIGHT_DIR || new URL('../../audit
 const { chromium } = require('playwright');
 
 const DIST = path.resolve(process.cwd(), 'dist');
+const API_ORIGIN = process.env.API_ORIGIN || 'https://api.example.com';
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   const p = decodeURIComponent(req.url.split('?')[0]);
@@ -27,7 +28,7 @@ async function scenario(name, setup) {
   const log = { refresh: 0, me: [], other401: 0, navs: [], logout: 0 };
   page.on('framenavigated', (f) => { if (f === page.mainFrame()) log.navs.push(new URL(f.url()).pathname); });
   await page.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('access_token', 'expired'); localStorage.setItem('refresh_token', 'r1'); } });
-  await page.route('https://api.example.com/**', (route) => setup(route, log));
+  await page.route(`${API_ORIGIN}/**`, (route) => setup(route, log));
   await page.goto('http://localhost:4175/my-plan/dashboard');
   await page.waitForTimeout(9000);
   const tokens = await page.evaluate(() => ({ a: localStorage.getItem('access_token'), r: localStorage.getItem('refresh_token') }));
@@ -61,7 +62,7 @@ const s2 = await scenario('access token expired, refresh ok', (route, log) => {
 const ctx = await browser.newContext(); const page = await ctx.newPage();
 const s3 = { logout: 0, logoutAuth: null };
 await page.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('access_token', 'fresh'); localStorage.setItem('refresh_token', 'r2'); } });
-await page.route('https://api.example.com/**', (route) => {
+await page.route(`${API_ORIGIN}/**`, (route) => {
   const u = new URL(route.request().url());
   if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
   if (u.pathname === '/api/auth/logout') { s3.logout++; s3.logoutAuth = route.request().headers()['authorization']; return route.fulfill({ status: 204, headers: cors }); }

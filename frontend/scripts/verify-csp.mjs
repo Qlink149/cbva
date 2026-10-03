@@ -1,5 +1,8 @@
-// Loads every route of the BUILT app (dist/) in headless Chromium with the CSP from dist/_headers and reports violations.
-// Usage (after: VITE_API_URL=https://api.example.com npm run build):  node scripts/verify-csp.mjs
+// Loads every route of the BUILT app (dist/) in headless Chromium with the real response headers and reports CSP violations.
+// Headers come from dist/_headers when present (Cloudflare Pages), otherwise from frontend/vercel.json: its `headers`
+// rules (all matching rules are merged, like Vercel does) and its SPA `rewrites`. No Vercel login needed.
+// Usage (after: VITE_API_URL=<origin> npm run build):  API_ORIGIN=<origin> node scripts/verify-csp.mjs
+//   API_ORIGIN defaults to https://api.example.com; the API is mocked at that origin.
 // Needs Playwright: set PLAYWRIGHT_DIR to a folder whose node_modules has it (default ../audit/e2e/).
 import http from 'node:http';
 import fs from 'node:fs';
@@ -9,17 +12,35 @@ const require = createRequire(process.env.PLAYWRIGHT_DIR || new URL('../../audit
 const { chromium } = require('playwright');
 
 const DIST = path.resolve(process.cwd(), 'dist');
-const headersTxt = fs.readFileSync(path.join(DIST, '_headers'), 'utf8');
-const globalBlock = headersTxt.split(/\n\n/)[0].split('\n').slice(1);
-const hdrs = {};
-for (const l of globalBlock) { const m = l.match(/^\s+([^:]+):\s*(.*)$/); if (m) hdrs[m[1]] = m[2]; }
+const API_ORIGIN = process.env.API_ORIGIN || 'https://api.example.com';
+let rules = [];      // [{ re, headers }]
+let rewrites = [];   // [{ re, destination }]
+let headerSource;
+if (fs.existsSync(path.join(DIST, '_headers'))) {
+  headerSource = 'dist/_headers (Cloudflare Pages)';
+  const block = fs.readFileSync(path.join(DIST, '_headers'), 'utf8').split(/\n\n/)[0].split('\n').slice(1);
+  const h = {};
+  for (const l of block) { const m = l.match(/^\s+([^:]+):\s*(.*)$/); if (m) h[m[1]] = m[2]; }
+  rules = [{ re: /^.*$/, headers: h }];
+} else {
+  headerSource = 'vercel.json';
+  const cfg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'vercel.json'), 'utf8'));
+  rules = (cfg.headers || []).map((r) => ({ re: new RegExp('^' + r.source + '$'), headers: Object.fromEntries(r.headers.map((x) => [x.key, x.value])) }));
+  rewrites = (cfg.rewrites || []).map((r) => ({ re: new RegExp('^' + r.source + '$'), destination: r.destination }));
+}
+const headersFor = (p) => Object.assign({}, ...rules.filter((r) => r.re.test(p)).map((r) => r.headers));
+console.log('header source:', headerSource, '| API origin:', API_ORIGIN);
+console.log('CSP connect-src:', (headersFor('/')['Content-Security-Policy'] || '').match(/connect-src [^;]*/)?.[0]);
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
 
 const server = http.createServer((req, res) => {
-  let p = decodeURIComponent(req.url.split('?')[0]);
+  const p = decodeURIComponent(req.url.split('?')[0]);
   let f = path.join(DIST, p);
-  if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(DIST, 'index.html');
-  res.writeHead(200, { ...hdrs, 'Content-Type': mime[path.extname(f)] || 'text/html' });
+  if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) {
+    const rw = rewrites.find((r) => r.re.test(p));
+    f = path.join(DIST, rw ? rw.destination : 'index.html');
+  }
+  res.writeHead(200, { ...headersFor(p), 'Content-Type': mime[path.extname(f)] || 'text/html' });
   fs.createReadStream(f).pipe(res);
 }).listen(4173);
 
@@ -40,7 +61,7 @@ await page.addInitScript(() => {
 });
 page.on('console', (m) => { if (/content security policy/i.test(m.text())) violations.push('console: ' + m.text()); });
 const apiCalls = new Set();
-await page.route('https://api.example.com/**', (route) => {
+await page.route(`${API_ORIGIN}/**`, (route) => {
   const u = new URL(route.request().url());
   apiCalls.add(u.pathname);
   let body = { data: [], total: 0 };
@@ -55,6 +76,11 @@ for (const r of routes) {
   await page.evaluate(() => { window.__csp = []; });
   console.log('visited', r, '->', new URL(page.url()).pathname);
 }
+const jsAsset = fs.readdirSync(path.join(DIST, 'assets')).find((f) => f.endsWith('.js'));
+const hAsset = headersFor('/assets/' + jsAsset);
+const hRoot = headersFor('/');
+console.log('asset Cache-Control:', hAsset['Cache-Control']);
+console.log('security headers on /:', ['X-Content-Type-Options', 'Referrer-Policy', 'Permissions-Policy', 'X-Frame-Options'].map((k) => `${k}=${hRoot[k] ? 'set' : 'MISSING'}`).join(' '));
 console.log('API paths mocked:', apiCalls.size);
 console.log('CSP VIOLATIONS:', violations.length);
 [...new Set(violations)].forEach((v) => console.log(' -', v));

@@ -20,8 +20,24 @@ export default defineConfig(({ mode }) => {
     const url = loadEnv(mode, process.cwd(), 'VITE_').VITE_API_URL || process.env.VITE_API_URL;
     try { return url ? new URL(url).origin : null; } catch { return null; }
   })();
-  // public/_headers ships with the placeholder https://api.example.com in connect-src. Rewrite it to the real
-  // API origin so a forgotten manual edit cannot make the deployed CSP block every API call.
+  // Vercel: the CSP lives in vercel.json (static, read before the build), so it lists both API origins. A production
+  // build whose VITE_API_URL is not one of them would ship an app whose every API call is blocked by its own CSP:
+  // fail the build instead. (Escape hatch: SKIP_CSP_ORIGIN_CHECK=1, e.g. for a custom host that you add to the CSP later.)
+  if (mode === 'production' && apiOrigin && process.env.SKIP_CSP_ORIGIN_CHECK !== '1') {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'vercel.json'), 'utf8'));
+      const csp = (cfg.headers || []).flatMap((h) => h.headers || []).find((h) => h.key === 'Content-Security-Policy');
+      const connect = csp && /(?:^|;)\s*connect-src ([^;]*)/.exec(csp.value);
+      if (connect && !connect[1].split(/\s+/).includes(apiOrigin)) {
+        throw new Error(`VITE_API_URL origin ${apiOrigin} is not in the connect-src of vercel.json's CSP (${connect[1]}). `
+          + 'Add it to vercel.json or fix VITE_API_URL (Vercel env var for this environment).');
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError || e.code === 'ENOENT') { /* no usable vercel.json: nothing to check */ } else { throw e; }
+    }
+  }
+  // Cloudflare Pages path only: cloudflare-pages/_headers (copied into public/) ships with the placeholder
+  // https://api.example.com in connect-src. Rewrite it to the real API origin in dist/_headers.
   const cspApiOrigin = {
     name: 'csp-api-origin',
     apply: 'build',
