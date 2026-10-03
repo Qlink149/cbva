@@ -40,8 +40,9 @@ inclient() { docker exec cbva-stack-client-1 curl -sk -m 10 --connect-to api.tes
 echo "--- health, redirect, headers"
 expect "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' https://api.test.local:18443/health/ready)" 200 "/health/ready 200 through Caddy" "/health/ready not 200"
 hdrs="$(curl "${H[@]}" -D - -o /dev/null -H 'Origin: https://app.test.local' https://api.test.local:18443/health)"
+hdrs_lc="$(printf '%s' "$hdrs" | tr '[:upper:]' '[:lower:]')"   # no early-closing reader (grep -q) in a pipe: no SIGPIPE
 for want in 'strict-transport-security' 'x-content-type-options: nosniff' 'x-frame-options: deny' 'access-control-allow-origin: https://app.test.local'; do
-  if echo "$hdrs" | tr '[:upper:]' '[:lower:]' | grep -q "$want"; then pass "header present: $want"; else fail "header missing: $want"; fi
+  if [[ "$hdrs_lc" == *"$want"* ]]; then pass "header present: $want"; else fail "header missing: $want"; fi
 done
 expect "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' https://api.test.local:18443/docs)" 404 "/docs disabled in prod" "/docs reachable"
 

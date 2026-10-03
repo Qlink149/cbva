@@ -23,7 +23,8 @@ trap cleanup EXIT
 here="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -z "${SKIP_BUILD:-}" ]; then (cd "$here/backend" && docker build -t "$IMAGE" .); fi
 echo "--- image size / top layers"; docker images "$IMAGE" --format '{{.Repository}}:{{.Tag}} {{.Size}}'
-docker history --no-trunc=false "$IMAGE" | head -8
+# awk reads its whole input (unlike head), so docker never gets SIGPIPE: no exit 141 under pipefail.
+docker history --no-trunc=false "$IMAGE" | awk 'NR <= 8'
 
 echo "--- image contents"
 docker run --rm --entrypoint sh "$IMAGE" -c 'ls -la /app; find / -name ".env*" -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null; true' | tee /tmp/smoke-contents.txt
@@ -34,7 +35,7 @@ if grep -qE '(^|/)\.env' /tmp/smoke-contents.txt; then fail ".env file found in 
 
 docker network create "$NET" >/dev/null
 docker run -d --name "$MONGO" --network "$NET" mongo:7 >/dev/null
-for _ in $(seq 1 30); do docker exec "$MONGO" mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null | grep -q 1 && break; sleep 1; done
+for _ in $(seq 1 30); do [ "$(docker exec "$MONGO" mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null)" = 1 ] && break; sleep 1; done
 
 docker run -d --name "$API" --network "$NET" --read-only --tmpfs /tmp --memory 700m --user 10001:10001 \
   --cap-drop ALL --security-opt no-new-privileges:true --stop-timeout 20 \
