@@ -14,17 +14,19 @@ MONGO="cbva-smoke-mongo-$$"
 SECRET="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 pass() { printf 'PASS  %s\n' "$*"; }
 fail() { printf 'FAIL  %s\n' "$*"; FAILED=1; }
+# expect <actual> <wanted> <pass message> <fail message>
+expect() { if [ "$1" = "$2" ]; then pass "$3"; else fail "$4"; fi; }
 FAILED=0
 cleanup() { [ "${KEEP:-0}" = 1 ] || { docker rm -f "$API" "$MONGO" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }; }
 trap cleanup EXIT
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -z "${SKIP_BUILD:-}" ]; then docker build -t "$IMAGE" "$here/backend"; fi
+if [ -z "${SKIP_BUILD:-}" ]; then (cd "$here/backend" && docker build -t "$IMAGE" .); fi
 echo "--- image size / top layers"; docker images "$IMAGE" --format '{{.Repository}}:{{.Tag}} {{.Size}}'
 docker history --no-trunc=false "$IMAGE" | head -8
 
 echo "--- image contents"
-docker run --rm --entrypoint sh "$IMAGE" -c 'ls -la /app; find / -name ".env*" -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null' | tee /tmp/smoke-contents.txt
+docker run --rm --entrypoint sh "$IMAGE" -c 'ls -la /app; find / -name ".env*" -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null; true' | tee /tmp/smoke-contents.txt
 for bad in .venv db csv scripts tests; do
   if docker run --rm --entrypoint sh "$IMAGE" -c "[ -e /app/$bad ]"; then fail "/app/$bad present in image"; else pass "/app/$bad absent"; fi
 done
@@ -61,9 +63,9 @@ docker stats --no-stream --format 'RSS/limit: {{.MemUsage}}  cpu: {{.CPUPerc}}' 
 
 echo "--- mongo down -> 503 within ~3s; recovery"
 docker stop "$MONGO" >/dev/null
-t0=$(date +%s.%N); c="$(code "http://$ip:8000/health/ready" 6)"; t1=$(date +%s.%N)
-el="$(echo "$t1 - $t0" | bc 2>/dev/null || echo '?')"
-expect "$c" 503 "503 in ${el}s" "expected 503 got $c"
+t0=$(date +%s%N); c="$(code "http://$ip:8000/health/ready" 6)"; t1=$(date +%s%N)
+el="$(( (t1 - t0) / 1000000 ))ms (includes starting the curl container)"
+expect "$c" 503 "503 in ${el}" "expected 503 got $c"
 expect "$(code "http://$ip:8000/health")" 200 "/health still 200 during outage" "liveness during outage"
 docker start "$MONGO" >/dev/null; sleep 8
 expect "$(code "http://$ip:8000/health/ready" 6)" 200 "/health/ready recovers" "no recovery"
