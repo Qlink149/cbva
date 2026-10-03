@@ -341,7 +341,7 @@ Other pins (fastapi 0.138.0, motor 3.6.0, bcrypt 4.2.1, pydantic 2.10.3, uvicorn
 |---|---|---|
 | 1 requirements | **Fixed** `e7249bd` | uvicorn/openpyxl/tzdata added; dev deps split; `python-multipart` removed (unused). `python-jose` **replaced by PyJWT 2.15.0**: `pip-audit` *without* `--no-deps` also flagged `pyasn1 0.4.8` (python-jose caps it `<0.5`, so it was unfixable) and `ecdsa` (no fix). `pip-audit -r requirements.txt` now reports no known vulnerabilities. `api/requirements.txt` synced (Vercel shim). |
 | 2 .dockerignore | **Fixed** `e7249bd` | |
-| 3 Dockerfile | **Fixed (build UNVERIFIED)** `e7249bd` | Docker Desktop's engine would not start on this machine, so `docker build`, image size, the `read_only` container run and `docker stats` were **not run**. Base image is a tag (`python:3.11-slim`), **not digest-pinned** (needs a pull). |
+| 3 Dockerfile | **Fixed and verified in Docker** `e7249bd`, `2f1797b`, digest pin | Built (315 MB), runs as uid 10001 on a read-only rootfs, `healthy`, 72-98 MiB RSS, clean SIGTERM; base image pinned by digest. Details: `VERIFICATION_REPORT.md` §1. |
 | 4 SECRET_KEY | **Fixed** `e7249bd` | validator + tests |
 | 5 CORS | **Fixed** `e7249bd` | exact origins, no credentials; methods include **PATCH** (routers use it; the brief omitted it). Preflight tests pass. |
 | 6 Rate limiting | **Fixed** `e7249bd` | `CF-Connecting-IP` key, per-email throttle (10 per 15 min, in-process), `/refresh` 30/min |

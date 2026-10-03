@@ -1,11 +1,11 @@
 # Verification report: branch `deploy/vultr-cloudflare`
 
 Scope: verification of commits 83dbcec, e7249bd, 24cdfe5, d7d2072, 8c4f7cb (base d037ef0) plus the fixes made while verifying
-(HEAD `21c17df`). Machine: Windows 10, non-elevated shell. Backend tests ran against a portable MongoDB 7.0.14 on Python 3.12; the
+(first pass HEAD `21c17df`; container pass HEAD `a3c2871` + the base-image digest pin). Machine: Windows 10, non-elevated shell. Backend tests ran against a portable MongoDB 7.0.14 on Python 3.12; the
 browser checks used headless Chromium (Playwright) against the production build.
 
-**Headline: no Docker engine could be started here, so every check that needs a container is NOT RUN.** Everything else was run
-and the output was observed. Statuses: PASS / FAIL / NOT RUN. "Fix" is the commit that fixed a defect the check exposed.
+**Headline (updated 2026-10-03): the Docker engine now runs, and the container checks that were NOT RUN in the first pass have been executed for real. All of section 1 passes except the items listed as still NOT RUN.** The first pass had no engine (see section 0); those rows are rewritten below with the actual output.
+Statuses: PASS / FAIL / NOT RUN. "Fix" is the commit that fixed a defect the check exposed.
 
 ## 0. Getting Docker working
 
@@ -14,25 +14,33 @@ and the output was observed. Statuses: PASS / FAIL / NOT RUN. "Fix" is the commi
 | a) restart Docker Desktop | **FAIL.** Killed and relaunched, waited 240 s; engine never answered (`Docker Desktop is unable to start`). Settings show `WslEngineEnabled=false` (Hyper-V backend); the shell is not elevated (`IsInRole(Administrator)` = False); `wsl --status` prints usage, i.e. WSL is not installed. `wsl --shutdown` is not applicable. |
 | b) other docker context | **FAIL.** `docker context ls` lists `default` (`npipe:////./pipe/docker_engine`) and `desktop-linux`; `docker --context default version` shows only the client. No engine behind either pipe. |
 | c) podman / rancher-desktop | **NOT ATTEMPTED.** Both need WSL2 or Hyper-V enabled, which needs an elevated shell and a reboot. I cannot do either. |
-| d) CI build-only job | **DONE** (`0638c7c`). `.github/workflows/deploy.yml` now has `pull_request` triggers; the `build` job builds the exact `backend/Dockerfile` (no push on PRs) and runs `deploy/smoke-test.sh` on it. **You need to open a PR (or run `bash deploy/smoke-test.sh` on any machine with Docker) to get section 1.** |
+| e) retry after the user freed disk space (2026-10-03) | **SUCCESS.** The first relaunch still failed (Docker Desktop was applying its own update); on the next try the engine answered: `client=29.8.1 server=29.8.1`, 4 CPUs, 1.917 GiB. (The shell is still non-elevated and `wsl --status` still prints usage, so the root cause of the earlier failure was not the missing WSL, or Docker Desktop recovered through its update; I did not determine which.) |
+| d) CI build-only job | **DONE** (`0638c7c`). `.github/workflows/deploy.yml` now has `pull_request` triggers; the `build` job builds the exact `backend/Dockerfile` (no push on PRs) and runs `deploy/smoke-test.sh` on it. Not needed any more for section 1 (run locally), but still worthwhile as the CI gate. |
 
 ## Results
 
-### 1. Container (needs a Docker engine)
+### 1. Container (real Docker 29.8.1, run 2026-10-03)
+
+Run with `bash deploy/smoke-test.sh` (final run, image rebuilt from the digest-pinned base) plus a manual full-stack run of the real
+`deploy/docker-compose.yml` + real `deploy/Caddyfile` (only additions: a local `mongo:7` service, image `cbva-api:smoke`, host ports 8080/8443, a throw-away
+self-signed origin cert, and a scratch `.env`).
 
 | Check | Status | Evidence | Fix |
 |---|---|---|---|
-| `docker build` backend image; size; `docker history` | **NOT RUN** | no engine | - |
-| no `.env`/`.venv`/`db`/`csv`/`scripts`/`tests` inside the image | **NOT RUN** (static substitute below) | Substitute: the Dockerfile copies only `requirements.txt` and `app/`; `find backend/app -type f ! -name '*.py'` returns nothing and `find backend/app -name '.env*'` returns nothing. So those paths cannot enter the image. Not proof of the built image. | - |
-| runs non-root, `--read-only --tmpfs /tmp`, 700m, stays up 60 s | **NOT RUN** | Static substitute: `grep` of `app/` for `open(`, `write_text`, `mkdir`, `tempfile`, `FileHandler`, `shutil` finds no filesystem writes (only `logger.add(sys.stderr)`); `PYTHONDONTWRITEBYTECODE=1`; `USER 10001:10001`. The read-only crash risk is therefore low but **unproven**. | - |
-| `/health` 200; `/health/ready` 200 / 503 within ~3 s with Mongo stopped / 200 after restart | **PARTIAL** | Not in a container. Previous pass, host uvicorn + local mongod: `{"status":"unavailable","db":"down"} http=503 time=2.02s`, `/health` stayed 200 during the outage, 200 again after restart. **Not re-run in this pass** (`/health/ready` code unchanged since). Unit test `test_ready_503_when_ping_fails` passes. | - |
-| Docker `HEALTHCHECK` becomes `healthy` | **NOT RUN** | `hadolint backend/Dockerfile` exit 0 (JSON-form healthcheck) | `e3c9bc7`, `2f1797b` |
-| `docker stats` RSS after 10 endpoints | **NOT RUN** | Host uvicorn working set was about 100 MB (Windows, indicative only; previous pass). | - |
-| SIGTERM: `docker stop` exit 0 within grace | **NOT RUN** | - | - |
-| `docker compose -f deploy/docker-compose.yml config` | **PASS** | exit 0 with dummy `deploy/.env` and `GHCR_OWNER=o TAG=t` (re-run after LF normalization). Resolved: `read_only: true`, `tmpfs: /tmp`, `user: 10001:10001`, `mem_limit: 734003200`, `cap_drop: ALL`, `restart: unless-stopped`, json-file rotation, no `ports` on `api`. | - |
-| Caddyfile validates | **PASS (adapted)** | `caddy validate` v2.11.4 (Windows binary, not the `caddy:2` image): `Valid configuration`. Run on a copy with the `/etc/caddy/...` paths rewritten to temp paths and a throw-away self-signed cert; `caddy adapt` shows `trusted_proxies source: static, ranges: 22, client_ip_headers: ['CF-Connecting-IP']`. | - |
-| full stack: curl through Caddy; API log shows the real client IP, not the proxy | **PASS (host binaries, not containers)** | Caddy + uvicorn on the host. A) peer 127.0.0.1 declared a trusted "Cloudflare", client sends `CF-Connecting-IP: 198.51.100.77` → API log `GET /api/auth/me -> 401 ip=198.51.100.77`. B) production-style config (real Cloudflare ranges, 127.0.0.1 is **not** Cloudflare), client spoofs `CF-Connecting-IP: 198.51.100.88` → API log `ip=127.0.0.1` (spoof discarded). Compose-network behaviour with the Caddy container as peer is **NOT RUN**. | `532ab4c` (log now includes ip) |
-| smoke script itself | **NOT RUN** | written (`deploy/smoke-test.sh`), `shellcheck` clean, `bash -n` ok, never executed | `e3c9bc7` |
+| `docker build` backend image; size; `docker history` | **PASS** | built OK from `python:3.11-slim@sha256:bab1b7ef...487b`; `cbva-api:smoke 315MB` (91.6 MB venv layer, 569 kB app, 48.8 MB Debian base layer; rest is the Python base). Config: `User=10001:10001`, healthcheck `CMD python -c ...`, `CMD uvicorn app.main:app ... --workers 1 --no-proxy-headers --no-access-log`. | digest pin in `backend/Dockerfile` |
+| no `.env`/`.venv`/`db`/`csv`/`scripts`/`tests` in the image | **PASS** | `ls -la /app` shows only `app/`; `PASS /app/.venv absent`, `/app/db`, `/app/csv`, `/app/scripts`, `/app/tests` absent; `find / -name ".env*"` found nothing (`PASS no .env in image`) | - |
+| non-root, `--read-only --tmpfs /tmp`, 700m, stays up 60 s | **PASS** | `docker exec id -u` → `uid=10001`; run with `--read-only --tmpfs /tmp --memory 700m --cap-drop ALL --security-opt no-new-privileges`: `PASS up for 60s`. No read-only crash: nothing in `app/` writes to disk. The bootstrap/CLI also ran fine inside this read-only non-root container. | - |
+| `/health` 200; `/health/ready` 200; 503 within ~3 s with Mongo stopped; 200 after restart | **PASS** | `PASS /health 200`, `PASS /health/ready 200 (mongo up)`; Mongo stopped → `PASS 503 in 3413ms (includes starting the curl container)` (the app's own ping timeout is 2 s; earlier host measurement 2.02 s); `/health` stayed 200 during the outage; `PASS /health/ready recovers` after `docker start`. API log: `Readiness check failed` + `GET /health/ready -> 503 ip=172.18.0.2`. | - |
+| Docker `HEALTHCHECK` becomes `healthy` | **PASS** | `PASS health=healthy` (`docker inspect .State.Health.Status`); compose run: `api  Up 52 seconds (healthy)` | - |
+| `docker stats` RSS after 10 endpoints | **PASS** | smoke runs: 98.28 MiB, 89.09 MiB, 71.46 MiB of 700 MiB (cpu 0.2-0.4%). Full stack after authenticated traffic: `api 71.97MiB / 700MiB`, `caddy 12.11MiB / 128MiB`, `mongo 119.2MiB`. Comfortable on a 1 GB VPS (Mongo is external in production). | - |
+| SIGTERM: `docker stop` exit 0 within grace | **PASS** | `PASS exit code 0 in 1s`; log: `Shutting down`, `Waiting for application shutdown`, `Application shutdown complete`, `Finished server process [1]` | - |
+| `docker compose -f deploy/docker-compose.yml config` | **PASS** | exit 0 (dummy env; and again with the real override + mounts) | - |
+| Caddyfile validates | **PASS** | the real `deploy/Caddyfile` with real `cloudflare-ips.conf` and cert mounts loaded and served in the `caddy:2` container (Caddy 2.x); earlier `caddy validate` (v2.11.4 binary) also `Valid configuration` | - |
+| full stack: curl through Caddy; API log shows the real client IP, not the proxy | **PASS** | Containers: Caddy `172.18.0.4`, API `172.18.0.2`, Docker Desktop host gateway `192.168.65.1`. (1) Real Cloudflare ranges (the host is not Cloudflare), client spoofs `CF-Connecting-IP: 198.51.100.88` → API log `GET /api/auth/me -> 401 ip=192.168.65.1`: the true peer as Caddy sees it, **not** the Caddy container IP and **not** the spoofed value. (2) `cloudflare-ips.conf` set to trust `192.168.65.1` (stand-in for Cloudflare), client sends `198.51.100.77` → `ip=198.51.100.77`. (3) Login limit through Caddy: 6 bad logins from `203.0.113.10` → 401×5 then **429**; a different IP (`203.0.113.20`) → 401, not locked out. | - |
+| via Caddy: security headers, CORS, docs | **PASS** | `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Access-Control-Allow-Origin: https://app.example.com` for the app origin; `https://evil.example.com` preflight → 400 with no ACAO; `/docs` and `/openapi.json` → 404 (`ENV=prod`) | - |
+| bootstrap / demo users / indexes inside the container | **PASS** | `docker compose run --rm --no-deps api python -m app.cli bootstrap` ×2: created, then `already exists ... left unchanged`; `check-demo-users` → `OK: no demo accounts`; `verify-indexes` → `all expected indexes present`; login as the bootstrapped admin through Caddy, then `200` for `/api/auth/me`, `/api/kra/categories`, `/api/financial-years/`, `/api/leaders/`, `/api/admin/users`, `/api/firmwide/summary`; `/api/consolidated-summary/` → **503** (no xlsx in the image, as designed; the dev machine returned 82 rows only because the xlsx exists locally) | - |
+| smoke script itself | **PASS after fixes** | exits 0. Real-run defects fixed: MSYS path to `docker build`, `find /` fatal under `set -e`, missing `expect` helper, no `bc`. `shellcheck` (docker image `koalaman/shellcheck`) clean on all three scripts, `hadolint` clean. | `a3c2871` |
+| not exercised in containers | **NOT RUN** | the exact behaviour with **Cloudflare** as the peer (needs a real VPS + Cloudflare); `ufw` rules; Origin CA TLS with a real cert; pulling from GHCR | - |
 
 ### 2. Workflow
 
@@ -141,14 +149,18 @@ and the output was observed. Statuses: PASS / FAIL / NOT RUN. "Fix" is the commi
 
 ## GO / NO-GO for a staging deploy
 
-**NO-GO until the container has actually been built and run once.** Blocking items (all NOT RUN, none FAIL):
+**GO for staging.** The image builds from a digest-pinned base, runs as uid 10001 on a read-only root filesystem, reaches `healthy`, answers `/health/ready` 200 / 503 / 200
+around a Mongo outage, stops cleanly on SIGTERM, and the real compose + Caddy stack passes client-IP, spoofing, rate-limit, CORS and header checks (section 1).
+Backend suite 145 passed / 1 skipped; `pip-audit` clean.
 
-1. `docker build` of `backend/Dockerfile`, image size, contents check.
-2. Container runs non-root on a read-only rootfs and stays up 60 s; `HEALTHCHECK` reaches `healthy`; `docker stats` RSS; `docker stop` exits 0.
-3. `/health/ready` 200 → 503 → 200 against a real Mongo container.
-4. Full compose stack (api + Caddy containers): the client IP seen by the API when the peer is the Caddy container.
-5. The GitHub Actions workflow has never executed (including the `fingerprint` input of the appleboy actions).
+Still NOT RUN (cannot be run here; none failed). Do these on the first staging deploy:
 
-**One action clears 1 to 3 and part of 4:** open a PR; the `build` job builds the image and runs `deploy/smoke-test.sh`. Or run `bash deploy/smoke-test.sh` on any machine with Docker. If it is green, this becomes **GO for staging**.
+1. The GitHub Actions workflow has never executed (including the `fingerprint` input of the appleboy actions and the PR `build` job).
+2. A real VPS: `bootstrap-vps.sh` / ufw Cloudflare-only rules, key-only SSH, swap, and the cron refresh.
+3. Cloudflare in front: Full (strict) with an Origin CA certificate, and the API seeing `CF-Connecting-IP` from real Cloudflare edges.
+4. Pulling the image from GHCR with the `GHCR_PULL_*` credentials; the auto-rollback on a real failed deploy.
+5. Atlas: allowlist for the VPS IP, user privileges, `mongodump`/`mongorestore` against real data.
 
-Not blocking staging, but required before production: `npm audit` highs (axios, react-router, lodash, postcss, form-data, nanoid, picomatch), real-prod checks that need access I do not have (demo users on the prod DB, Atlas allowlist/privileges, rotate the local `.env` credential), loading `leaders` and `consolidated_summaries` into prod, creating the Cloudflare Origin CA certificate, a real-VPS run of `bootstrap-vps.sh` (ufw), pinning the base image by digest.
+Not blocking staging, **required before production**: the `npm audit` highs (axios, react-router, lodash, postcss, form-data, nanoid, picomatch), rotating the local `.env`
+credential that equals `MONGODB_URL_PROD_READ`, checking the prod DB for demo accounts (`check-demo-users`), loading `leaders` and `consolidated_summaries` into prod, and moving the
+frontend logo/fonts off third parties if you want a tighter CSP.

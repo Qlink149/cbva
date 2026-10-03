@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Base image pinned by digest (update deliberately; see deploy/README.md).
-ARG PYTHON_IMAGE=python:3.11-slim
+ARG PYTHON_IMAGE=python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b
 
 FROM ${PYTHON_IMAGE} AS build
 WORKDIR /w
