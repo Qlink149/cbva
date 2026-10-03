@@ -52,7 +52,9 @@ login() { # login <email> <password> [extra curl args...]; prints the HTTP statu
   local e="$1" p="$2"; shift 2
   curl "${H[@]}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"email\":\"$e\",\"password\":\"$p\"}" "$@" https://api.test.local:18443/api/auth/login
 }
-code="$(inclient -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"email":"ops@example.com","password":"correct-horse-battery"}' https://api.test.local/api/auth/login)"
+login_resp="$(inclient -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"email":"ops@example.com","password":"correct-horse-battery"}' https://api.test.local/api/auth/login)"
+code="${login_resp##*$'\n'}"
+token="$(printf '%s' "${login_resp%$'\n'*}" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
 expect "$code" 200 "bootstrapped admin can log in through Caddy" "admin login failed ($code)"
 
 echo "--- spoofing: host sends 7 bad logins, each with DIFFERENT spoofed X-Real-IP / CF-Connecting-IP / X-Forwarded-For"
@@ -79,6 +81,29 @@ echo "ips seen: $ips"
 case "$ips" in *"ip=$caddy_ip"*) fail "API logged the Caddy container IP ($caddy_ip)";; *) pass "API never logged the Caddy container IP";; esac
 case "$ips" in *ip=9.9.9.*|*ip=8.8.8.*|*ip=7.7.7.*) fail "a spoofed address appeared in the API log: $ips";; *) pass "no spoofed address in the API log";; esac
 case "$ips" in *"ip=$client_ip"*) pass "second client's real IP ($client_ip) logged";; *) fail "second client IP missing from log";; esac
+
+echo "--- every list endpoint WITHOUT the trailing slash, over https through Caddy: no 3xx, no http:// Location"
+if [ -z "$token" ]; then fail "no access token from the admin login"; fi
+q="leader_id=manan&fiscal_year=2627"
+for ep in actions additional-work assessments audit-log baselines bluesky client-meetings collection-transactions collections \
+          consolidated-summary el-summary engagement-actions engagements financial-years headcount hiring leaders new-clients \
+          pipeline tasks team; do
+  hdr="$(curl "${H[@]}" -D - -o /dev/null -H "Authorization: Bearer $token" "https://api.test.local:18443/api/$ep?$q" | tr -d '\r')"
+  code="$(printf '%s\n' "$hdr" | awk 'toupper($1) ~ /^HTTP/ { c = $2 } END { print c }')"
+  loc="$(printf '%s\n' "$hdr" | awk 'tolower($1) == "location:" { print $2 }')"
+  with_slash="$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "https://api.test.local:18443/api/$ep/?$q")"
+  case "$code" in
+    3*) fail "/api/$ep -> $code redirect (Location: ${loc:-none})" ;;
+    "") fail "/api/$ep -> no response" ;;
+    *) if [ -n "$loc" ]; then fail "/api/$ep -> $code with Location $loc";
+       elif [ "$code" != "$with_slash" ]; then fail "/api/$ep -> $code but /api/$ep/ -> $with_slash";
+       else pass "/api/$ep -> $code (same as /api/$ep/), no redirect, no Location"; fi ;;
+  esac
+done
+expect "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" https://api.test.local:18443/api/leaders)" 200 \
+  "GET /api/leaders (the prod bug) -> 200" "GET /api/leaders not 200"
+expect "$(curl "${H[@]}" -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" https://api.test.local:18443/api/baselines)" 200 \
+  "GET /api/baselines (the prod bug) -> 200" "GET /api/baselines not 200"
 
 echo "--- resources"
 docker stats --no-stream --format '{{.Name}}  mem={{.MemUsage}}  cpu={{.CPUPerc}}' cbva-stack-api-1 cbva-stack-caddy-1

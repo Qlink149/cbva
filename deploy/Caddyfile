@@ -30,6 +30,9 @@
 		header_up -CF-Connecting-IP
 		header_up -X-Forwarded-For
 		header_up X-Real-IP {remote_host}
+		# The scheme of the browser's connection to Caddy (https), overwriting anything the client sent.
+		# The API trusts it only from this container network, to build correct https URLs.
+		header_up X-Forwarded-Proto {scheme}
 	}
 
 	header {
