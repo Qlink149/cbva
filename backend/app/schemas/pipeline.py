@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import date, datetime
+from app.schemas.common import BlankableDate
 
 from app.schemas.provenance import DataProvenance
 
@@ -17,7 +18,7 @@ class PipelineSnapshotCreate(BaseModel):
     blue_sky: Optional[int] = None
     total: int = 0
     snapshot_type: SnapshotType = "monthly"
-    as_of_date: Optional[date] = None
+    as_of_date: BlankableDate = None
     source: Optional[DataProvenance] = None
 
 
@@ -28,7 +29,7 @@ class PipelineSnapshotUpdate(BaseModel):
     blue_sky: Optional[int] = None
     total: Optional[int] = None
     snapshot_type: Optional[SnapshotType] = None
-    as_of_date: Optional[date] = None
+    as_of_date: BlankableDate = None
 
 
 class PipelineSnapshotResponse(BaseModel):

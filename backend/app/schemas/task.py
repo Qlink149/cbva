@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import date, datetime
+from app.schemas.common import BlankableDate
 
 
 class TaskCreate(BaseModel):
@@ -8,7 +9,7 @@ class TaskCreate(BaseModel):
     assignee_name: str = ""
     client_name: str = ""
     priority: Literal["Low", "Medium", "High", "Urgent"] = "Medium"
-    deadline: Optional[date] = None
+    deadline: BlankableDate = None
     notes: str = ""
     fiscal_year: Optional[str] = None
     leader_id: Optional[str] = None  # required for admin/management acting on a selected leader
@@ -19,7 +20,7 @@ class TaskUpdate(BaseModel):
     assignee_name: Optional[str] = None
     client_name: Optional[str] = None
     priority: Optional[Literal["Low", "Medium", "High", "Urgent"]] = None
-    deadline: Optional[date] = None
+    deadline: BlankableDate = None
     notes: Optional[str] = None
     status: Optional[Literal["Pending", "In Progress", "Done"]] = None
 

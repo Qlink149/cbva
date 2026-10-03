@@ -5,7 +5,7 @@ FY_MONTH_KEYS = ["04", "05", "06", "07", "08", "09", "10", "11", "12", "01", "02
 
 
 def parse_fy_slug(slug: str) -> tuple[int, int] | None:
-    if not slug or len(slug) != 4:
+    if not slug or len(slug) != 4 or not slug.isdigit():
         return None
     start_year = 2000 + int(slug[:2])
     end_year = 2000 + int(slug[2:])

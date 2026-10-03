@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import date, datetime
+from app.schemas.common import BlankableDate
 
 
 class TeamMemberCreate(BaseModel):
@@ -9,7 +10,7 @@ class TeamMemberCreate(BaseModel):
     designation: str = ""
     email: str = ""
     annual_cost: int = 0
-    joining_date: Optional[date] = None
+    joining_date: BlankableDate = None
     status: Literal["Active", "On Notice", "Inactive"] = "Active"
     notes: str = ""
     fiscal_year: str
@@ -24,7 +25,7 @@ class TeamMemberUpdate(BaseModel):
     designation: Optional[str] = None
     email: Optional[str] = None
     annual_cost: Optional[int] = None
-    joining_date: Optional[date] = None
+    joining_date: BlankableDate = None
     status: Optional[Literal["Active", "On Notice", "Inactive"]] = None
     notes: Optional[str] = None
     fiscal_year: Optional[str] = None

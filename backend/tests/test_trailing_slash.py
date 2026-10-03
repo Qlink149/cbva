@@ -85,8 +85,7 @@ async def test_every_route_same_status_with_and_without_trailing_slash(client, a
             mismatches.append(f"{method} {path}: {results[0].status_code} vs {results[1].status_code} (toggled slash)")
     await sweep.aclose()
     login_email_limiter.reset()
-    if server_errors:   # pre-existing handler bugs with an empty body; reported, not part of this check
-        print("server errors (same on both spellings):", sorted(server_errors))
+    assert not server_errors, sorted(server_errors)   # an empty or dummy body must be a 4xx, never a 5xx
     assert not redirects, redirects
     assert not mismatches, mismatches
 

@@ -6,6 +6,7 @@ from typing import Optional
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.schemas.settings import PublicSettings, AppSettingsResponse
 from app.schemas.financial_year import FinancialYearCreate, FinancialYearUpdate
+from app.schemas.master_data import ClientCreate, EngagementTypeCreate
 from app.services.fiscal_year import serialize_financial_year
 from app.core.security import hash_password
 from app.core import database
@@ -190,17 +191,13 @@ async def list_clients(current_user: dict = Depends(require_roles("admin", "mana
 
 
 @router.post("/clients", status_code=201)
-async def create_client(body: dict, current_user: dict = Depends(require_roles("admin"))):
-    now = datetime.now(timezone.utc)
-    body["created_at"] = now
-    result = await database.db.clients.insert_one(body)
-    body["_id"] = result.inserted_id
-    await audit_service.log_create(
-        "client", body, current_user,
-        label=body.get("name", "Client"),
-    )
-    body["id"] = str(result.inserted_id)
-    return body
+async def create_client(body: ClientCreate, current_user: dict = Depends(require_roles("admin"))):
+    doc = {**body.model_dump(), "created_at": datetime.now(timezone.utc)}
+    result = await database.db.clients.insert_one(doc)
+    await audit_service.log_create("client", doc, current_user, label=doc["name"])
+    doc["id"] = str(doc.pop("_id", result.inserted_id))
+    doc["created_at"] = serialize_datetime(doc["created_at"])
+    return doc
 
 
 # ─── Engagement Types ─────────────────────────────────────────────────────────
@@ -214,16 +211,12 @@ async def list_engagement_types(current_user: dict = Depends(require_roles("admi
 
 
 @router.post("/engagement-types", status_code=201)
-async def create_engagement_type(body: dict, current_user: dict = Depends(require_roles("admin"))):
-    body.setdefault("is_active", True)
-    result = await database.db.engagement_types.insert_one(body)
-    body["_id"] = result.inserted_id
-    await audit_service.log_create(
-        "engagement_type", body, current_user,
-        label=body.get("name", "Engagement Type"),
-    )
-    body["id"] = str(result.inserted_id)
-    return body
+async def create_engagement_type(body: EngagementTypeCreate, current_user: dict = Depends(require_roles("admin"))):
+    doc = body.model_dump()
+    result = await database.db.engagement_types.insert_one(doc)
+    await audit_service.log_create("engagement_type", doc, current_user, label=doc["name"])
+    doc["id"] = str(doc.pop("_id", result.inserted_id))
+    return doc
 
 
 # ─── Financial Years ──────────────────────────────────────────────────────────
