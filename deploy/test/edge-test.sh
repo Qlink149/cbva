@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 FAILED=0
 pass() { printf 'PASS  %s\n' "$*"; }
 fail() { printf 'FAIL  %s\n' "$*"; FAILED=1; }
+# expect <actual> <wanted> <pass message> <fail message>
+expect() { if [ "$1" = "$2" ]; then pass "$3"; else fail "$4"; fi; }
 trap 'docker compose -f docker-compose.edge-test.yml down -v >/dev/null 2>&1 || true' EXIT
 
 docker compose -f docker-compose.edge-test.yml up -d >/dev/null
@@ -15,7 +17,8 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-field() { python -c "import sys,json; h=json.load(sys.stdin)['headers']; print(h.get('$1','<absent>'))"; }
+PY="$(command -v python || command -v python3)"
+field() { "$PY" -c "import sys,json; h=json.load(sys.stdin)['headers']; print(h.get('$1','<absent>'))"; }
 caddy_ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "cbva-edge_internal").IPAddress}}' cbva-edge-caddy-1)"
 client_ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "cbva-edge_internal").IPAddress}}' cbva-edge-client-1)"
 echo "caddy container=$caddy_ip  second client container=$client_ip"
@@ -23,7 +26,7 @@ echo "caddy container=$caddy_ip  second client container=$client_ip"
 echo "--- client 1 (docker host) sends spoofed CF-Connecting-IP, X-Forwarded-For and X-Real-IP"
 body="$(curl --resolve api.test.local:18443:127.0.0.1 -sk https://api.test.local:18443/anything \
   -H 'CF-Connecting-IP: 1.1.1.1' -H 'X-Forwarded-For: 2.2.2.2, 3.3.3.3' -H 'X-Real-IP: 4.4.4.4')"
-echo "$body" | python -c "import sys,json; h=json.load(sys.stdin)['headers']; print({k:h.get(k) for k in ('x-real-ip','cf-connecting-ip','x-forwarded-for')})"
+echo "$body" | "$PY" -c "import sys,json; h=json.load(sys.stdin)['headers']; print({k:h.get(k) for k in ('x-real-ip','cf-connecting-ip','x-forwarded-for')})"
 real1="$(echo "$body" | field x-real-ip)"
 expect "$(echo "$body" | field cf-connecting-ip)" "<absent>" "CF-Connecting-IP stripped" "CF-Connecting-IP reached upstream"
 expect "$(echo "$body" | field x-forwarded-for)" "<absent>" "X-Forwarded-For stripped" "X-Forwarded-For reached upstream"
