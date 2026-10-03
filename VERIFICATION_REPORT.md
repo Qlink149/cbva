@@ -7,6 +7,134 @@ browser checks used headless Chromium (Playwright) against the production build.
 **Headline (updated 2026-10-03): the Docker engine now runs, and the container checks that were NOT RUN in the first pass have been executed for real. All of section 1 passes except the items listed as still NOT RUN.** The first pass had no engine (see section 0); those rows are rewritten below with the actual output.
 Statuses: PASS / FAIL / NOT RUN. "Fix" is the commit that fixed a defect the check exposed.
 
+## Live-data safety audit (2026-10-03, against a verification copy of prod)
+
+Report only: no application behaviour was changed. Database used: **`cbva_verify`**, a full copy of prod (29 collections, 2660 documents, prod's indexes),
+reached only through environment variables in this session; the connection string is not written in any file, commit or report.
+Prod was never contacted. `python -m app.cli bootstrap` and `check-demo-users --deactivate` were **not** run.
+All file:line references are at HEAD `bea2efa` (backend code unchanged since `2509a1a`).
+
+### 1. Every database write the backend can perform
+
+**(a) Startup and the first request of a process.** `lifespan` (`app/main.py:53-57`) and, on every non-`/health` request, `ensure_db_middleware` -> `ensure_db_connected` (`app/main.py:88-91`, `app/core/database.py:59`), plus `GET /health/ready` when not yet connected (`app/main.py:148-154`).
+
+| Write | Collection / filter | Can modify or delete existing docs? | Idempotent? | Evidence |
+|---|---|---|---|---|
+| 44 x `create_index` | every collection in `app/core/database.py:85-161` | no data change; creating an index that already exists with the same name, keys and options is a no-op | yes | `_create_indexes`, called by `connect_db` (`database.py:38`) via `_create_indexes_with_retry` (`database.py:18`) |
+| `drop_index("fiscal_year_1_leader_id_1_category_id_1")` | `kra_weight_config` | drops that legacy index **if present** (no data) | yes | `database.py:143` (in try/except) |
+| `update_one {_id: calendarFY} $set is_editable:true` | `financial_years`, only if current FY == calendar FY and `is_editable` is null | yes, one field | yes | `app/services/fiscal_year.py:105` |
+| `update_many {} $set is_current:false` + `update_one {_id: calendarFY} $set is_current,is_editable` + `update_many {slug != cal, is_editable missing/null} $set is_editable:false` | `financial_years`, only when the registry's current FY is **behind** the calendar FY (never pulls it backward) | yes (flags + `updated_at`) | yes | `fiscal_year.py:116, 120, 131`; guard `fiscal_year.py:111-113` |
+
+**(b) Inside GET handlers** (static call graph from every `@router.get`, confirmed by the live run).
+
+| GET endpoint | Write | Can modify existing? | Idempotent? | Evidence | In live `d037ef0`? |
+|---|---|---|---|---|---|
+| `/api/appraisals/rounds`, `/api/appraisals/scorecard` | `appraisal_rounds.insert_one` for each of the 4 round types missing for (fiscal_year, leader_id); no check that the leader exists | **no** (insert only) | yes (only inserts what is missing; a race between two requests gets a DuplicateKeyError from the unique index, data stays correct) | `app/routers/appraisals.py:66-90` (insert `:85`), called at `:112`, `:237` | yes |
+| `/api/pipeline/` | `pipeline_snapshots.update_one(..., upsert=True)` on {leader_id, fiscal_year, snapshot_type, label}: current month = live engagement totals, past months = consolidated rows; `$set` amounts, `sort_order`, `updated_at` | **yes** | values yes (repeat call changed only `updated_at`, see 6); `updated_at` changes every call | `app/routers/pipeline.py:71` -> `app/services/engagement_derivation.py:162`, `:136`, `:158` | yes |
+| `/api/pipeline/` | `collection_entries.update_one(..., upsert=True)` on {leader_id, fiscal_year, month} for months with planned > 0: `$set planned, sort_order, updated_at`, `$setOnInsert collected:0, variance, created_at` | **yes** (`planned`, `sort_order`, `updated_at`; never `collected`) | same as above | `engagement_derivation.py:235-253` | yes |
+| `/api/consolidated-summary/` | `consolidated_summaries.update_one(upsert)` + one `audit_log` insert, **only** if no document exists for `report_fy` **and** the xlsx exists on disk (it is not in the image) | inserts only in practice | yes | `app/services/consolidated_service.py:310-331` | yes |
+| any GET (first one per process) | the startup writes of (a) | see (a) | see (a) | middleware | yes |
+
+No other GET handler writes (checked for `/api/collections`, `/bluesky`, `/el-summary` and the rest: the hash diff in 6 shows no other collection changed).
+
+**(c) CLI commands** (`app/cli.py`).
+
+| Command | Writes | Modifies existing? | Evidence |
+|---|---|---|---|
+| `bootstrap` | exits with code 2 before connecting if `ADMIN_EMAIL`/`ADMIN_PASSWORD` are missing (`cli.py:41-44`); otherwise `connect_db` (indexes, a), `users.insert_one` if the email is not a user yet (`:55`), `ensure_kra_seed` (`:72`: four `update_many`/`update_one` migrations on docs **without** `layer` and inserts into empty KRA sets, `app/services/kra_seed.py:265-350`), `financial_years.insert_one` if the calendar FY is missing (`:78`), FY sync (`:90`) | the KRA `layer` migrations would modify existing docs if any lacked `layer` | see 4 |
+| `check-demo-users` (read-only) | **`connect_db` runs index creation** (`cli.py:110`), i.e. it is not strictly read-only, though a no-op when indexes exist (as here) | no | `cli.py:109-110` |
+| `check-demo-users --deactivate` | `users.update_one {_id} $set is_active:false, refresh_token_hashes:[]` per matched account | **yes** | `cli.py:126-128` |
+| `verify-indexes` | none (records `_create_indexes` against a stand-in object; reads with its own client) | no | `cli.py:164-200` |
+| `verify-indexes --create` | `connect_db` -> index creation | no data | `cli.py:202-203` |
+| `compare-counts` | none | no | `cli.py` |
+
+**For completeness, auth writes** (POST, exercised in the live run): login `users.update_one $push refresh_token_hashes ($slice -5)` and `$set last_login` + `audit_log` insert (`app/routers/auth.py:34, 54, 60`); refresh `$pull` + `$push` (`:102`, `:34`); logout `$set refresh_token_hashes: []` (`:120`). All other POST/PUT/PATCH/DELETE handlers are explicit user edits.
+
+### 2. Indexes
+
+The code issues 44 `create_index` and 1 `drop_index` (`app/core/database.py:85-161`). Read with `list_indexes` on `cbva_verify`:
+
+- **All 44 already exist with the same name, key pattern and uniqueness** -> every `create_index` is a no-op. None missing; no name or option conflict (which would make `createIndex` fail).
+- The `drop_index` target `kra_weight_config.fiscal_year_1_leader_id_1_category_id_1` is **not present** -> no-op.
+- 7 indexes exist in the DB that the code does not create; they are **left untouched**: `headcount_plans.leader_id_1_designation_1` (unique), `hiring_requirements.leader_id_1_status_1`, `kpi_definitions.fiscal_year_1_category_id_1_sort_order_1`, `leadership_competencies.sort_order_1`, `team_members.leader_id_1_status_1`, `team_members.leader_id_1_is_manager_1`, `team_members.leader_id_1_sort_order_1`.
+- Read-only `$group` duplicate check for all **13 unique indexes** (missing fields grouped as null, as a unique index does): **no duplicates** in any (users.email 13 docs, engagements (leader_id, fiscal_year, num) 513, pipeline_snapshots (leader_id, fiscal_year, label) 83, blue_sky_entries 21, collection_entries 133, headcount_plans 81, baseline_plans 0, el_summaries 0, consolidated_summaries 2, kra_weight_config 12, appraisal_rounds 12, kpi_ratings 0, competency_ratings 0).
+- The index list in `_create_indexes` is **unchanged since `d037ef0`** (the only diff is the retry wrapper `database.py:18-35`), so the live Vercel backend already issues the same calls on every cold start.
+- Live confirmation: `verify-data.sh` index diff before vs after the API start and the full run: **identical, none created, dropped or changed**.
+
+### 3. Compatibility with `d037ef0` (live on Vercel) and side-by-side running
+
+Diff `d037ef0..HEAD -- backend/app` (19 files). Data-relevant findings:
+
+| Area | Change | Effect on existing data | Side by side |
+|---|---|---|---|
+| Document shapes, field names, enums | **none**: `app/schemas/*` and `app/services/audit_service.py` unchanged; no router changes a stored field name or enum value | none | safe |
+| Index set | unchanged (2) | none | safe: both issue identical no-op `create_index` |
+| GET-time writes (1b) | unchanged; they already happen on the live backend | none new | both upsert the same keys; a simultaneous upsert can raise one DuplicateKeyError (HTTP 500, retry succeeds), as already possible between two Vercel instances |
+| "Today" / FY logic | `date.today()` (server-local; **UTC on Vercel**) -> `today_ist()` in 16 places (`app/core/serialization.py`, `fy_calendar.py:16,37,...`, `engagements.py:118,205,393`, `collections.py:51,120`, `bluesky.py:121,180`, `consolidated_service.py:93`, `engagement_derivation.py:189`, `firmwide_service.py:195`) and `calendar_fy_slug` (`fiscal_year.py:12`) | the new backend is correct for India; the old one lags by 5h30 (it still thinks it is "yesterday" between 00:00 and 05:30 IST) | **differs only between 00:00 and 05:30 IST**: (i) on the last night of a month the two disagree on the "current month": engagement saves add blue-sky deltas / auto pipeline snapshots to month M (old) vs M+1 (new) (`engagements.py:118-122, 205-210`), and `GET /api/pipeline/` writes live totals to a different monthly snapshot; (ii) on the 20th the month lock starts at 00:00 IST (new) vs 05:30 IST (old) (`fy_calendar.py` `is_month_locked`); (iii) 1 April: the new backend advances `is_current` at 00:00 IST, the old one cannot pull it back (guard `fiscal_year.py:111-113`), so no flip-flop |
+| Auth tokens | PyJWT instead of python-jose, HS256 unchanged; new tokens add `jti`; TTL 15 min / 7 d (old 60 min / 30 d) (`app/core/security.py`) | none | tokens cross backends only if both share `SECRET_KEY` (not required). Both write the same `users.refresh_token_hashes` array (keep last 5): a user active on both sides can be logged out early; a logout on either side clears all refresh tokens (`auth.py:120`). Harmless |
+| Admin user update | password change / deactivation also clears `refresh_token_hashes` (`app/routers/admin.py:110-112, 141-143`) | that field only | harmless |
+| Consolidated summary | new returns 503 instead of an empty matrix when neither the document nor the xlsx exists (`app/routers/consolidated.py`) | none (both FYs `2627`, `2526` are seeded) | safe |
+| Startup | index retry wrapper; FY sync unchanged | none (2, and 6: no change at startup) | safe |
+
+### 4. `python -m app.cli bootstrap` must NOT be run against this (or the live) database
+
+It is not needed (data exists) and its writes are not all reversible. Prediction from read-only queries on `cbva_verify` (not executed):
+- **`users.insert_one`**: a **new admin account** for `ADMIN_EMAIL` if that email is not already a user (`cli.py:55`). This is the only write it would make on today's data.
+- `ensure_kra_seed`: migrations would `update_many` docs lacking `layer` (currently 0 kpi_definitions, 0 kra_weight_config, 0 leadership_competencies); seed inserts only into empty sets (currently kra_categories 4, competencies all_time 4, weights all_time 4, weights fy 2627/2526 4 each, kpi_definitions all_time 17: none empty).
+- `financial_years.insert_one` only if the calendar FY is missing (`2627` exists); FY sync is a no-op (current = 2627, editable).
+- Index creation: no-op (2).
+Rule: run it only on an **empty** database (first install). On a populated database, create admins through the admin UI/API.
+
+### 5. `deploy/verify-data.sh` (committed `bea2efa`)
+
+Read-only by construction (only `listCollections`, `countDocuments`, `find`, `listIndexes`); URI and DB name from the environment only, passed to `docker run --rm mongo:7` with `-e VAR` (never on a command line); prints the host, never the credentials. Modes `counts`, `snapshot` (per-document md5 of canonical EJSON), `indexes`, `compare` (count deltas vs `counts-before.txt`; documents created or modified in the last N minutes via the `_id` ObjectId timestamp and any top-level Date field; with a snapshot, the exact created/changed/deleted `_id`s; with an index file, the index diff). Exit 0 = no differences, 1 = differences. `shellcheck` clean. Self-test against `cbva_verify` before the run: 29 collections, 2660 docs, 80 indexes, immediate compare -> **no differences**.
+
+### 6. Live run on `cbva_verify`
+
+Setup: the exact image built from HEAD (`cbva-api:verify`, non-root, `--read-only --tmpfs /tmp`, `ENV=prod`, `EDGE_MODE=direct`), bound to 127.0.0.1 only. Timeline (UTC): baseline 13:31; API start 13:36:04; temporary admin + sweep 13:38:16; API stopped and temporary admin deleted 13:39:52.
+
+1. **API startup alone** (before any request): `verify-data.sh compare` -> **no differences** (no document, no index). Startup log: `MongoDB connected and indexes ensured.`
+2. **Documented temporary admin**: one user inserted directly into `cbva_verify` (`email verify-temp-admin@example.com`, role admin, random password kept only in a local scratch file), used for the real auth flow: login 200, refresh 200, `/api/auth/me` 200, logout 204; deleted afterwards (`deleted_count=1`). (A first attempt with an `@example.invalid` address was rejected by email validation with 422 before any handler ran; that user was deleted and recreated with the `example.com` address.)
+3. **Existing users**: existing admin `_id 6a4f6270ac9848e840a693b3` and existing non-admin `_id 6a5885f57b43fda7e5e4146e` (role user, leader `vinay`) were exercised with access tokens **signed by the local run's SECRET_KEY** (their passwords are unknown; this also avoided writing `last_login`/refresh hashes into real accounts). Every GET was called once per role: **48 requests each**; admin 46 x 200 + 2 x 400; user 30 x 200 + 16 x 403 (admin/management-only endpoints, correct) + 2 x 400. The two 400s are `/api/kra/kpis` and `/api/kra/weights` without `fiscal_year` (`"fiscal_year required for FY layer"`); re-called with `layer=fy&fiscal_year=2627`: 200 for both roles. API log: no errors.
+4. **`verify-data.sh compare` after the run**: counts `appraisal_rounds 12 -> 16`, `audit_log 1304 -> 1305`, `pipeline_snapshots 83 -> 84`, everything else unchanged; **6 created, 6 changed, 0 deleted; indexes identical**.
+
+| Document | Change | Explanation |
+|---|---|---|
+| `appraisal_rounds` `6ac1054fcb1279f9a285d71c`, `...d71d`, `...d71e`, `6ac10550cb1279f9a285d71f` | **created**: `vinay` / `2627` / `self_midyear`, `mgmt_midyear`, `self_yearend`, `mgmt_yearend`, `state: open` | `GET /api/appraisals/rounds` (`appraisals.py:85`): `vinay` had no rounds for 2627 (only manan, np, priyesh did). Insert-only. The live backend creates the same 4 rows the first time anyone opens that leader's scorecard |
+| `audit_log` `6ac1054ecb1279f9a285d71b` | **created**: `entity_type auth`, `action login`, `entity_id` = the temporary admin | the temporary admin's login (`auth.py:60`). Left in place (the user was deleted; this row was not) |
+| `pipeline_snapshots` `6ac10561959e9ffb6c548c4b` | **created**: `vinay` / `2627` / monthly `October 2026` | `GET /api/pipeline/` (`engagement_derivation.py:136`): no October snapshot existed yet for vinay; current month = live engagement totals |
+| `pipeline_snapshots` `6a51e81e329c42edda8a9268` (April), `...9269` (May), `...926a` (June), `6a4f65e29fa28cb6c2d9001c` (July 2026) | **changed** | `GET /api/pipeline/` re-materialises past months from the consolidated rows (`$set` amounts, `sort_order`, `updated_at`) |
+| `collection_entries` `6a4f65e29fa28cb6c2d90020` (July), `6a4f65e39fa28cb6c2d90021` (August 2026) | **changed** | `GET /api/pipeline/` sets `planned` (4,722,000 / 4,848,000 from engagement monthly plans), `sort_order`, `updated_at` (`engagement_derivation.py:235`); `collected` is never touched |
+| `users` (temporary admin) | created then deleted (net 0) | step 2 |
+
+Field-level check: the same `GET /api/pipeline/` was repeated once with full documents dumped before and after. **Only `updated_at` changed** on those 7 documents; every amount, `planned` and `sort_order` value was identical. So the values are deterministic from engagements + consolidated rows. Whether the **first** call changed any amount relative to prod's stored values cannot be proven from the hash baseline (it stores hashes, not documents); since the same code runs on the live backend on every pipeline page view, values differ only if engagements or consolidated rows changed after the leader's page was last opened on the live system.
+
+No change at all to: `users` (real accounts), `financial_years`, `engagements`, `collection_transactions`, `blue_sky_entries`, `consolidated_summaries`, KRA collections, `leaders`, or any index.
+
+### 7. `check-demo-users` (read-only) on `cbva_verify`
+
+`WARNING: demo account admin@cbva.com role=admin [ACTIVE]`, exit 1, nothing changed (the compare above covers this step).
+**Security finding (critical, outside the deploy itself):** a read-only `bcrypt.checkpw` on that account's stored hash shows it **matches a well-known seed default password** (value withheld here). The account is the first admin, active, `last_login 2026-09-30`. If prod matches this copy, the live admin account is protected only by a published default password. Rotate its password now (it is in use, so do not deactivate it blindly), then consider moving people to personal admin accounts.
+
+### Verdict
+
+**(a) Running the new backend against the live database: SAFE WITH CONDITIONS.**
+Startup changes nothing (indexes identical, FY flags already correct); GET traffic produces exactly the writes the live backend already produces (appraisal rounds on first scorecard view, pipeline/collection re-materialisation); no deletes; no shape or enum change.
+Conditions:
+1. Do **not** run `python -m app.cli bootstrap` (it would add an admin account); do not run `check-demo-users --deactivate` until you have decided what to do with `admin@cbva.com`.
+2. **Rotate the `admin@cbva.com` password** (default password, see 7).
+3. Take an Atlas snapshot (or `mongodump`) of prod immediately before the switch, plus a `verify-data.sh counts` / `snapshot` / `indexes` baseline; run `verify-data.sh compare` after the first hour.
+4. Accept that `GET /api/pipeline/` and the appraisal GETs write (existing behaviour of the live app, now documented).
+5. Use a new random `SECRET_KEY` (>= 32 chars) and the prod `DATABASE_NAME`; never point tests at it (the test-DB guard refuses remote URLs).
+
+**(b) Running old (Vercel `d037ef0`) and new side by side on the same database: SAFE WITH CONDITIONS.**
+No conflicting writes: same indexes, same shapes, same GET-time writes; FY advance cannot flip-flop.
+Conditions:
+1. Keep the overlap short and avoid edits between **00:00 and 05:30 IST** (especially on the last night of a month, on the 20th, and on 1 April): during that window the old backend's "today" is still the previous day, so blue-sky deltas, auto pipeline snapshots and month-lock decisions can land in a different month than the new backend's.
+2. Users active on both frontends may be logged out early (shared `refresh_token_hashes`, last 5 kept; logout clears all). Prefer pointing each user group at one backend.
+3. Same conditions as (a) for bootstrap, the default admin password, and the pre-switch snapshot.
+
+
 ## Registry, staging path, test-DB guard, npm, ACME_CA (2026-10-03, latest)
 
 Five more changes on top of the direct-mode switch. **This section supersedes the sections below where they disagree**: images now live in Vultr
