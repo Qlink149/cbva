@@ -1,5 +1,11 @@
-# Runs on the VPS in /opt/cbva. The API port is NOT published: Caddy is the only peer, which is
-# what lets the app trust CF-Connecting-IP (only from private-network peers). Never add `ports:` to api.
+# Runs on the VPS in /opt/cbva. DIRECT edge mode (no Cloudflare): Caddy terminates TLS with Let's Encrypt.
+# The API port is NOT published: Caddy is the only peer, which is what lets the app trust the client-IP header
+# Caddy sets (X-Real-IP; only from private-network peers). Never add `ports:` to api.
+#
+# Required in /opt/cbva/.env:  SITE_ADDRESS=cbva-api.claraai.tech   (staging: cbva-api-staging.claraai.tech)
+# Optional:                    ACME_EMAIL (default yogansh@claraai.tech), CADDYFILE (default ./Caddyfile)
+# Cloudflare mode: docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+#                  with CADDYFILE=./Caddyfile.cloudflare and EDGE_MODE=cloudflare in .env
 name: cbva
 
 services:
@@ -37,14 +43,15 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. cbva-api.claraai.tech}
+      ACME_EMAIL: ${ACME_EMAIL:-yogansh@claraai.tech}
     ports:
-      - "80:80"
+      - "80:80"      # ACME HTTP-01 validation + HTTP->HTTPS redirect: must be reachable from the internet
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./cloudflare-ips.conf:/etc/caddy/cloudflare-ips.conf:ro
-      - ./certs:/etc/caddy/certs:ro
-      - caddy_data:/data
+      - ${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # issued certificates + ACME account: keep, or Let's Encrypt rate limits bite
       - caddy_config:/config
     mem_limit: 128m
     logging:
