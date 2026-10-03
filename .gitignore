@@ -70,3 +70,9 @@ ARCHITECTURE_DESIGN_DOCUMENT.md
 AUDIT_LOG_IMPLEMENTATION_PLAN.md
 AUDIT_LOG_MEGA_PROMPT.md
 TD-Architecture Design Document Template-140726-054817.pdf
+tests/e2e/.state.json
+tests/e2e/artifacts/
+tests/e2e/ui/node_modules/
+tests/e2e/ui/test-results/
+tests/e2e/ui/playwright-report/
+tests/e2e/__pycache__/

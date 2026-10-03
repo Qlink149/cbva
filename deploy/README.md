@@ -208,6 +208,34 @@ Tested: `test/edge-test.sh` (real Caddyfile + echo upstream) and `backend/tests/
 - Reads can write: `GET /api/appraisals/*`, collections, blue-sky and EL summary create rows on first read, and `GET /api/consolidated-summary` can import.
 - MongoDB must allow each VPS IP (Atlas Network Access: only `<vps-ip>/32`), one DB user per environment with `readWrite` on its own database.
 
+## 7a. Backups (daily mongodump) and restore test
+
+`deploy/backup.sh` writes a gzip `mongodump --archive` of `$DATABASE_NAME` plus a `.counts` file (per-collection counts
+taken right before and after the dump) to `/home/deploy/backups`, and prunes files older than 14 days (`KEEP_DAYS`),
+only after a successful run. It parses `MONGODB_URL` / `DATABASE_NAME` from `/opt/cbva/.env` (never sources it, never
+prints the URI, which only reaches the `mongo:7` container as an environment variable). Any failure exits non-zero
+and leaves no partial file.
+
+```bash
+# on the VPS, as deploy (the scripts are not shipped by CI: copy them once)
+scp deploy/backup.sh deploy/restore-test.sh deploy@<vps-ip>:/opt/cbva/
+ssh deploy@<vps-ip> 'chmod 700 /opt/cbva/backup.sh /opt/cbva/restore-test.sh && /opt/cbva/backup.sh'
+
+# cron (crontab -e as deploy): daily 02:30 IST = 21:00 UTC; output kept in a log, cron mails on non-zero exit if MAILTO is set
+0 21 * * * /opt/cbva/backup.sh >> /home/deploy/backups/backup.log 2>&1 || echo "cbva backup FAILED" | logger -t cbva-backup
+```
+
+Restore test (run monthly, and after any change to the backup): restores the **newest** archive into a scratch database
+(`cbva_restore_test_*`, refused if not empty, dropped afterwards; `KEEP_RESTORE=1` keeps it) on the cluster you pass,
+compares per-collection counts with the `.counts` file and prints `BACKUP VERIFIED` or exits 1.
+
+```bash
+RESTORE_MONGODB_URL='<uri of a NON-production cluster/user>' /opt/cbva/restore-test.sh
+```
+
+Atlas snapshots (if the tier has them) remain the first restore option; these dumps are the provider-independent copy.
+Copy them off the VPS periodically (the VPS disk is a single point of failure).
+
 ## 8. Cloudflare mode (kept for later, not used now)
 
 To put Cloudflare in front later: DNS records proxied, SSL mode Full (strict), a Cloudflare Origin CA certificate in `/opt/cbva/certs/origin.pem|key`
