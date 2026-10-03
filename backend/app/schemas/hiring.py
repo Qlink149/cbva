@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import date, datetime
+from app.schemas.common import BlankableDate
 
 
 class HiringRequirementCreate(BaseModel):
@@ -8,7 +9,7 @@ class HiringRequirementCreate(BaseModel):
     fiscal_year: str
     role_title: str
     level: Literal["Analyst", "Associate", "Manager", "Senior Manager", "Director", "Partner", "Other"] = "Analyst"
-    expected_joining_date: Optional[date] = None
+    expected_joining_date: BlankableDate = None
     status: Literal["Open", "In Progress", "Filled", "On Hold"] = "Open"
     expected_cost: int = 0
     remarks: str = ""
@@ -17,7 +18,7 @@ class HiringRequirementCreate(BaseModel):
 class HiringRequirementUpdate(BaseModel):
     role_title: Optional[str] = None
     level: Optional[Literal["Analyst", "Associate", "Manager", "Senior Manager", "Director", "Partner", "Other"]] = None
-    expected_joining_date: Optional[date] = None
+    expected_joining_date: BlankableDate = None
     status: Optional[Literal["Open", "In Progress", "Filled", "On Hold"]] = None
     expected_cost: Optional[int] = None
     remarks: Optional[str] = None
