@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core import database
@@ -79,18 +81,19 @@ async def ensure_rounds(fiscal_year: str, leader_id: str) -> list[dict]:
     for round_type in ROUND_TYPES:
         if round_type in by_type:
             continue
-        doc = {
-            "fiscal_year": fiscal_year,
-            "leader_id": leader_id,
-            "round_type": round_type,
-            "state": "open",
-            "submitted_at": None,
-            "submitted_by": None,
-            "created_at": now,
-            "updated_at": now,
-        }
-        result = await database.db.appraisal_rounds.insert_one(doc)
-        doc["_id"] = result.inserted_id
+        key = {"fiscal_year": fiscal_year, "leader_id": leader_id, "round_type": round_type}
+        # Atomic upsert: the scorecard page requests /rounds and /scorecard at once, and two plain inserts
+        # raced on the unique (fiscal_year, leader_id, round_type) index (the loser answered 500).
+        try:
+            doc = await database.db.appraisal_rounds.find_one_and_update(
+                key,
+                {"$setOnInsert": {**key, "state": "open", "submitted_at": None, "submitted_by": None,
+                                  "created_at": now, "updated_at": now}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:   # a concurrent upsert won; read its document
+            doc = await database.db.appraisal_rounds.find_one(key)
         by_type[round_type] = doc
     return [by_type[rt] for rt in ROUND_TYPES]
 

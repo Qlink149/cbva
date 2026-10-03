@@ -108,3 +108,19 @@ async def test_one_malformed_audit_entry_does_not_break_the_audit_list(client, a
     assert res.status_code == 200, res.text
     entry = res.json()["data"][0]
     assert entry["leader_id"] == "123" and entry["fiscal_year"] == "2627" and entry["entity_label"] == "42"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_visit_does_not_race_on_round_creation(client, admin_headers, seed_users):
+    """The scorecard page loads /rounds and /scorecard at once; for a leader without rounds both GETs created
+    the same rounds and the unique index turned the loser into a 500 (seen on the deployed UI run)."""
+    import asyncio
+    await database.db.appraisal_rounds.create_index(
+        [("fiscal_year", 1), ("leader_id", 1), ("round_type", 1)], unique=True)
+    params = {"leader_id": "varun", "fiscal_year": "2627"}
+    async with _sweep_client() as c:
+        results = await asyncio.gather(*[
+            c.get(p, headers=admin_headers, params=params)
+            for p in ("/api/appraisals/rounds", "/api/appraisals/scorecard") * 3])
+    assert [r.status_code for r in results] == [200] * 6, [r.text[:120] for r in results if r.status_code != 200]
+    assert await database.db.appraisal_rounds.count_documents({"leader_id": "varun", "fiscal_year": "2627"}) == 4
