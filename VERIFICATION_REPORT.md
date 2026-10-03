@@ -7,6 +7,46 @@ browser checks used headless Chromium (Playwright) against the production build.
 **Headline (updated 2026-10-03): the Docker engine now runs, and the container checks that were NOT RUN in the first pass have been executed for real. All of section 1 passes except the items listed as still NOT RUN.** The first pass had no engine (see section 0); those rows are rewritten below with the actual output.
 Statuses: PASS / FAIL / NOT RUN. "Fix" is the commit that fixed a defect the check exposed.
 
+## Direct edge mode switch (2026-10-03, no Cloudflare)
+
+The deployment target changed from Cloudflare + Pages to **direct**: browsers -> Caddy (Let's Encrypt) -> API on the VPS, frontend on Vercel,
+DNS at GoDaddy (prod `cbva-api.claraai.tech` / `cbva.claraai.tech`, staging `cbva-api-staging.claraai.tech` / `cbva-staging.claraai.tech`).
+The Cloudflare path is kept behind `EDGE_MODE=cloudflare` (`Caddyfile.cloudflare`, `docker-compose.cloudflare.yml`, `refresh-cloudflare-ips.sh`,
+`frontend/cloudflare-pages/`). Everything below ran on real Docker 29.8.1; "NOT RUN" marks what needs real infrastructure.
+**Where this section conflicts with the sections after it, this section wins** (those describe the Cloudflare design that was verified earlier).
+
+**Correction to my earlier report:** I wrote that Cloudflare-only ingress was implemented with `ufw`. That was wrong in effect: `ufw` rules do not
+filter Docker-published ports (they go through NAT and the FORWARD chain), so the 80/443 restriction was never enforced. The `DOCKER-USER` rules below
+fix this for both modes. Proof that `ufw`-style host rules alone do not protect published ports is the "before any rules" row of the enforcement test.
+
+| # | Item | Status | Evidence | Commit |
+|---|---|---|---|---|
+| 1 | Caddy automatic HTTPS (Let's Encrypt), env site address, ACME email, headers stripped, `X-Real-IP {remote_host}` | **PASS** (issuance itself NOT RUN: no DNS yet) | `caddy:2` `validate`: `Valid configuration`; `caddy adapt`: issuers `acme` (Let's Encrypt) then ZeroSSL, `email: yogansh@claraai.tech`, `trusted_proxies configured: False`, reverse_proxy ops `delete: [CF-Connecting-IP, X-Forwarded-For]`, `set: X-Real-Ip: {http.request.remote.host}`. No Origin CA mount, no Cloudflare ranges. `test/edge-test.sh` (real Caddyfile in front of a header-echo upstream): spoofed `CF-Connecting-IP`/`X-Forwarded-For`/`X-Real-IP` stripped, `X-Real-IP` = real peer (`192.168.65.1`, not Caddy `172.18.0.4`), a second container is seen as `172.18.0.2`, port 80 -> `308 https://...`. `EDGE TEST PASSED`. **ACME probe** (real Caddyfile, `SITE_ADDRESS=cbva-api.claraai.tech`, Let's Encrypt **staging** CA): `obtaining certificate` then `HTTP 400 urn:ietf:params:acme:error:dns - DNS problem: NXDOMAIN looking up A for cbva-api.claraai.tech`. **So Caddy does try ACME, and the DNS record for `cbva-api.claraai.tech` does not exist yet** (see README §1). | `2809235` |
+| 2 | Client IP header configurable (`CLIENT_IP_HEADER`, default `X-Real-IP` direct / `CF-Connecting-IP` cloudflare), only from `TRUSTED_PROXY_CIDRS` | **PASS** | `tests/test_rate_limit_proxy.py` (+ updated `test_jwt.py`, `test_auth_hardening.py`): default is direct/`x-real-ip`; cloudflare mode reads only the CF header; override wins; invalid header names and modes rejected; untrusted peer ignored for both headers; **direct mode never uses `CF-Connecting-IP` or `X-Forwarded-For` even via the trusted peer**; two real IPs -> two keys; 20 rotating spoofed header values from one peer -> one key. **Through Caddy** (`test/stack-test.sh`, real API image): 7 bad logins with rotating spoofed `X-Real-IP`/`CF-Connecting-IP`/`X-Forwarded-For` -> `401 401 401 401 401 429 429` (one bucket); a second real IP (container) -> `401`, not throttled, then its own `401 401 401 429 429 429`; host stays `429`; API log IPs: `172.18.0.4` and `192.168.65.1` only (no Caddy IP `172.18.0.5`, no spoofed value). `STACK TEST PASSED` | `edea4d8`, `1cf826e` |
+| 3 | `EDGE_MODE=direct|cloudflare` in `bootstrap-vps.sh`; ufw + DOCKER-USER; Vultr doc | **PASS for the rules (script on a real VPS NOT RUN)** | `docker-user-firewall.sh` in an isolated netns with iptables 1.8.13 (nf_tables): direct = 4 rules (accept orig-dport 80, 443; drop other NEW; return), idempotent (1 jump, 4 rules after a rerun), cloudflare refuses without a list, 32 rules with the 22 real ranges (15 IPv4 x 2 ports + 2), switching modes replaces (not appends), invalid mode refused, `--remove` clean. **Enforcement with real forwarded traffic** (client / router with DNAT like Docker / backend namespaces, port 8000 deliberately mis-published): before rules 80, 443, 8000 all reachable; **direct: 80, 443 reachable, 8000 blocked**; cloudflare, client not in list: all blocked; client in list: 80/443 reachable, 8000 blocked; an established download survives a reload; after `--remove` all reachable. `shellcheck` clean on all 6 scripts. Direct bootstrap: 22 only from `SSH_ALLOW_IP` (required, or `SSH_ALLOW_ANYWHERE=1`), 80/443 any, no Cloudflare cron, removes leftovers. `VULTR_FIREWALL.md` written (80/443 any, 22 your IP /32). **NOT RUN:** the bootstrap on a real Ubuntu VPS (ufw, systemd unit, sshd hardening); the Vultr panel (field names and the Cloudflare preset are from memory). | `b64f840` |
+| 4 | Frontend on Vercel: `vercel.json` headers + SPA rewrite; `_headers`/`_redirects` aside; rebuild + 21-route CSP | **PASS** (Vercel CLI NOT RUN) | `vercel.json`: same CSP/headers, `connect-src 'self' https://cbva-api.claraai.tech https://cbva-api-staging.claraai.tech`, `/assets/*` immutable, SPA rewrite. `_headers`/`_redirects` moved to `frontend/cloudflare-pages/` (build output has neither). Builds: `VITE_API_URL=https://cbva-api.claraai.tech` and `https://cbva-api-staging.claraai.tech` both build; **`https://api.other-host.com` fails** ("not in the connect-src of vercel.json's CSP"), no URL fails, localhost fails. 21-route check serving dist with the REAL `vercel.json` rules (merged like Vercel, rewrites applied): **0 CSP violations for both origins**, asset `Cache-Control: public, max-age=31536000, immutable`, all four security headers set; negative control (staging removed from connect-src) -> **42 violations**. Auth-flow check on the staging build: 1 refresh, tokens cleared, logout POST. `vercel build` was not run (needs a Vercel login); an equivalent local server applying `vercel.json` was used instead. | `aa604ec` |
+| 5 | Docs: GoDaddy records, Vercel env per environment, Deployment Protection | **DONE** (not verifiable here) | `deploy/README.md`: A `cbva-api`, A `cbva-api-staging` -> Vultr IPs; CNAME `cbva`, `cbva-staging` -> Vercel's target; `dig` checks before the first Caddy start; `VITE_API_URL` Production `https://cbva-api.claraai.tech`, Preview `https://cbva-api-staging.claraai.tech`; staging domain bound to branch `staging`; Deployment Protection (Vercel Authentication) on previews. **UNVERIFIED:** GoDaddy and Vercel UI details, and whether Standard Protection covers the staging branch domain (flagged in the README). | `6428d0a` |
+| 6 | Re-run pytest, smoke-test with the stack in direct mode, actionlint | **PASS** | `pytest`: **156 passed, 1 skipped** (the explicitly skipped stale audit-scope test), 0 failed. `smoke-test.sh` on the rebuilt image: `SMOKE TEST PASSED` (uid 10001, 60 s up on read-only rootfs, healthy, 503 -> recovery, `docker stop` exit 0, RSS 94 MiB). `stack-test.sh` (direct mode, real compose + Caddyfile): `STACK TEST PASSED` (api 70 MiB, caddy 17 MiB). `edge-test.sh` PASSED. `actionlint` (rhysd/actionlint image): clean. `shellcheck` x6 and `hadolint`: clean. Cloudflare path still loads: `Caddyfile.cloudflare` + overlay mounts validate, 22 trusted ranges, ops `delete X-Forwarded-For, X-Real-IP`, `set CF-Connecting-IP {client_ip}`; both compose configs resolve. | `1cf826e`, `c2b2924` |
+
+Defects found while doing this (fixed): `edge-test.sh` and the CSP script used helpers/paths that did not exist until the first real run (undefined `expect` helper, `-o /dev/null` under `MSYS_NO_PATHCONV`);
+**the new workflow step name had an unquoted colon, which broke the YAML. I committed it (`1cf826e`) before `actionlint` ran, and fixed it in `c2b2924`.** HEAD is valid.
+
+### Verdict for the direct design
+
+**GO for a staging deploy**, in this order: create the Vultr Firewall Group, run the direct bootstrap with `SSH_ALLOW_IP`, add the GoDaddy A record and
+confirm `dig` returns the VPS IP, then start the stack. Nothing that could be tested locally is failing: the image, the real compose + Caddyfile stack, the
+header stripping, per-real-IP rate limits, the DOCKER-USER enforcement, the Vercel headers/CSP and the whole backend suite all pass. The items below are the
+parts that need real infrastructure. Still required before production: the `npm audit` highs, and rotating the local `.env` credential that equals the
+"read-only prod" URI.
+
+### Still NOT RUN for the direct design
+
+1. Let's Encrypt issuance for real: needs the GoDaddy A records and a reachable port 80 (probe result above: `NXDOMAIN`).
+2. `bootstrap-vps.sh` on a real Ubuntu VPS, the Vultr Firewall Group, and the `cbva-firewall.service` unit surviving a reboot and a Docker restart.
+3. A real Vercel deployment: env vars per environment, branch-bound staging domain, Deployment Protection coverage, GoDaddy CNAME target.
+4. The GitHub Actions workflow (now also running the edge and stack tests); the deploy job targets only `production`; there is no staging deploy job yet.
+5. Atlas allowlist/privileges per environment, and dump/restore against real data.
+
 ## 0. Getting Docker working
 
 | Attempt | Result |
@@ -147,7 +187,7 @@ self-signed origin cert, and a scratch `.env`).
 - The per-email login throttle also lets someone lock a known email out for 15 minutes (accepted trade-off, documented).
 - `docker-compose.yml` bind-mounts `./certs`; if you forget the Origin CA files Caddy will not start (by design, fails closed).
 
-## GO / NO-GO for a staging deploy
+## GO / NO-GO for a staging deploy (as of the Cloudflare-design pass; see the direct-mode section at the top for the current status)
 
 **GO for staging.** The image builds from a digest-pinned base, runs as uid 10001 on a read-only root filesystem, reaches `healthy`, answers `/health/ready` 200 / 503 / 200
 around a Mongo outage, stops cleanly on SIGTERM, and the real compose + Caddy stack passes client-IP, spoofing, rate-limit, CORS and header checks (section 1).
