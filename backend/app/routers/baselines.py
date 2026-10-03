@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.baseline import BaselinePlanCreate, BaselinePlanUpdate, BaselinePlanResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services.fiscal_year import assert_fy_editable
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -18,8 +21,8 @@ def _serialize(doc: dict) -> dict:
         "baseline_blue_sky": doc.get("baseline_blue_sky", 0),
         "baseline_total": doc.get("baseline_total", 0),
         "is_locked": doc.get("is_locked", False),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 
@@ -42,10 +45,17 @@ async def list_baselines(
 @router.post("/", response_model=BaselinePlanResponse, status_code=201)
 async def create_baseline(body: BaselinePlanCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.financial_year_id, current_user)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.baseline_plans.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "baseline", doc, current_user,
+        label=f"Baseline — {body.leader_id} FY {body.financial_year_id}",
+        leader_id=body.leader_id,
+        fiscal_year=body.financial_year_id,
+    )
     return _serialize(doc)
 
 
@@ -59,9 +69,21 @@ async def update_baseline(
     if not existing:
         raise HTTPException(status_code=404, detail="Baseline plan not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["financial_year_id"], current_user)
+    if existing.get("is_locked") and current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="This fiscal year is locked for editing. Ask an admin to enable editing in Admin Settings.",
+        )
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.baseline_plans.find_one_and_update(
         {"_id": ObjectId(baseline_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "baseline", existing, updates, current_user,
+        label=f"Baseline — {existing['leader_id']} FY {existing['financial_year_id']}",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["financial_year_id"],
     )
     return _serialize(result)

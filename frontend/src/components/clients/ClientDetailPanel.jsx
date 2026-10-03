@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { formatINR } from '@/lib/formatCurrency';
+import { formatIstDate } from '@/lib/datetime';
 import { Building2, Tag, Globe, CalendarDays, FileText, TrendingUp, Users2 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -18,7 +19,7 @@ const ENG_STATUS_COLORS = {
 
 function formatDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatIstDate(d, 'dd MMM yyyy');
 }
 
 function InfoRow({ icon: Icon, label, value }) {

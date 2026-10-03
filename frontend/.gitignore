@@ -29,3 +29,6 @@ dist-ssr
 
 .env
 .vite
+
+# keep the template tracked
+!.env.example

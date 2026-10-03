@@ -21,9 +21,17 @@ export default function ClientFilterPanel({
   selectedMonths = [],
   fySlug = '',
   collectionsOpen = true,
+  managerOptions,
+  relPartnerOptions,
 }) {
-  const relPartners = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
-  const managers = useMemo(() => uniqueManagers(clients), [clients]);
+  const relPartners = useMemo(
+    () => (relPartnerOptions != null ? relPartnerOptions : uniqueRelationshipPartners(clients)),
+    [relPartnerOptions, clients],
+  );
+  const managers = useMemo(
+    () => (managerOptions != null ? managerOptions : uniqueManagers(clients)),
+    [managerOptions, clients],
+  );
 
   const elStatuses = useMemo(() => {
     const s = new Set(clients.map(c => c.elStatus).filter(Boolean));

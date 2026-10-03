@@ -11,6 +11,7 @@ class TaskCreate(BaseModel):
     deadline: Optional[date] = None
     notes: str = ""
     fiscal_year: Optional[str] = None
+    leader_id: Optional[str] = None  # required for admin/management acting on a selected leader
 
 
 class TaskUpdate(BaseModel):

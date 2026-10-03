@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from app.core.serialization import today_ist
 
 from app.core import database
 from app.services.fy_calendar import get_fy_month_calendar_year
@@ -25,12 +26,6 @@ LEADER_TO_CODE: dict[str, str] = {
     "varun": "VC",
     "vinay": "VS",
 }
-
-
-def _fy_display_label(fiscal_year: str) -> str:
-    if len(fiscal_year) == 4 and fiscal_year.isdigit():
-        return f"20{fiscal_year[:2]}-{fiscal_year[2:]}"
-    return fiscal_year
 
 
 def _month_label(month_key: str, fiscal_year: str) -> str:
@@ -166,12 +161,18 @@ async def _upsert_pipeline_snapshot(
 
 async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> bool:
     """
-    Build pipeline_snapshots, collection_entries, and a bluesky row.
+    Build pipeline_snapshots (monthly), collection_entries, and a bluesky row.
 
     Pipeline rules:
-    - Initial Plan / Board Plan / past monthly rows → from consolidated sheet (proper plans)
-    - Current month row → live engagement totals (July is correct from engagements)
+    - Initial Plan / Board Plan → admin-entered only (never written here)
+    - Past monthly rows → from consolidated sheet
+    - Current month row → live engagement totals
     """
+    from app.services.fiscal_year import is_fy_editable
+
+    if not await is_fy_editable(fiscal_year, None):
+        return False
+
     totals = await aggregate_engagements(leader_id, fiscal_year)
     eng_count = await database.db.engagements.count_documents(
         {"leader_id": leader_id, "fiscal_year": fiscal_year, "is_archived": False}
@@ -186,67 +187,12 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
         return False
 
     now = datetime.now(timezone.utc)
-    fy_label = _fy_display_label(fiscal_year)
-    today = date.today()
+    today = today_ist()
     current_mk = f"{today.month:02d}"
-
-    # --- Initial Plan (consolidated; never overwrite with live engagements) ---
-    initial = _plan_amounts_from_rows(consolidated_rows, code, f"fy{fiscal_year}_initial") if code else None
-    if initial:
-        await _upsert_pipeline_snapshot(
-            leader_id=leader_id,
-            fiscal_year=fiscal_year,
-            label=f"Initial Plan ({fy_label})",
-            snapshot_type="initial",
-            sort_order=0,
-            amounts=initial,
-            now=now,
-        )
-    elif has_engagement_totals:
-        # Fallback only when consolidated has no initial row for this leader
-        existing = await database.db.pipeline_snapshots.find_one(
-            {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": "initial"}
-        )
-        if not existing:
-            await _upsert_pipeline_snapshot(
-                leader_id=leader_id,
-                fiscal_year=fiscal_year,
-                label=f"Initial Plan ({fy_label})",
-                snapshot_type="initial",
-                sort_order=0,
-                amounts=totals,
-                now=now,
-            )
-
-    # --- Board Plan (consolidated) ---
-    board = _plan_amounts_from_rows(consolidated_rows, code, f"fy{fiscal_year}_board") if code else None
-    if board:
-        await _upsert_pipeline_snapshot(
-            leader_id=leader_id,
-            fiscal_year=fiscal_year,
-            label=f"Board Plan ({fy_label})",
-            snapshot_type="board",
-            sort_order=1,
-            amounts=board,
-            now=now,
-        )
-    elif has_engagement_totals:
-        existing = await database.db.pipeline_snapshots.find_one(
-            {"leader_id": leader_id, "fiscal_year": fiscal_year, "snapshot_type": "board"}
-        )
-        if not existing:
-            await _upsert_pipeline_snapshot(
-                leader_id=leader_id,
-                fiscal_year=fiscal_year,
-                label=f"Board Plan ({fy_label})",
-                snapshot_type="board",
-                sort_order=1,
-                amounts=totals,
-                now=now,
-            )
 
     # --- Monthly snapshots ---
     # Past months from consolidated; current month from live engagements.
+    # Initial/Board plans are admin source-of-truth (see PUT /api/admin/plans).
     for i, mk in enumerate(FY_MONTH_KEYS):
         label = _month_label(mk, fiscal_year)
         sort_order = i + 2  # after initial(0) and board(1)
@@ -307,29 +253,8 @@ async def materialize_leader_derived_data(leader_id: str, fiscal_year: str) -> b
             upsert=True,
         )
 
-    # Blue sky ledger — single current-month row from engagement blue_sky total
-    if totals["blue_sky"] > 0:
-        month_label = _month_label(current_mk, fiscal_year)
-        sort_order = FY_MONTH_KEYS.index(current_mk) + 1 if current_mk in FY_MONTH_KEYS else 12
-        await database.db.blue_sky_entries.update_one(
-            {"leader_id": leader_id, "fiscal_year": fiscal_year, "month": month_label},
-            {
-                "$set": {
-                    "leader_id": leader_id,
-                    "fiscal_year": fiscal_year,
-                    "month": month_label,
-                    "sort_order": sort_order,
-                    "opening": 0,
-                    "additional": totals["blue_sky"],
-                    "converted": 0,
-                    "closing": totals["blue_sky"],
-                    "remarks": "",
-                    "updated_at": now,
-                },
-                "$setOnInsert": {"created_at": now},
-            },
-            upsert=True,
-        )
+    # Blue sky ledger is owned by engagement write cascades (_auto_update_bluesky).
+    # Do NOT overwrite blue_sky_entries here — that destroys Opening/Additional/Converted history.
 
     return True
 

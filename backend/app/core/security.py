@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 import bcrypt
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError as JWTError  # noqa: F401  (re-exported for callers)
 from app.core.config import settings
 
 
@@ -20,13 +22,16 @@ def create_access_token(user_id: str, role: str, leader_id: str | None) -> str:
         "leader_id": leader_id,
         "exp": expire,
         "type": "access",
+        "jti": uuid4().hex,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
 def create_refresh_token(user_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": user_id, "exp": expire, "type": "refresh"}
+    # jti makes every refresh token unique: without it, two tokens minted in the same second are
+    # byte-identical and "rotation" would leave the old token valid.
+    payload = {"sub": user_id, "exp": expire, "type": "refresh", "jti": uuid4().hex}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 

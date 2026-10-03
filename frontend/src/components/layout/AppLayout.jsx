@@ -3,12 +3,12 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Wallet, Users, Briefcase, CheckSquare, Building2,
   BookOpen, FileText, Settings, ChevronLeft,
-  ChevronRight, Bell, LogOut, BarChart3
+  ChevronRight, Bell, LogOut, BarChart3, History
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/lib/AuthContext';
 
-const LOGO_SRC = 'https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png';
+const LOGO_SRC = '/cbv-logo.png';
 
 const LEADER_NAV = [
   { label: 'Dashboard', path: '/my-plan/dashboard', icon: LayoutDashboard },
@@ -17,6 +17,7 @@ const LEADER_NAV = [
   { label: 'Team', path: '/my-plan/team', icon: Users },
   { label: 'Actions', path: '/my-plan/actions', icon: CheckSquare },
   { label: 'Meetings', path: '/my-plan/meetings', icon: Bell },
+  // Scorecard hidden while WIP — route still exists at /my-plan/scorecard
 ];
 
 const FIRMWIDE_NAV = [
@@ -27,6 +28,7 @@ const FIRMWIDE_NAV = [
 ];
 
 const ADMIN_NAV = [
+  { label: 'Change Log', path: '/firmwide/change-log', icon: History },
   { label: 'Admin', path: '/admin', icon: Settings },
 ];
 

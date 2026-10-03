@@ -1,10 +1,11 @@
 fastapi==0.138.0
+uvicorn[standard]==0.32.1
 motor==3.6.0
 pydantic[email]==2.10.3
 pydantic-settings==2.6.1
-python-jose[cryptography]==3.3.0
+PyJWT==2.15.0
 bcrypt==4.2.1
-python-multipart==0.0.17
-httpx==0.28.1
 slowapi==0.1.9
 loguru==0.7.3
+openpyxl==3.1.5
+tzdata==2025.2

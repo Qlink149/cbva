@@ -8,6 +8,9 @@ export const useFinancialYears = (options = {}) =>
       const res = await apiGet('/api/financial-years/');
       return res?.data ?? [];
     },
-    staleTime: 5 * 60 * 1000,
+    // Must stay fresh — Admin "Editable" toggles unlock creates across the app
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     ...options,
   });

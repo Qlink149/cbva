@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2 } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useDeferredValue, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { ChevronRight, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Plus, Filter, Edit2, Columns3 } from 'lucide-react';
 import ClientRowExpanded from '@/components/clients/ClientRowExpanded';
 import AddEngagementModal from '@/components/clients/AddEngagementModal';
 import ClientFilterPanel from '@/components/clients/ClientFilterPanel';
@@ -8,128 +10,204 @@ import { useClientActions } from '@/lib/ClientActionsContext';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useTeam } from '@/hooks/useTeam';
 import { useEngagements } from '@/hooks/useEngagements';
-import { useCollectionTransactions } from '@/hooks/useCollectionTransactions';
+import { useCollectionTransactions, useAddTransaction, useDeleteTransaction } from '@/hooks/useCollectionTransactions';
+import { useCollections } from '@/hooks/useCollections';
 import MonthSelector from '@/components/clients/MonthSelector';
 import { getDefaultMonthKey, MONTH_SHORT_NAMES } from '@/lib/fyMonths';
-import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth } from '@/lib/collectionsRollup';
-import { getPrevFySlug, getFyLabel } from '@/lib/fiscalYear';
+import { groupTxByEngagementMonth, plannedForMonth, collectedForMonth, leaderMonthActualsFromCollectionApi, historicalYearEngagementTotals } from '@/lib/collectionsRollup';
+import { getPrevFySlug, getFyLabel, isFyEditable } from '@/lib/fiscalYear';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
 import {
   DEFAULT_ENGAGEMENT_FILTERS,
   applyEngagementFilters,
   countActiveEngagementFilters,
-  uniqueManagers,
   pruneMonthlyFilters,
+  parseEngagementFiltersFromUrl,
 } from '@/lib/engagementFilters';
-import { uniqueRelationshipPartners, relationshipPartnerLabel } from '@/lib/relationshipPartners';
+import { useLeaderFyScopedState } from '@/hooks/useLeaderFyScopedState';
+import {
+  PAGE_FILTER_SCOPES,
+  buildScopedKey,
+  readScopedJson,
+  isValidMonthKeys,
+} from '@/lib/pageFilterStorage';
+import PersonSelect from '@/components/clients/PersonSelect';
+import PersonMultiSelect from '@/components/clients/PersonMultiSelect';
+import { useLeader } from '@/hooks/useLeaders';
+import { leaderScopedManagerOptions } from '@/lib/designations';
+import { displayPartnerNames } from '@/lib/relationshipPartners';
 import { leaderHasClientScope, CLIENT_SCOPE_VALUES } from '@/lib/clientScope';
 import { useEngagementChanges } from '@/hooks/useEngagementMeta';
+import { useAuth } from '@/lib/AuthContext';
+import { useMonthEditAccess } from '@/hooks/useMonthEditAccess';
+import { toast } from 'sonner';
+import { TableSkeleton, SectionLoadingOverlay, RefreshingBadge } from '@/components/ui/LoadingState';
+import {
+  COL_WIDTH,
+  DEFAULT_COLUMN_VISIBILITY,
+  initialColumnVisibility,
+  TOGGLEABLE_IDENTITY_COLUMNS,
+  STICKY_EDGE_SHADOW_CLASS,
+  buildEngagementColumns,
+  engagementTableMinWidth,
+  colVisible,
+  colWidth,
+  widthStyle,
+  stickyLeftMap,
+} from '@/lib/fyTableConfig';
 
-const L = 100000;
 const BLUE_SKY_BG = '#00CCFF';
-const SCOPE_COL_WIDTH = 100;
-const PREV_ACTUAL_COLLECTED_COL_WIDTH = 150;
-const MONTH_SUB_COL_WIDTH = 80;
 
-// Column order: #, client, [scope], manager, relPartner, elStatus, prevActualCollected,
-// green, amber, blueSky, total, collected, [ (planned, collected, variance) x months ],
-// balance, remarks, expand
-function engagementColumnWidths(collectionsOpen, showScope, monthCount = 0) {
-  const widths = [32, 180];
-  if (showScope) widths.push(SCOPE_COL_WIDTH);
-  widths.push(100, 100, 100);                 // manager, rel partner, el status
-  widths.push(PREV_ACTUAL_COLLECTED_COL_WIDTH); // prior-FY actual collected
-  widths.push(96, 96, 96, 96, 96);            // green, amber, blue sky, total, collected
-  if (collectionsOpen) {
-    for (let i = 0; i < monthCount; i += 1) {
-      widths.push(MONTH_SUB_COL_WIDTH, MONTH_SUB_COL_WIDTH, MONTH_SUB_COL_WIDTH);
-    }
-  }
-  widths.push(96);                            // balance
-  widths.push(320, 32);                       // remarks, expand
-  return widths;
-}
-
-function engagementTableMinWidth(collectionsOpen, showScope, monthCount = 0) {
-  return engagementColumnWidths(collectionsOpen, showScope, monthCount).reduce((sum, width) => sum + width, 0);
-}
-
-function stickyLeftOffsets(showScope) {
-  if (showScope) {
-    return { client: 32, scope: 212, manager: 212 + SCOPE_COL_WIDTH, relPartner: 312 + SCOPE_COL_WIDTH, elStatus: 412 + SCOPE_COL_WIDTH };
-  }
-  return { client: 32, manager: 212, relPartner: 312, elStatus: 412 };
-}
-
-function EngagementColGroup({ collectionsOpen, showScope, monthCount }) {
+function EngagementColGroup({ columns }) {
   return (
     <colgroup>
-      {engagementColumnWidths(collectionsOpen, showScope, monthCount).map((width, index) => (
-        <col key={index} style={{ width, minWidth: width }} />
+      {columns.map((col) => (
+        <col key={col.key} style={{ width: col.width, minWidth: col.width }} />
       ))}
     </colgroup>
   );
 }
 
-function ELBadge({ status }) {
-  if (status === 'Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-green-bg text-status-green">Signed</span>;
-  if (status === 'Not Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-red-bg text-status-red">Not Signed</span>;
-  if (status === 'Waived') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600">Waived</span>;
-  if (status && status.includes('/')) return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">{status}</span>;
-  return <span className="text-xs text-muted-foreground">{status || '-'}</span>;
+const EL_STATUS_OPTIONS = ['Signed', 'Not Signed', 'Waived', 'Waiver Requested', 'NA'];
+
+function SortIcon({ field, sortField, sortDir }) {
+  if (sortField !== field) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />;
+  return sortDir === 'desc'
+    ? <ArrowDown className="w-3 h-3 inline ml-1 text-cbva-navy" />
+    : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
 }
 
-function ManagerCell({ value, onChange, stickyClass, stickyStyle, listId }) {
+function VirtualPadRow({ height, columns }) {
+  if (!height) return null;
+  return (
+    <tr aria-hidden="true">
+      {columns.map((col) => (
+        <td key={col.key} style={{ height, padding: 0, border: 'none' }} />
+      ))}
+    </tr>
+  );
+}
+
+function NameCell({ value, onChange, isExpanded, actCount, onToggleExpand, stickyClass, stickyStyle }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
-  function startEdit() {
+  function startEdit(e) {
+    e.stopPropagation();
     setDraft(value || '');
     setEditing(true);
   }
 
   function commit() {
     const next = draft.trim();
-    if (next !== (value || '').trim()) onChange(next);
+    if (next && next !== (value || '').trim()) onChange(next);
     setEditing(false);
   }
 
-  if (editing) {
-    return (
-      <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
-        <input
-          autoFocus
-          list={listId}
-          className="w-full text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-        />
-      </td>
-    );
-  }
-
   return (
-    <td
-      className={`${stickyClass} py-3 px-3 text-xs text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors group`}
-      style={stickyStyle}
-      onClick={startEdit}
-      title="Click to edit manager"
-    >
-      {value ? (
-        <span className="truncate block max-w-[90px]" title={value}>{value}</span>
-      ) : (
-        <span className="text-muted-foreground/60">-</span>
-      )}
+    <td className={`${stickyClass} py-2 px-2 font-medium text-foreground`} style={stickyStyle}>
+      <div className="flex items-center gap-1.5 w-full min-w-0 overflow-hidden">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={isExpanded}
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details`}
+          className="text-muted-foreground hover:text-cbva-navy transition-colors shrink-0 p-0.5 rounded"
+        >
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+        {editing ? (
+          <input
+            autoFocus
+            className="flex-1 min-w-0 text-xs border border-cbva-navy rounded px-1.5 py-1 focus:outline-none bg-white"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={startEdit}
+            title="Click to edit name"
+            className={`flex-1 min-w-0 text-left truncate rounded-md px-1 py-0.5 hover:bg-muted/40 hover:text-cbva-navy hover:underline underline-offset-2 transition-colors ${isExpanded ? 'text-cbva-navy' : 'text-foreground'}`}
+          >
+            {value || <span className="text-muted-foreground italic no-underline">Unidentified</span>}
+          </button>
+        )}
+        {actCount > 0 && (
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold shrink-0">
+            {actCount}
+          </span>
+        )}
+      </div>
     </td>
   );
 }
 
-function ScopeCell({ value, onChange, stickyClass, stickyStyle }) {
+function RelPartnerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
+  return (
+    <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
+      <div className="min-w-0 w-full overflow-hidden">
+        <PersonMultiSelect
+          value={value}
+          onChange={onChange}
+          options={options}
+          disabled={disabled}
+          compact
+          title={value ? displayPartnerNames(value) : 'Select relationship partner'}
+        />
+      </div>
+    </td>
+  );
+}
+
+function ELStatusCell({ value, onChange, stickyClass, stickyStyle, disabled = false }) {
+  return (
+    <td className={`${stickyClass} py-2 px-1.5`} style={stickyStyle}>
+      <div className="min-w-0 w-full overflow-hidden">
+        <select
+          aria-label="EL status"
+          title={disabled ? 'Fiscal year is locked' : 'Change EL status'}
+          disabled={disabled}
+          className={`w-full text-[10px] border border-transparent rounded px-1 py-1 bg-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-border/60 cursor-pointer'}`}
+          value={value || '—'}
+          onChange={(e) => {
+            if (e.target.value !== (value || '—')) onChange(e.target.value);
+          }}
+        >
+          {EL_STATUS_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    </td>
+  );
+}
+
+function ManagerCell({ value, onChange, stickyClass, stickyStyle, options = [], disabled = false }) {
+  return (
+    <td className={`${stickyClass} py-1 px-2`} style={stickyStyle}>
+      <div className="min-w-0 w-full overflow-hidden">
+        <PersonSelect
+          value={value}
+          onChange={onChange}
+          options={options}
+          disabled={disabled}
+          compact
+          title={value || 'Select manager'}
+        />
+      </div>
+    </td>
+  );
+}
+
+function ScopeCell({ value, onChange, stickyClass, stickyStyle, disabled = false }) {
   const scope = value || 'Domestic';
   const isIntl = scope === 'International';
   return (
@@ -137,10 +215,11 @@ function ScopeCell({ value, onChange, stickyClass, stickyStyle }) {
       <div className="relative w-full">
         <select
           aria-label="Client scope"
-          title={scope}
-          className={`appearance-none w-full text-[10px] font-medium rounded-full pl-2.5 pr-6 py-1 cursor-pointer border border-transparent hover:border-border/60 focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 transition-colors ${
-            isIntl ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-800'
-          }`}
+          title={disabled ? 'Fiscal year is locked' : scope}
+          disabled={disabled}
+          className={`appearance-none w-full text-[10px] font-medium rounded-full pl-2.5 pr-6 py-1 border border-transparent focus:outline-none focus:ring-1 focus:ring-cbva-navy/40 transition-colors ${
+            disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-border/60'
+          } ${isIntl ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-800'}`}
           value={scope}
           onChange={e => onChange(e.target.value)}
         >
@@ -219,20 +298,77 @@ function RemarkCell({ value, onChange }) {
 }
 
 
-function EditableCell({ value, onChange, color, colVisible = true }) {
+function CollectedMonthCell({ value, onSetAmount, pending }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const committingRef = useRef(false);
+
+  function startEdit() {
+    setDraft(value > 0 ? String(value) : '0');
+    setEditing(true);
+  }
+
+  async function commit() {
+    if (committingRef.current) return;
+    const next = parseRupeeInput(draft);
+    if (next == null || next === (value || 0)) {
+      setEditing(false);
+      return;
+    }
+    committingRef.current = true;
+    try {
+      await onSetAmount(next);
+    } finally {
+      committingRef.current = false;
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <td className="py-1 px-2 text-right">
+        <input
+          autoFocus
+          disabled={pending}
+          className="w-24 text-right text-xs border border-cbva-navy rounded px-1 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className="py-3 px-3 text-right font-tabular text-emerald-700 text-xs cursor-pointer hover:bg-emerald-50/50 transition-colors"
+      title="Click to set collected amount for this month"
+      onClick={startEdit}
+    >
+      {value > 0 ? formatINRFull(value) : '-'}
+    </td>
+  );
+}
+
+function EditableCell({ value, onChange, color, colVisible = true, disabled = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
   if (!colVisible) return null;
 
   function startEdit() {
+    if (disabled) return;
     setDraft(value != null ? String(value) : '0');
     setEditing(true);
   }
 
   function commit() {
-    const parsed = parseFloat(draft);
-    if (!isNaN(parsed) && parsed >= 0) onChange(Math.round(parsed));
+    const next = parseRupeeInput(draft);
+    if (next != null) onChange(next);
     setEditing(false);
   }
 
@@ -254,9 +390,9 @@ function EditableCell({ value, onChange, color, colVisible = true }) {
   const isNavy = color === '#1e3a5f';
   return (
     <td
-      className={`py-3 px-3 text-right font-tabular text-xs cursor-pointer hover:opacity-80 transition-opacity ${isNavy ? 'text-white' : 'text-black'}`}
+      className={`py-3 px-3 text-right font-tabular text-xs transition-opacity ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-80'} ${isNavy ? 'text-white' : 'text-black'}`}
       style={color ? { backgroundColor: color } : {}}
-      title="Click to edit"
+      title={disabled ? 'Locked for this month' : 'Click to edit'}
       onClick={startEdit}
     >
       {value != null && value > 0 ? formatINRFull(value) : '-'}
@@ -281,30 +417,117 @@ function EngagementExpandedPanel({ client, actions, onAddAction, onDeleteAction,
 
 // Unified engagements table - same layout for all fiscal years
 function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
-  const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi } = useClientActions();
+  const { user } = useAuth();
+  const { clients, isLoading, isError, clientActions, addAction, deleteAction, updateEngagement, updateRemarks: updateRemarksApi, isUpdating } = useClientActions();
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
-  const { teamMembers } = useTeam(selectedLeaderId);
-  const managerSuggestions = useMemo(
-    () => [...new Set(teamMembers.map(m => m.full_name).filter(Boolean))].sort(),
-    [teamMembers]
+  const isFy2526 = activeFY === '2526';
+  const canEdit = isFyEditable(activeFY, fiscalYears, user?.role) && !isFy2526;
+  const { canEditStatus, canEditMonth, monthLockedMessage } = useMonthEditAccess();
+  const isAdminView = user?.role === 'admin' || user?.role === 'management';
+  const { teamMembers } = useTeam(selectedLeaderId, activeFY);
+  const { data: selectedLeader } = useLeader(selectedLeaderId);
+
+  const selectedLeaderName = selectedLeader?.name || '';
+
+  const managerOptions = useMemo(
+    () => leaderScopedManagerOptions(teamMembers, selectedLeaderName),
+    [teamMembers, selectedLeaderName],
   );
+
+  const relPartnerOptions = managerOptions;
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [expandedRow, setExpandedRow] = useState(null);
   const [collectionsOpen, setCollectionsOpen] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState(DEFAULT_ENGAGEMENT_FILTERS);
+  const [showColumns, setShowColumns] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.ENG_COLUMN_VISIBILITY,
+    () => initialColumnVisibility(user?.role),
+    {
+      validate: (stored, { fallback }) => {
+        if (!stored || typeof stored !== 'object') return fallback;
+        const next = { ...fallback };
+        TOGGLEABLE_IDENTITY_COLUMNS.forEach((col) => {
+          if (typeof stored[col.key] === 'boolean') next[col.key] = stored[col.key];
+        });
+        return next;
+      },
+    },
+  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlFallbackAppliedKeys = useRef(new Set());
 
-  // Selected months for the Planned vs Collected section (default: previous month)
-  const [selectedMonths, setSelectedMonths] = useState(() => [getDefaultMonthKey(activeFY)]);
+  const [engState, setEngState] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.ENG_FILTERS,
+    (fy) => ({
+      filters: DEFAULT_ENGAGEMENT_FILTERS,
+      selectedMonths: [getDefaultMonthKey(fy)],
+    }),
+    {
+      validate: (stored, { activeFY: fy, fallback }) => {
+        if (!stored || typeof stored !== 'object') return fallback;
+        const selectedMonths = isValidMonthKeys(stored.selectedMonths, fy, fiscalYears)
+          ? stored.selectedMonths
+          : fallback.selectedMonths;
+        return {
+          filters: {
+            ...DEFAULT_ENGAGEMENT_FILTERS,
+            ...(stored.filters || {}),
+            financials: {
+              ...DEFAULT_ENGAGEMENT_FILTERS.financials,
+              ...(stored.filters?.financials || {}),
+            },
+          },
+          selectedMonths,
+        };
+      },
+    },
+  );
+
+  const filters = engState.filters;
+  const selectedMonths = engState.selectedMonths;
+  const deferredFilters = useDeferredValue(filters);
+
+  const setFilters = useCallback((updater) => {
+    setEngState((prev) => ({
+      ...prev,
+      filters: typeof updater === 'function' ? updater(prev.filters) : updater,
+    }));
+  }, [setEngState]);
+
+  const setSelectedMonths = useCallback((updater) => {
+    setEngState((prev) => ({
+      ...prev,
+      selectedMonths: typeof updater === 'function' ? updater(prev.selectedMonths) : updater,
+    }));
+  }, [setEngState]);
+
+  // One-time URL ?ef= fallback when no sessionStorage entry exists (shared links)
   useEffect(() => {
-    setSelectedMonths([getDefaultMonthKey(activeFY)]);
-  }, [activeFY]);
+    if (!selectedLeaderId || !activeFY) return;
+    const storageKey = buildScopedKey(PAGE_FILTER_SCOPES.ENG_FILTERS, selectedLeaderId, activeFY);
+    if (urlFallbackAppliedKeys.current.has(storageKey)) return;
+    urlFallbackAppliedKeys.current.add(storageKey);
+
+    const stored = readScopedJson(storageKey, null);
+    if (stored) return;
+
+    const urlFilters = parseEngagementFiltersFromUrl(searchParams.get('ef'));
+    if (urlFilters) {
+      setEngState((prev) => ({ ...prev, filters: urlFilters }));
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('ef');
+        return next;
+      }, { replace: true });
+    }
+  }, [selectedLeaderId, activeFY, searchParams, setSearchParams, setEngState]);
 
   useEffect(() => {
     setFilters((prev) => pruneMonthlyFilters(prev, selectedMonths));
-  }, [selectedMonths]);
+  }, [selectedMonths, setFilters]);
 
   // Prior-FY actual collected (engagement.collected), matched by client name
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
@@ -330,11 +553,18 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   // Per-engagement per-month actual collected (from finance transactions)
-  const { data: transactions = [] } = useCollectionTransactions(selectedLeaderId, activeFY);
+  const { data: transactions = [], isLoading: txLoading, isFetching: txFetching } = useCollectionTransactions(selectedLeaderId, activeFY);
+  const { data: collectionsRes } = useCollections(selectedLeaderId, activeFY);
+  const leaderMonthActuals = useMemo(
+    () => (isFy2526 ? leaderMonthActualsFromCollectionApi(collectionsRes?.data ?? []) : {}),
+    [isFy2526, collectionsRes?.data]
+  );
   const txMap = useMemo(() => groupTxByEngagementMonth(transactions), [transactions]);
+  const addTransaction = useAddTransaction(selectedLeaderId, activeFY);
+  const deleteTransaction = useDeleteTransaction(selectedLeaderId, activeFY);
+  const [settingCollectedKey, setSettingCollectedKey] = useState(null);
+  const inFlightCollectedKeysRef = useRef(new Set());
 
-  const managerOptions = useMemo(() => uniqueManagers(clients), [clients]);
-  const relPartnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const elStatusOptions = useMemo(() => {
     const s = new Set(clients.map(c => c.elStatus).filter(Boolean));
     return Array.from(s).sort();
@@ -345,31 +575,88 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     else { setSortField(field); setSortDir('desc'); }
   }
 
-  function SortIcon({ field }) {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />;
-    return sortDir === 'desc'
-      ? <ArrowDown className="w-3 h-3 inline ml-1 text-cbva-navy" />
-      : <ArrowUp className="w-3 h-3 inline ml-1 text-cbva-navy" />;
+  function SortIconCell({ field }) {
+    return <SortIcon field={field} sortField={sortField} sortDir={sortDir} />;
   }
 
   function toggleExpandedRow(num) {
     setExpandedRow((current) => (current === num ? null : num));
   }
 
+  function guardEdit(action) {
+    if (!canEdit) {
+      toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
+    action();
+  }
+
   function updateField(clientId, field, newVal) {
-    updateEngagement({ id: clientId, [field]: newVal });
+    const statusFields = ['green', 'amber', 'blueSky'];
+    if (statusFields.includes(field) && !canEditStatus) {
+      toast.error(canEdit ? monthLockedMessage : 'This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
+    guardEdit(() => updateEngagement({ id: clientId, [field]: newVal }));
   }
 
   function updateMonthPlan(clientId, monthKey, newVal) {
-    updateEngagement({ id: clientId, monthlyPlan: { [monthKey]: newVal } });
+    if (!canEditMonth(monthKey)) {
+      toast.error(canEdit ? monthLockedMessage : 'This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+      return;
+    }
+    guardEdit(() => updateEngagement({ id: clientId, monthlyPlan: { [monthKey]: newVal } }));
   }
 
   function updateManager(clientId, val) {
-    updateEngagement({ id: clientId, manager: val });
+    guardEdit(() => updateEngagement({ id: clientId, manager: val }));
   }
 
   function updateScope(clientId, val) {
-    updateEngagement({ id: clientId, clientScope: val });
+    guardEdit(() => updateEngagement({ id: clientId, clientScope: val }));
+  }
+
+  function updateName(clientId, val) {
+    guardEdit(() => updateEngagement({ id: clientId, name: val }));
+  }
+
+  function updateRelPartner(clientId, val) {
+    guardEdit(() => updateEngagement({ id: clientId, relPartner: val }));
+  }
+
+  function updateElStatus(clientId, val) {
+    guardEdit(() => updateEngagement({ id: clientId, elStatus: val }));
+  }
+
+  async function setMonthCollected(client, monthKey, amount) {
+    if (isFy2526) return;
+    if (!selectedLeaderId || !activeFY || !client?.id) return;
+    const key = `${client.id}:${monthKey}`;
+    if (inFlightCollectedKeysRef.current.has(key)) return;
+    inFlightCollectedKeysRef.current.add(key);
+    setSettingCollectedKey(key);
+    try {
+      const existing = transactions.filter(
+        (tx) => tx.engagement_id === client.id && tx.month === monthKey
+      );
+      for (const tx of existing) {
+        await deleteTransaction.mutateAsync(tx.id);
+      }
+      if (amount > 0) {
+        await addTransaction.mutateAsync({
+          leader_id: selectedLeaderId,
+          fiscal_year: activeFY,
+          engagement_id: client.id,
+          month: monthKey,
+          client_name: client.name || '',
+          amount_billed: 0,
+          amount_collected: amount,
+        });
+      }
+    } finally {
+      inFlightCollectedKeysRef.current.delete(key);
+      setSettingCollectedKey(null);
+    }
   }
 
   function updateRemarks(clientId, val, mode = 'edit') {
@@ -377,7 +664,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
   }
 
   const filtered = useMemo(() => {
-    let list = applyEngagementFilters(clients, filters, { txMap, selectedMonths });
+    let list = applyEngagementFilters(clients, deferredFilters, { txMap, selectedMonths });
 
     if (sortField) {
       list = [...list].sort((a, b) => {
@@ -391,9 +678,34 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       });
     }
     return list;
-  }, [clients, sortField, sortDir, filters, txMap, selectedMonths]);
+  }, [clients, sortField, sortDir, deferredFilters, txMap, selectedMonths]);
+
+  const actCountByClient = useMemo(() => {
+    const map = new Map();
+    clientActions.forEach((a) => {
+      if (a.status !== 'Done') {
+        const key = a.engagementId != null ? String(a.engagementId) : a.clientNum;
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    return map;
+  }, [clientActions]);
 
   const totals = useMemo(() => {
+    if (isFy2526) {
+      const ytdCollected = Object.values(leaderMonthActuals).reduce((s, v) => s + (v || 0), 0);
+      const acc = {
+        ...historicalYearEngagementTotals(ytdCollected),
+        prevActualCollected: 0,
+        months: {},
+      };
+      selectedMonths.forEach((mk) => {
+        const actual = leaderMonthActuals[mk] ?? 0;
+        acc.months[mk] = { planned: 0, collected: actual, variance: actual };
+      });
+      return acc;
+    }
+
     const acc = {
       green: 0, amber: 0, blueSky: 0, collected: 0, balance: 0, prevActualCollected: 0,
       months: {},
@@ -418,28 +730,75 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
     acc.total = acc.green + acc.amber + acc.blueSky;
     return acc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, selectedMonths, txMap, prevCollectedByName]);
+  }, [filtered, selectedMonths, txMap, prevCollectedByName, isFy2526, leaderMonthActuals]);
 
-  const partnerOptions = useMemo(() => uniqueRelationshipPartners(clients), [clients]);
   const showScopeColumn = leaderHasClientScope(selectedLeaderId);
-  const stickyLeft = stickyLeftOffsets(showScopeColumn);
   const monthCount = selectedMonths.length;
-  const tableMinWidth = engagementTableMinWidth(collectionsOpen, showScopeColumn, monthCount);
-  const bodyColSpan = 14 + (showScopeColumn ? 1 : 0) + (collectionsOpen ? monthCount * 3 : 0);
-
+  const columns = useMemo(
+    () => buildEngagementColumns({
+      collectionsOpen,
+      showScope: showScopeColumn,
+      monthCount,
+      visibility: columnVisibility,
+      hideAmberBlueSky: isFy2526,
+    }),
+    [collectionsOpen, showScopeColumn, monthCount, columnVisibility, isFy2526],
+  );
+  const { stickyLeft, lastStickyKey } = stickyLeftMap(columns);
+  const tableMinWidth = engagementTableMinWidth(columns);
+  const bodyColSpan = columns.length;
+  const showManager = colVisible(columns, 'manager');
+  const showRelPartner = colVisible(columns, 'relPartner');
+  const showElStatus = colVisible(columns, 'elStatus');
+  const showAmber = colVisible(columns, 'amber');
+  const showBlueSky = colVisible(columns, 'blueSky');
   const HDR_BG = '#F1F2F4';
-  const stickyHeaderRow1 = 'sticky z-20 top-0';
-  const stickyHeaderRow2 = 'sticky z-20';
-  const stickyBase = 'sticky z-10 bg-white';
+  const stickyEdgeClass = (key) => (lastStickyKey === key ? STICKY_EDGE_SHADOW_CLASS : '');
+  const colW = (key) => colWidth(columns, key) ?? COL_WIDTH[key];
+  const headerBg = (width, extra = {}) => ({
+    ...widthStyle(width),
+    background: HDR_BG,
+    ...extra,
+  });
+  const frozenHeader = (key, extra = {}) => ({
+    left: stickyLeft[key],
+    ...headerBg(colW(key), extra),
+  });
+  const frozenBody = (key) => ({
+    left: stickyLeft[key],
+    ...widthStyle(colW(key)),
+  });
+
+  // thead sticks as one block (no per-row top: 36). Identity cols only stick left.
+  const stickyHeaderLeft = 'sticky z-50';
+  const stickyBase = 'sticky z-[1] bg-white';
   const stickyFooter = 'sticky bottom-0 z-10 bg-muted';
-  const stickyFooterLeft = 'sticky bottom-0 z-20 bg-muted';
-  const thStyle = { top: 36, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const stickyFooterLeft = 'sticky bottom-0 z-30 bg-muted';
 
   const activeFilterCount = countActiveEngagementFilters(filters, selectedMonths);
+
+  const scrollRef = useRef(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (expandedRow === filtered[index]?.num ? 320 : 52),
+    overscan: 8,
+  });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [expandedRow, filtered.length, collectionsOpen, columnVisibility, rowVirtualizer]);
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+    : 0;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap justify-between">
+        {!isFy2526 && (
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowFilters(f => !f)}
@@ -453,22 +812,70 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
               </span>
             )}
           </button>
+          {isAdminView && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowColumns((v) => !v)}
+                className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border font-medium transition-colors ${showColumns ? 'bg-cbva-navy text-white border-cbva-navy' : 'bg-white text-foreground border-border hover:bg-muted'}`}
+              >
+                <Columns3 className="w-4 h-4" />
+                Columns
+              </button>
+              {showColumns && (
+                <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-lg border border-border bg-white p-2 shadow-lg">
+                  {TOGGLEABLE_IDENTITY_COLUMNS.map((col) => (
+                    <label key={col.key} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                      <input
+                        type="checkbox"
+                        checked={columnVisibility[col.key]}
+                        onChange={() => setColumnVisibility((prev) => ({ ...prev, [col.key]: !prev[col.key] }))}
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <input
             className="text-sm border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring w-72"
             placeholder="Search clients..."
             value={filters.name}
             onChange={e => setFilters(prev => ({ ...prev, name: e.target.value }))}
           />
-          <span className="text-xs text-muted-foreground hidden sm:block">Click any number to edit inline ? Click client name to expand details</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">Click name, partner, EL, amounts, or month collected to edit · Chevron expands details</span>
         </div>
+        )}
+        {!isFy2526 && (
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium"
+          onClick={() => {
+            if (!canEdit) {
+              toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+              return;
+            }
+            setShowAddModal(true);
+          }}
+          className={`flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-cbva-navy text-white hover:bg-cbva-navy/90 transition-colors font-medium ${!canEdit ? 'opacity-50' : ''}`}
         >
           <Plus className="w-4 h-4" />
           Add Engagement
         </button>
+        )}
       </div>
+
+      {isFy2526 && (
+        <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">FY 2025-26 is maintained at month level.</span>{' '}
+          See the <span className="font-medium text-foreground">Collections</span> tab for the month-wise breakdown.
+        </div>
+      )}
+
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {getFyLabel(activeFY, fiscalYears)} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
 
       {collectionsOpen && (
         <div className="flex items-center gap-2 flex-wrap rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
@@ -481,7 +888,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
         <AddEngagementModal
           nextNum={clients.length + 1}
           onClose={() => setShowAddModal(false)}
-          partnerOptions={partnerOptions}
           showScopeField={showScopeColumn}
         />
       )}
@@ -495,16 +901,13 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
           selectedMonths={selectedMonths}
           fySlug={activeFY}
           collectionsOpen={collectionsOpen}
+          managerOptions={managerOptions}
+          relPartnerOptions={relPartnerOptions}
         />
       )}
 
-      {isLoading && (
-        <div className="space-y-3 py-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-10 bg-muted/40 rounded-lg animate-pulse" />
-          ))}
-        </div>
-      )}
+      {isLoading && <TableSkeleton rows={6} />}
+
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Failed to load engagements. Try refreshing the page.
@@ -512,57 +915,69 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
       )}
 
       {!isLoading && !isError && (
-      <div className="bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-        {managerSuggestions.length > 0 && (
-          <datalist id="engagement-manager-suggestions">
-            {managerSuggestions.map(name => <option key={name} value={name} />)}
-          </datalist>
-        )}
+      <div className="relative bg-card rounded-xl border border-border/60 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+        <div className="flex items-center justify-end px-3 py-1 border-b border-border/40 bg-muted/20">
+          <RefreshingBadge show={txFetching && !txLoading} label="Refreshing collections…" />
+          {isUpdating && <RefreshingBadge show label="Saving…" />}
+        </div>
+        <SectionLoadingOverlay show={txLoading && collectionsOpen} label="Loading collection data…" />
         <div
-          className="scrollbar-x-none overflow-auto"
+          ref={scrollRef}
+          className="scrollbar-both isolate overflow-auto"
           style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 230px)', minHeight: '500px' }}
         >
           <table className="text-sm border-separate" style={{ minWidth: tableMinWidth, borderSpacing: 0, tableLayout: 'fixed' }}>
-            <EngagementColGroup collectionsOpen={collectionsOpen} showScope={showScopeColumn} monthCount={monthCount} />
-            <thead>
-              <tr style={{ background: HDR_BG, height: 36 }}>
-                <th className={`${stickyHeaderRow1} left-0 border-b-0`} style={{ minWidth: 32, width: 32, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.client, minWidth: 180, width: 180, background: HDR_BG }}></th>
+            <EngagementColGroup columns={columns} />
+            <thead className="sticky top-0 z-40 shadow-[0_1px_0_0_rgba(15,23,42,0.08)]" style={{ background: HDR_BG }}>
+              <tr className="h-9" style={{ background: HDR_BG }}>
+                <th className={`${stickyHeaderLeft} left-0 border-b-0 h-9 ${stickyEdgeClass('num')}`} style={frozenHeader('num')}></th>
+                <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('name')}`} style={frozenHeader('name')}></th>
                 {showScopeColumn && (
-                  <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, background: HDR_BG }}></th>
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('scope')}`} style={frozenHeader('scope')}></th>
                 )}
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.manager, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0`} style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, background: HDR_BG }}></th>
-                <th className={`${stickyHeaderRow1} border-b-0 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}></th>
-                <th colSpan={5} className="border-b-0" style={{ minWidth: 570, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}></th>
-                <th className="text-center py-1 px-3 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50" style={{ minWidth: 120, background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                {showManager && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('manager')}`} style={frozenHeader('manager')}></th>
+                )}
+                {showRelPartner && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('relPartner')}`} style={frozenHeader('relPartner')}></th>
+                )}
+                {showElStatus && (
+                  <th className={`${stickyHeaderLeft} border-b-0 h-9 ${stickyEdgeClass('elStatus')}`} style={frozenHeader('elStatus')}></th>
+                )}
+                <th colSpan={5} className="border-b-0 h-9" style={{ minWidth: 570, background: HDR_BG }}></th>
+                <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}></th>
+                <th className="text-center px-3 text-[10px] leading-tight uppercase tracking-wider text-muted-foreground font-semibold border-b border-border/50 h-9" style={{ minWidth: 120, background: HDR_BG }}>
                   Collected <span className="font-normal normal-case">(Finance Actuals)</span>
                 </th>
                 {collectionsOpen && (
-                  <th colSpan={monthCount * 3 + 1} className="text-center py-1 px-3 text-[10px] uppercase tracking-wider text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                  <th colSpan={monthCount * 3 + 1} className="text-center px-3 text-[10px] leading-tight uppercase tracking-wider text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 h-9" style={{ background: HDR_BG }}>
                     Planned vs Collected{' '}
                     <span className="font-normal text-blue-400 normal-case">(Forecast vs Actuals)</span>
                     <button onClick={() => setCollectionsOpen(false)} className="ml-2 text-cbva-navy hover:text-cbva-navy/80 font-medium inline-flex"><ChevronDown className="w-3 h-3" /></button>
                   </th>
                 )}
                 {!collectionsOpen && (
-                  <th className="text-center py-1 px-3 text-[10px] text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 whitespace-nowrap" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}>
+                  <th className="text-center px-3 text-[10px] leading-tight text-cbva-navy font-semibold border-b border-border/50 border-l border-border/40 whitespace-nowrap h-9" style={{ background: HDR_BG }}>
                     Planned vs Collected
                     <button onClick={() => setCollectionsOpen(true)} className="ml-2 text-cbva-navy hover:text-cbva-navy/80 font-medium inline-flex"><ChevronRight className="w-3 h-3" /></button>
                   </th>
                 )}
-                <th colSpan={2} className="border-b-0" style={{ background: HDR_BG, position: 'sticky', top: 0, zIndex: 5 }}></th>
+                {!collectionsOpen && (
+                  <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}></th>
+                )}
+                <th className="border-b-0 h-9" style={{ ...widthStyle(COL_WIDTH.expand), background: HDR_BG }}></th>
               </tr>
               <tr className="[&>th]:border-b [&>th]:border-border" style={{ background: HDR_BG }}>
-                <th className={`${stickyHeaderRow2} left-0 text-left py-3 px-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium`} style={{ minWidth: 32, width: 32, top: 36, background: HDR_BG }}>#</th>
+                <th className={`${stickyHeaderLeft} left-0 text-left py-3 px-3 text-[11px] uppercase tracking-wider text-muted-foreground font-medium ${stickyEdgeClass('num')}`} style={frozenHeader('num')}>#</th>
                 <ColumnHeaderFilter
                   label="Client Name"
                   type="text"
                   filterKey="name"
                   filters={filters}
                   setFilters={setFilters}
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.client, minWidth: 180, width: 180, top: 36, background: HDR_BG }}
+                  nowrap={false}
+                  className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('name')}`}
+                  style={frozenHeader('name')}
                 />
                 {showScopeColumn && (
                   <ColumnHeaderFilter
@@ -572,46 +987,56 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     options={CLIENT_SCOPE_VALUES}
-                    className={`${stickyHeaderRow2} text-muted-foreground`}
-                    style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH, width: SCOPE_COL_WIDTH, top: 36, background: HDR_BG }}
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('scope')}`}
+                    style={frozenHeader('scope')}
                   />
                 )}
-                <ColumnHeaderFilter
-                  label="Manager"
-                  type="multi"
-                  filterKey="manager"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={managerOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.manager, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
-                />
-                <ColumnHeaderFilter
-                  label="Rel. Partner"
-                  type="multi"
-                  filterKey="relPartner"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={relPartnerOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground`}
-                  style={{ left: stickyLeft.relPartner, minWidth: 100, width: 100, top: 36, background: HDR_BG }}
-                />
-                <ColumnHeaderFilter
-                  label="EL Status"
-                  type="multi"
-                  filterKey="elStatus"
-                  filters={filters}
-                  setFilters={setFilters}
-                  options={elStatusOptions}
-                  includeEmpty
-                  className={`${stickyHeaderRow2} text-muted-foreground shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`}
-                  style={{ left: stickyLeft.elStatus, minWidth: 100, width: 100, top: 36, background: HDR_BG, clipPath: 'inset(0 -15px 0 0)' }}
-                />
+                {showManager && (
+                  <ColumnHeaderFilter
+                    label="Manager"
+                    type="multi"
+                    filterKey="manager"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={managerOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('manager')}`}
+                    style={frozenHeader('manager')}
+                  />
+                )}
+                {showRelPartner && (
+                  <ColumnHeaderFilter
+                    label="Rel. Partner"
+                    type="multi"
+                    filterKey="relPartner"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={relPartnerOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('relPartner')}`}
+                    style={frozenHeader('relPartner')}
+                  />
+                )}
+                {showElStatus && (
+                  <ColumnHeaderFilter
+                    label="EL Status"
+                    type="multi"
+                    filterKey="elStatus"
+                    filters={filters}
+                    setFilters={setFilters}
+                    options={elStatusOptions}
+                    includeEmpty
+                    nowrap={false}
+                    className={`${stickyHeaderLeft} text-muted-foreground ${stickyEdgeClass('elStatus')}`}
+                    style={frozenHeader('elStatus')}
+                  />
+                )}
                 <th
                   className="text-right py-3 px-3 text-[11px] uppercase tracking-wider text-emerald-800 font-medium"
-                  style={{ minWidth: PREV_ACTUAL_COLLECTED_COL_WIDTH, width: PREV_ACTUAL_COLLECTED_COL_WIDTH, top: 36, position: 'sticky', zIndex: 5, background: HDR_BG }}
+                  style={headerBg(COL_WIDTH.prevActualCollected)}
                   title={`Actual collected from ${prevFyLabel} (engagement.collected)`}
                 >
                   {prevFyLabel} Actual Collected
@@ -624,10 +1049,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-emerald-700 cursor-pointer select-none"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.green), background: HDR_BG }}
                   onSort={() => handleSort('green')}
-                  sortIcon={<SortIcon field="green" />}
+                  sortIcon={<SortIconCell field="green" />}
                 />
+                {showAmber && (
                 <ColumnHeaderFilter
                   label="Amber (?)"
                   align="right"
@@ -636,10 +1062,12 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-amber-600 cursor-pointer select-none"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.amber), background: HDR_BG }}
                   onSort={() => handleSort('amber')}
-                  sortIcon={<SortIcon field="amber" />}
+                  sortIcon={<SortIconCell field="amber" />}
                 />
+                )}
+                {showBlueSky && (
                 <ColumnHeaderFilter
                   label="Blue Sky (?)"
                   align="right"
@@ -648,10 +1076,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-cbva-navy cursor-pointer select-none"
-                  style={{ minWidth: 120, width: 120, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.blueSky), background: HDR_BG }}
                   onSort={() => handleSort('blueSky')}
-                  sortIcon={<SortIcon field="blueSky" />}
+                  sortIcon={<SortIconCell field="blueSky" />}
                 />
+                )}
                 <ColumnHeaderFilter
                   label="Total (?)"
                   align="right"
@@ -660,7 +1089,16 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-muted-foreground"
-                  style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.total), background: HDR_BG }}
+                />
+                <ColumnHeaderFilter
+                  label="Remarks"
+                  type="text"
+                  filterKey="remarks"
+                  filters={filters}
+                  setFilters={setFilters}
+                  className="text-muted-foreground"
+                  style={{ ...widthStyle(COL_WIDTH.remarks), background: HDR_BG }}
                 />
                 <ColumnHeaderFilter
                   label="Collected (?)"
@@ -670,7 +1108,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   filters={filters}
                   setFilters={setFilters}
                   className="text-muted-foreground"
-                  style={{ minWidth: 120, width: 120, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                  style={{ ...widthStyle(COL_WIDTH.collected), background: HDR_BG }}
                 />
                 {collectionsOpen && <>
                   {selectedMonths.map((mk) => (
@@ -684,7 +1122,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-cbva-navy border-l border-border/40"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                       <ColumnHeaderFilter
                         label={`${MONTH_SHORT_NAMES[mk]} Coll`}
@@ -695,7 +1133,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-emerald-700"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                       <ColumnHeaderFilter
                         label="Var"
@@ -706,7 +1144,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                         filters={filters}
                         setFilters={setFilters}
                         className="text-muted-foreground"
-                        style={{ minWidth: MONTH_SUB_COL_WIDTH, width: MONTH_SUB_COL_WIDTH, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                        style={{ ...widthStyle(COL_WIDTH.monthSub), background: HDR_BG }}
                       />
                     </React.Fragment>
                   ))}
@@ -718,7 +1156,7 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     className="text-muted-foreground border-l border-border/40"
-                    style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                    style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}
                   />
                 </>}
                 {!collectionsOpen && (
@@ -730,80 +1168,94 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                     filters={filters}
                     setFilters={setFilters}
                     className="text-muted-foreground border-l border-border/40"
-                    style={{ minWidth: 110, width: 110, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
+                    style={{ ...widthStyle(COL_WIDTH.balance), background: HDR_BG }}
                   />
                 )}
-                <ColumnHeaderFilter
-                  label="Remarks"
-                  type="text"
-                  filterKey="remarks"
-                  filters={filters}
-                  setFilters={setFilters}
-                  className="text-muted-foreground"
-                  style={{ minWidth: 320, width: 320, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}
-                />
-                <th className="py-3 px-3" style={{ minWidth: 32, width: 32, position: 'sticky', top: 36, zIndex: 5, background: HDR_BG }}></th>
+                <th className="py-3 px-3" style={{ ...widthStyle(COL_WIDTH.expand), background: HDR_BG }}></th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.map((client, i) => {
+            <tbody className="relative z-0">
+              {isFy2526 ? (
+                <tr>
+                  <td colSpan={bodyColSpan} className="py-16 px-6 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground mb-1">No client-level records for FY 2025-26</p>
+                    <p>Month totals are shown in the footer below and on the Collections tab.</p>
+                  </td>
+                </tr>
+              ) : (
+              <>
+              <VirtualPadRow height={paddingTop} columns={columns} />
+              {virtualRows.map((virtualRow) => {
+                const client = filtered[virtualRow.index];
                 const isExpanded = expandedRow === client.num;
-                const actCount = clientActions.filter(a => a.clientNum === client.num && a.status !== 'Done').length;
+                const actCount = actCountByClient.get(String(client.id)) || actCountByClient.get(client.num) || 0;
                 const prevActualCollected = prevActualCollectedFor(client);
                 return (
-                  <React.Fragment key={i}>
+                  <React.Fragment key={client.id}>
                     <tr className={`[&>td]:border-b [&>td]:border-border/50 hover:bg-muted/20 transition-colors ${isExpanded ? 'bg-muted/10' : ''}`}>
-                      <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground`} style={{ minWidth: 32 }}>{client.num}</td>
-                      <td className={`${stickyBase} py-3 px-3 font-medium text-foreground`} style={{ left: 32, minWidth: 180 }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleExpandedRow(client.num)}
-                          aria-expanded={isExpanded}
-                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${client.name || 'client'}`}
-                          className="flex items-center gap-1.5 text-left w-full group rounded-md -mx-1 px-1 py-0.5 hover:bg-muted/40 transition-colors"
-                        >
-                          <span className="text-muted-foreground group-hover:text-cbva-navy transition-colors shrink-0">
-                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                          </span>
-                          <span className={`truncate group-hover:text-cbva-navy group-hover:underline underline-offset-2 ${isExpanded ? 'text-cbva-navy' : 'text-foreground'}`}>
-                            {client.name || <span className="text-muted-foreground italic no-underline">Unidentified</span>}
-                          </span>
-                          {actCount > 0 && (
-                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-cbva-navy text-white text-[9px] font-bold shrink-0">
-                              {actCount}
-                            </span>
-                          )}
-                        </button>
-                      </td>
+                      <td className={`${stickyBase} left-0 py-3 px-3 text-xs text-muted-foreground ${stickyEdgeClass('num')}`} style={frozenBody('num')}>{client.num}</td>
+                      <NameCell
+                        value={client.name}
+                        onChange={(v) => updateName(client.id, v)}
+                        isExpanded={isExpanded}
+                        actCount={actCount}
+                        onToggleExpand={() => toggleExpandedRow(client.num)}
+                        stickyClass={`${stickyBase} ${stickyEdgeClass('name')}`}
+                        stickyStyle={frozenBody('name')}
+                      />
                       {showScopeColumn && (
                         <ScopeCell
                           value={client.clientScope}
                           onChange={v => updateScope(client.id, v)}
-                          stickyClass={stickyBase}
-                          stickyStyle={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('scope')}`}
+                          stickyStyle={frozenBody('scope')}
+                          disabled={!canEdit}
                         />
                       )}
-                      <ManagerCell
-                        value={client.manager}
-                        onChange={v => updateManager(client.id, v)}
-                        stickyClass={stickyBase}
-                        stickyStyle={{ left: stickyLeft.manager, minWidth: 100 }}
-                        listId="engagement-manager-suggestions"
-                      />
-                      <td className={`${stickyBase} py-3 px-3 text-xs text-muted-foreground`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}>{relationshipPartnerLabel(client.relPartner)}</td>
-                      <td className={`${stickyBase} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}><ELBadge status={client.elStatus} /></td>
+                      {showManager && (
+                        <ManagerCell
+                          value={client.manager}
+                          onChange={v => updateManager(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('manager')}`}
+                          stickyStyle={frozenBody('manager')}
+                          options={managerOptions}
+                          disabled={!canEdit}
+                        />
+                      )}
+                      {showRelPartner && (
+                        <RelPartnerCell
+                          value={client.relPartner}
+                          onChange={(v) => updateRelPartner(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('relPartner')}`}
+                          stickyStyle={frozenBody('relPartner')}
+                          options={relPartnerOptions}
+                          disabled={!canEdit}
+                        />
+                      )}
+                      {showElStatus && (
+                        <ELStatusCell
+                          value={client.elStatus}
+                          onChange={(v) => updateElStatus(client.id, v)}
+                          stickyClass={`${stickyBase} ${stickyEdgeClass('elStatus')}`}
+                          stickyStyle={frozenBody('elStatus')}
+                          disabled={!canEdit}
+                        />
+                      )}
                       <td className="py-3 px-3 text-right font-tabular text-xs text-emerald-800" title={prevActualCollected == null ? 'No confident prior-year match' : `Actual collected from ${prevFyLabel}`}>
                         {prevActualCollected == null ? <span className="text-muted-foreground/60 italic">TBD</span> : formatINRFull(prevActualCollected)}
                       </td>
-                      <EditableCell value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" />
-                      <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" />
-                      <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} />
+                      <EditableCell value={client.green} onChange={v => updateField(client.id, 'green', v)} color="#00FF00" disabled={!canEditStatus} />
+                      <EditableCell value={client.amber} onChange={v => updateField(client.id, 'amber', v)} color="#FF8800" disabled={!canEditStatus} />
+                      <EditableCell value={client.blueSky} onChange={v => updateField(client.id, 'blueSky', v)} color={BLUE_SKY_BG} disabled={!canEditStatus} />
                       <td className="py-3 px-3 text-right font-tabular font-semibold text-foreground text-xs">{client.total ? formatINRFull(client.total) : '-'}</td>
+                      <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td
                         className="py-3 px-3 text-right font-tabular text-muted-foreground text-xs"
-                        title="Updated from Collections page"
+                        title={isFy2526 ? 'Month totals from Collections tab; per-client split not available for FY2526' : 'Sum of collection transactions'}
                       >
-                        {client.collected ? formatINRFull(client.collected) : '-'}
+                        {isFy2526
+                          ? (client.collected ? formatINRFull(client.collected) : '—')
+                          : (client.collected ? formatINRFull(client.collected) : '-')}
                       </td>
                       {collectionsOpen && <>
                         {selectedMonths.map((mk) => {
@@ -812,14 +1264,24 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           const variance = collected - planned;
                           return (
                             <React.Fragment key={mk}>
-                              <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} />
-                              <td className="py-3 px-3 text-right font-tabular text-emerald-700 text-xs">{collected > 0 ? formatINRFull(collected) : '-'}</td>
+                              <EditableCell value={planned} onChange={v => updateMonthPlan(client.id, mk, v)} disabled={!canEditMonth(mk)} />
+                              {isFy2526 ? (
+                                <td className="py-3 px-3 text-right font-tabular text-muted-foreground/60 text-xs">—</td>
+                              ) : (
+                                <CollectedMonthCell
+                                  value={collected}
+                                  pending={settingCollectedKey === `${client.id}:${mk}`}
+                                  onSetAmount={(amount) => setMonthCollected(client, mk, amount)}
+                                />
+                              )}
                               <td className="py-3 px-3 text-right font-tabular text-xs">
-                                {planned === 0 && collected === 0
-                                  ? <span className="text-muted-foreground/50">-</span>
-                                  : variance >= 0
-                                    ? <span className="text-emerald-600">+{formatINRFull(variance)}</span>
-                                    : <span className="text-red-600">({formatINRFull(Math.abs(variance))})</span>}
+                                {isFy2526
+                                  ? <span className="text-muted-foreground/50">—</span>
+                                  : (planned === 0 && collected === 0
+                                    ? <span className="text-muted-foreground/50">-</span>
+                                    : variance >= 0
+                                      ? <span className="text-emerald-600">+{formatINRFull(variance)}</span>
+                                      : <span className="text-red-600">({formatINRFull(Math.abs(variance))})</span>)}
                               </td>
                             </React.Fragment>
                           );
@@ -833,7 +1295,6 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           {client.balance == null ? '-' : client.balance === 0 ? <span className="text-emerald-600">{formatINRFull(0)}</span> : <span className="text-red-600">{formatINRFull(client.balance)}</span>}
                         </td>
                       )}
-                      <RemarkCell value={client.remarks} onChange={v => updateRemarks(client.id, v)} />
                       <td className="py-3 px-3">
                         <button
                           type="button"
@@ -852,8 +1313,14 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                           <EngagementExpandedPanel
                             client={client}
                             actions={clientActions}
-                            onAddAction={addAction}
-                            onDeleteAction={deleteAction}
+                            onAddAction={(payload) => {
+                              if (!canEdit) {
+                                toast.error('This fiscal year is locked for editing. Ask an admin to enable it in Admin Settings.');
+                                return Promise.reject(new Error('locked'));
+                              }
+                              return addAction(payload);
+                            }}
+                            onDeleteAction={(id) => guardEdit(() => deleteAction(id))}
                             onUpdateRemarks={updateRemarks}
                           />
                         </td>
@@ -862,21 +1329,29 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                   </React.Fragment>
                 );
               })}
+              <VirtualPadRow height={paddingBottom} columns={columns} />
+              </>
+              )}
             </tbody>
-            <tfoot>
+            <tfoot className="relative z-30">
               <tr className="bg-muted [&>td]:border-t-2 [&>td]:border-border">
-                <td className={`${stickyFooterLeft} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ minWidth: 32 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3 text-xs font-bold uppercase text-foreground`} style={{ left: stickyLeft.client, minWidth: 180 }}>TOTAL</td>
-                {showScopeColumn && <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.scope, minWidth: SCOPE_COL_WIDTH }}></td>}
-                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.manager, minWidth: 100 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3`} style={{ left: stickyLeft.relPartner, minWidth: 100 }}></td>
-                <td className={`${stickyFooterLeft} py-3 px-3 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]`} style={{ left: stickyLeft.elStatus, minWidth: 100, clipPath: 'inset(0 -15px 0 0)' }}></td>
+                <td className={`${stickyFooterLeft} left-0 py-3 px-3 text-xs font-bold uppercase text-foreground ${stickyEdgeClass('num')}`} style={frozenBody('num')}></td>
+                <td className={`${stickyFooterLeft} py-3 px-3 text-xs font-bold uppercase text-foreground ${stickyEdgeClass('name')}`} style={frozenBody('name')}>TOTAL</td>
+                {showScopeColumn && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('scope')}`} style={frozenBody('scope')}></td>}
+                {showManager && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('manager')}`} style={frozenBody('manager')}></td>}
+                {showRelPartner && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('relPartner')}`} style={frozenBody('relPartner')}></td>}
+                {showElStatus && <td className={`${stickyFooterLeft} py-3 px-3 ${stickyEdgeClass('elStatus')}`} style={frozenBody('elStatus')}></td>}
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-emerald-800 text-xs`}>{totals.prevActualCollected > 0 ? formatINRFull(totals.prevActualCollected) : '-'}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{formatINRFull(totals.green)}</td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#00FF00' }}>{totals.green > 0 ? formatINRFull(totals.green) : '-'}</td>
+                {showAmber && (
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: '#FF8800' }}>{formatINRFull(totals.amber)}</td>
+                )}
+                {showBlueSky && (
                 <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-black text-xs`} style={{ backgroundColor: BLUE_SKY_BG }}>{formatINRFull(totals.blueSky)}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{formatINRFull(totals.total)}</td>
-                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{formatINRFull(totals.collected)}</td>
+                )}
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-foreground text-xs`}>{totals.total > 0 ? formatINRFull(totals.total) : '-'}</td>
+                <td className={`${stickyFooter} py-3 px-3`}></td>
+                <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-slate-700 text-xs`}>{totals.collected > 0 ? formatINRFull(totals.collected) : '-'}</td>
                 {collectionsOpen && <>
                   {selectedMonths.map((mk) => {
                     const m = totals.months[mk] || { planned: 0, collected: 0, variance: 0 };
@@ -890,12 +1365,11 @@ function EngagementsTable({ fiscalYear, fyLabel: fyLabelProp }) {
                       </React.Fragment>
                     );
                   })}
-                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40`}>{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-xs border-l border-border/40 ${totals.balance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatINRFull(totals.balance)}</td>
                 </>}
                 {!collectionsOpen && (
-                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-red-600 text-xs border-l border-border/40`}>{formatINRFull(totals.balance)}</td>
+                  <td className={`${stickyFooter} py-3 px-3 text-right font-tabular font-bold text-xs border-l border-border/40 ${totals.balance === 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatINRFull(totals.balance)}</td>
                 )}
-                <td className={`${stickyFooter} py-3 px-3`}></td>
                 <td className={`${stickyFooter} py-3 px-3`}></td>
               </tr>
             </tfoot>

@@ -106,9 +106,39 @@ export const useUpdateFinancialYear = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }) => apiPut(`/api/admin/financial-years/${id}`, body),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      // Patch public FY list immediately so unlocks apply without waiting
+      qc.setQueryData(['financial-years'], (old) => {
+        const list = Array.isArray(old) ? old : old?.data;
+        if (!Array.isArray(list)) return old;
+        const next = list.map((fy) => {
+          if (fy.id !== vars.id && fy.slug !== vars.slug) return fy;
+          return { ...fy, ...vars, id: fy.id };
+        });
+        return Array.isArray(old) ? next : { ...old, data: next };
+      });
       qc.invalidateQueries({ queryKey: ['admin-financial-years'] });
-      qc.invalidateQueries({ queryKey: ['financial-years'] });
+      qc.invalidateQueries({ queryKey: ['financial-years'], refetchType: 'all' });
+    },
+  });
+};
+
+// ─── Initial / Board Plans ────────────────────────────────────────────────────
+
+export const useAdminPlans = (leaderId, fiscalYear) =>
+  useQuery({
+    queryKey: ['admin-plans', leaderId, fiscalYear],
+    queryFn: () => apiGet('/api/admin/plans', { leader_id: leaderId, fiscal_year: fiscalYear }),
+    enabled: !!leaderId && !!fiscalYear,
+  });
+
+export const useUpsertAdminPlans = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => apiPut('/api/admin/plans', body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['admin-plans', vars.leader_id, vars.fiscal_year] });
+      qc.invalidateQueries({ queryKey: ['pipeline', vars.leader_id, vars.fiscal_year] });
     },
   });
 };

@@ -50,9 +50,9 @@ export const useFirmwideClientsInfinite = (fiscalYear, { limit = 100 } = {}) =>
     },
   });
 
-export const useFirmwideTeam = () =>
+export const useFirmwideTeam = (fiscalYear) =>
   useQuery({
-    queryKey: ['firmwide-team'],
-    queryFn: () => apiGet('/api/firmwide/team'),
+    queryKey: ['firmwide-team', fiscalYear],
+    queryFn: () => apiGet('/api/firmwide/team', fiscalYear ? { fiscal_year: fiscalYear } : undefined),
     select: (res) => res.data ?? res,
   });

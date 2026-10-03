@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 
 const WelcomeAnimation = lazy(() => import('@/components/welcome/WelcomeAnimation'));
 
-const LOGO_SRC = 'https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png';
+const LOGO_SRC = '/cbv-logo.png';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -41,8 +41,19 @@ export default function Home() {
       } else {
         redirectByRole(user);
       }
-    } catch {
-      setError('Invalid email or password.');
+    } catch (err) {
+      const status = err?.response?.status;
+      if (!err?.response) {
+        setError('Cannot reach the API. Check the Network tab for /api/auth/login (blocked, CORS, or timeout).');
+      } else if (status === 404) {
+        setError('Login route not found on the API host. The backend is up but URL routing is wrong.');
+      } else if (status === 429) {
+        setError('Too many login attempts. Wait a minute and try again.');
+      } else if (status >= 500) {
+        setError('Server error on login. The API likely failed after the last deploy.');
+      } else {
+        setError('Invalid email or password.');
+      }
     } finally {
       setLoading(false);
     }

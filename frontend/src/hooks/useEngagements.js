@@ -1,14 +1,50 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from '@/api/client';
+import { toast } from 'sonner';
 
 const engKey = (leaderId, fiscalYear) => ['engagements', leaderId, fiscalYear];
 
-const invalidateEngagementDerived = (qc, fiscalYear) => {
-  if (fiscalYear) {
-    qc.invalidateQueries({ queryKey: ['consolidated-summary', fiscalYear] });
-    qc.invalidateQueries({ queryKey: ['pipeline'] });
-    qc.invalidateQueries({ queryKey: ['collections'] });
+const invalidateEngagementDerived = (qc, leaderId, fiscalYear) => {
+  if (!fiscalYear) return;
+  qc.invalidateQueries({ queryKey: ['consolidated-summary', fiscalYear] });
+  if (leaderId) {
+    qc.invalidateQueries({ queryKey: ['pipeline', leaderId, fiscalYear] });
+    qc.invalidateQueries({ queryKey: ['collections', leaderId, fiscalYear] });
   }
+};
+
+const patchRawEngagement = (engagement, vars) => {
+  const apiFields = toApiFields(vars);
+  const next = { ...engagement, ...apiFields };
+  if (apiFields.monthly_plan) {
+    next.monthly_plan = { ...(engagement.monthly_plan || {}), ...apiFields.monthly_plan };
+  }
+  return next;
+};
+
+const patchEngagementsCache = (cached, vars) => {
+  if (!cached) return cached;
+  const patchList = (list) =>
+    list.map((e) => (String(e.id) === String(vars.id) ? patchRawEngagement(e, vars) : e));
+
+  if (Array.isArray(cached)) {
+    return patchList(cached);
+  }
+
+  const body = cached.data ?? cached;
+  if (Array.isArray(body)) {
+    return patchList(body);
+  }
+  if (body?.data && Array.isArray(body.data)) {
+    return {
+      ...cached,
+      data: {
+        ...body,
+        data: patchList(body.data),
+      },
+    };
+  }
+  return cached;
 };
 
 // Normalize API snake_case fields to camelCase so existing UI code doesn't need to change
@@ -57,7 +93,7 @@ export const useCreateEngagement = () => {
     mutationFn: (body) => apiPost('/api/engagements', toApiFields(body)),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: engKey(vars.leader_id, vars.fiscal_year) });
-      invalidateEngagementDerived(qc, vars.fiscal_year);
+      invalidateEngagementDerived(qc, vars.leader_id, vars.fiscal_year);
     },
   });
 };
@@ -66,9 +102,45 @@ export const useUpdateEngagement = (leaderId, fiscalYear) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }) => apiPut(`/api/engagements/${id}`, toApiFields(body)),
+    onMutate: async (vars) => {
+      const key = engKey(leaderId, fiscalYear);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData(key);
+      if (previous) {
+        qc.setQueryData(key, (old) => patchEngagementsCache(old, vars));
+      }
+      return { previous };
+    },
+    onError: (err, vars, context) => {
+      // Restore only the failed row so a concurrent edit on another client is not wiped.
+      if (context?.previous != null && vars?.id) {
+        qc.setQueryData(engKey(leaderId, fiscalYear), (current) => {
+          if (!current) return context.previous;
+          const prevBody = Array.isArray(context.previous)
+            ? context.previous
+            : (context.previous.data ?? context.previous);
+          const prevList = Array.isArray(prevBody) ? prevBody : (prevBody?.data ?? []);
+          const oldRow = prevList.find((e) => String(e.id) === String(vars.id));
+          if (!oldRow) return context.previous;
+
+          const patchList = (list) =>
+            list.map((e) => (String(e.id) === String(vars.id) ? oldRow : e));
+
+          if (Array.isArray(current)) return patchList(current);
+          const body = current.data ?? current;
+          if (Array.isArray(body)) {
+            return { ...current, data: patchList(body) };
+          }
+          return context.previous;
+        });
+      } else if (context?.previous) {
+        qc.setQueryData(engKey(leaderId, fiscalYear), context.previous);
+      }
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to save engagement');
+    },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) });
-      invalidateEngagementDerived(qc, fiscalYear);
+      invalidateEngagementDerived(qc, leaderId, fiscalYear);
       if (vars.id) {
         qc.invalidateQueries({ queryKey: ['engagement-changes', vars.id] });
       }
@@ -82,7 +154,7 @@ export const useDeleteEngagement = (leaderId, fiscalYear) => {
     mutationFn: (id) => apiDelete(`/api/engagements/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) });
-      invalidateEngagementDerived(qc, fiscalYear);
+      invalidateEngagementDerived(qc, leaderId, fiscalYear);
     },
   });
 };
@@ -94,7 +166,7 @@ export const useUpdateRemarks = (leaderId, fiscalYear) => {
       apiPatch(`/api/engagements/${id}/remarks`, { remarks, mode }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: engKey(leaderId, fiscalYear) });
-      invalidateEngagementDerived(qc, fiscalYear);
+      invalidateEngagementDerived(qc, leaderId, fiscalYear);
     },
   });
 };

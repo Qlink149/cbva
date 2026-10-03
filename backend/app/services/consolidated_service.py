@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import copy
 from datetime import date
+from app.core.serialization import today_ist
 from typing import Any
 
 from app.core import database
+from app.services import audit_service
 from app.services.consolidated_import import (
     COLUMN_CODES,
     default_xlsx_path,
@@ -89,7 +91,7 @@ def _pick_monthly(rows: list[dict], month_key: str) -> dict[str, float] | None:
 
 
 async def _leader_collections(leader_id: str, fiscal_year: str) -> dict[str, Any]:
-    as_of = date.today()
+    as_of = today_ist()
     allowed = get_available_fy_month_keys(fiscal_year, as_of)
 
     entry_docs = await database.db.collection_entries.find(
@@ -252,7 +254,62 @@ def _sum_cells(values: dict[str, float | None]) -> float | None:
     return sum(nums) if nums else None
 
 
-async def ensure_imported_matrix(report_fy: str) -> list[dict[str, Any]]:
+HISTORICAL_FY = "2526"
+
+
+def _annual_collected_by_code(bundles: dict[str, dict]) -> dict[str, float | None]:
+    out: dict[str, float | None] = {}
+    for code in COLUMN_CODES:
+        lid = CODE_TO_LEADER[code]
+        if not lid:
+            out[code] = None
+            continue
+        actual = bundles.get(lid, {}).get("actual")
+        out[code] = float(actual) if actual else None
+    return out
+
+
+def _apply_closed_fy2526_rules(
+    matrix: list[dict[str, Any]], bundles: dict[str, dict], report_fy: str
+) -> list[dict[str, Any]]:
+    """Closed FY2526: Green/Total = annual collected; hide Amber/Blue plan rows."""
+    if report_fy != HISTORICAL_FY:
+        return matrix
+
+    annual = _annual_collected_by_code(bundles)
+    for item in matrix:
+        if item.get("kind") != "data":
+            continue
+        row_key = item.get("row_key") or ""
+        if not row_key.startswith("fy2526_"):
+            continue
+
+        tone = item.get("tone")
+        label = (item.get("label") or "").strip().lower()
+
+        if tone in ("amber", "bluesky"):
+            item["hidden"] = True
+            item["values"] = {c: None for c in COLUMN_CODES}
+            item["total"] = None
+            continue
+
+        is_plan_green = tone == "green" and _is_dynamic_row(row_key, report_fy)
+        is_plan_total = (
+            label == "total"
+            and _is_dynamic_row(row_key, report_fy)
+            and any(part in row_key for part in ("_initial_", "_board_", "_monthly_"))
+        )
+        if is_plan_green or is_plan_total:
+            values = {c: annual.get(c) for c in COLUMN_CODES}
+            item["values"] = values
+            item["total"] = _sum_cells(values)
+
+    return matrix
+
+
+async def ensure_imported_matrix(
+    report_fy: str, *, user: dict | None = None
+) -> list[dict[str, Any]]:
     existing = await database.db.consolidated_summaries.find_one({"report_fy": report_fy})
     if existing:
         return existing["rows"]
@@ -267,6 +324,21 @@ async def ensure_imported_matrix(report_fy: str) -> list[dict[str, Any]]:
         {"$set": {"report_fy": report_fy, "rows": rows, "source_file": str(xlsx_path.name)}},
         upsert=True,
     )
+
+    if user is not None:
+        doc = await database.db.consolidated_summaries.find_one({"report_fy": report_fy})
+        data_rows = [r for r in rows if r.get("kind") == "data"]
+        await audit_service.log_event(
+            entity_type="consolidated_summary",
+            entity_id=str(doc["_id"]) if doc else report_fy,
+            entity_label=f"Consolidated FY {report_fy}",
+            action="imported",
+            user=user,
+            changes=[{"field": "rows_created", "label": "Rows Created", "old": None, "new": len(data_rows)}],
+            fiscal_year=report_fy,
+            source="csv_import",
+        )
+
     return rows
 
 
@@ -304,6 +376,8 @@ async def get_consolidated_summary(report_fy: str) -> dict[str, Any]:
         item["total"] = _sum_cells(values)
         item["is_dynamic"] = bool(row_key and _is_dynamic_row(row_key, report_fy))
         matrix.append(item)
+
+    matrix = _apply_closed_fy2526_rules(matrix, bundles, report_fy)
 
     columns = [{"code": c, "leader_id": CODE_TO_LEADER[c]} for c in COLUMN_CODES]
     return {

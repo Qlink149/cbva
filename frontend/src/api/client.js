@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+import { API_BASE_URL as BASE_URL } from '@/lib/apiBase';
 
 const axiosInstance = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
@@ -42,10 +41,19 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
+function isAuthCredentialRequest(config) {
+  const url = `${config?.baseURL || ''}${config?.url || ''}`;
+  return url.includes('/api/auth/login') || url.includes('/api/auth/refresh');
+}
+
 axiosInstance.interceptors.response.use(
   (res) => res.data,
   async (err) => {
-    const originalRequest = err.config;
+    const originalRequest = err.config || {};
+
+    if (isAuthCredentialRequest(originalRequest)) {
+      return Promise.reject(err);
+    }
 
     if (err.response?.status !== 401 || originalRequest._retry) {
       if (err.response?.status === 401) clearAuthAndRedirect();
@@ -86,6 +94,6 @@ export const apiGet = (path, params) => axiosInstance.get(path, { params });
 export const apiPost = (path, body) => axiosInstance.post(path, body);
 export const apiPut = (path, body) => axiosInstance.put(path, body);
 export const apiPatch = (path, body) => axiosInstance.patch(path, body);
-export const apiDelete = (path) => axiosInstance.delete(path);
+export const apiDelete = (path, params) => axiosInstance.delete(path, params ? { params } : undefined);
 
 export const apiLogout = () => apiPost('/api/auth/logout').catch(() => {});

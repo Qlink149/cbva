@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.el_summary import ELSummaryUpdate, ELSummaryResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services.fiscal_year import assert_fy_editable
+from app.services import audit_service
 
 router = APIRouter()
 
@@ -32,7 +35,7 @@ def _serialize(doc: dict) -> dict:
         "amber_el_signed": doc.get("amber_el_signed"),
         "amber_el_not_signed": doc.get("amber_el_not_signed"),
         "amber_received": doc.get("amber_received"),
-        "updated_at": doc.get("updated_at"),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 
@@ -129,10 +132,17 @@ async def update_el_summary(
     if not existing:
         raise HTTPException(status_code=404, detail="EL summary not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.el_summaries.find_one_and_update(
         {"_id": ObjectId(summary_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "el_summary", existing, updates, current_user,
+        label=f"{existing['leader_id']} — {existing['fiscal_year']}",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     live = await _compute_live(existing["leader_id"], existing["fiscal_year"])
     merged = _serialize(result)

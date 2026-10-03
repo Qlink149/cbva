@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { apiGet, apiPost } from '@/api/client';
+import { clearGlobalSelectorSession } from '@/lib/globalSelectorStorage';
 
 const AuthContext = createContext();
 
@@ -52,6 +53,7 @@ export const AuthProvider = ({ children }) => {
     }
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    clearGlobalSelectorSession();
     setUser(null);
     setIsAuthenticated(false);
     window.location.href = '/home';

@@ -1,4 +1,5 @@
 from datetime import date
+from app.core.serialization import today_ist
 
 FY_MONTH_KEYS = ["04", "05", "06", "07", "08", "09", "10", "11", "12", "01", "02", "03"]
 
@@ -12,7 +13,7 @@ def parse_fy_slug(slug: str) -> tuple[int, int] | None:
 
 
 def get_current_fy_slug(as_of: date | None = None) -> str:
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     y, m = as_of.year, as_of.month
     if m >= 4:
         return f"{y % 100:02d}{(y + 1) % 100:02d}"
@@ -33,7 +34,7 @@ def get_last_completed_calendar_month(as_of: date | None = None) -> tuple[int, i
     Return (year, month) for the last fully completed calendar month.
     Example: if as_of is 2026-07-02, returns (2026, 6).
     """
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     if as_of.month == 1:
         return as_of.year - 1, 12
     return as_of.year, as_of.month - 1
@@ -54,7 +55,7 @@ def is_fy_month_after_calendar_month(
 
 
 def is_fy_month_elapsed(month_key: str, fiscal_year: str, as_of: date | None = None) -> bool:
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
     if cal_year is None:
         return False
@@ -67,10 +68,57 @@ def is_fy_month_elapsed(month_key: str, fiscal_year: str, as_of: date | None = N
 
 
 def is_future_fy_month(fiscal_year: str, month_key: str, as_of: date | None = None) -> bool:
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     if fiscal_year != get_current_fy_slug(as_of):
         return False
     return not is_fy_month_elapsed(month_key, fiscal_year, as_of)
+
+
+MONTH_FULL_NAMES = {
+    "04": "April", "05": "May", "06": "June", "07": "July",
+    "08": "August", "09": "September", "10": "October", "11": "November",
+    "12": "December", "01": "January", "02": "February", "03": "March",
+}
+
+
+def month_key_from_label(label: str) -> str | None:
+    """Parse 'April 2025' style labels to FY month keys."""
+    if not label:
+        return None
+    for key, name in MONTH_FULL_NAMES.items():
+        if label.startswith(name):
+            return key
+    return None
+
+
+def get_month_lock_date(fiscal_year: str, month_key: str) -> date | None:
+    """
+    First calendar date when the target FY month becomes locked (20th of the
+    month after the target month's calendar period).
+    """
+    cal_year = get_fy_month_calendar_year(month_key, fiscal_year)
+    if cal_year is None or month_key not in FY_MONTH_KEYS:
+        return None
+    month_num = int(month_key)
+    if month_num == 12:
+        return date(cal_year + 1, 1, 20)
+    return date(cal_year, month_num + 1, 20)
+
+
+def is_month_locked(
+    fiscal_year: str,
+    month_key: str,
+    user: dict | None = None,
+    as_of: date | None = None,
+) -> bool:
+    """True when status/projection edits for month_key should be blocked."""
+    if user and user.get("role") == "admin":
+        return False
+    lock_date = get_month_lock_date(fiscal_year, month_key)
+    if lock_date is None:
+        return False
+    as_of = as_of or today_ist()
+    return as_of >= lock_date
 
 
 def get_available_fy_month_keys(fiscal_year: str, as_of: date | None = None) -> list[str]:
@@ -81,7 +129,7 @@ def get_available_fy_month_keys(fiscal_year: str, as_of: date | None = None) -> 
     - Future FY: April only (first month)
     Mirrors frontend getAvailableFyMonths / getSummaryMonthKeys.
     """
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     current_fy = get_current_fy_slug(as_of)
     if fiscal_year < current_fy:
         return list(FY_MONTH_KEYS)

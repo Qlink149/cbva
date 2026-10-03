@@ -11,7 +11,8 @@ from app.core.security import (
 )
 from app.core import database
 from app.dependencies.auth import get_current_user
-from app.core.limiter import limiter
+from app.core.limiter import limiter, login_email_limiter
+from app.services import audit_service
 from loguru import logger
 
 router = APIRouter()
@@ -39,6 +40,7 @@ async def _store_refresh_token(user_id: ObjectId, refresh_token: str) -> None:
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login(request: Request, body: LoginRequest):
+    login_email_limiter.check(body.email.strip().lower())
     user = await database.db.users.find_one({"email": body.email, "is_active": True})
     if not user or not verify_password(body.password, user["password_hash"]):
         logger.warning("Failed login attempt for {}", body.email)
@@ -55,6 +57,16 @@ async def login(request: Request, body: LoginRequest):
     )
     logger.info("User logged in: {}", body.email)
 
+    await audit_service.log_event(
+        entity_type="auth",
+        entity_id=user_id,
+        entity_label=body.email,
+        action="login",
+        user=user,
+        changes=[],
+        source="auth",
+    )
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -68,7 +80,8 @@ async def me(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/refresh")
-async def refresh(body: RefreshRequest):
+@limiter.limit("30/minute")
+async def refresh(request: Request, body: RefreshRequest):
     try:
         payload = decode_token(body.refresh_token)
         if payload.get("type") != "refresh":

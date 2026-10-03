@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import datetime, timezone
 from bson import ObjectId
-from app.schemas.action import ActionUpdate, ActionStatusPatch, ActionResponse
+from app.schemas.action import ActionCreate, ActionUpdate, ActionStatusPatch, ActionResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -27,8 +30,8 @@ def _serialize(doc: dict) -> dict:
         "cross_ref_risks": doc.get("cross_ref_risks"),
         "cross_ref_issues": doc.get("cross_ref_issues"),
         "cross_ref_decisions": doc.get("cross_ref_decisions"),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 
@@ -46,6 +49,40 @@ async def list_actions(
     return {"data": [_serialize(d) for d in docs]}
 
 
+@router.post("/", response_model=ActionResponse, status_code=201)
+async def create_action(body: ActionCreate, current_user: dict = Depends(get_current_user)):
+    enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
+    if not (body.description or "").strip():
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    now = datetime.now(timezone.utc)
+    last = await database.db.actions.find_one(
+        {"leader_id": body.leader_id, "fiscal_year": body.fiscal_year},
+        sort=[("num", -1)],
+    )
+    next_num = (last.get("num") or 0) + 1 if last else 1
+
+    doc = {
+        **body.model_dump(exclude={"source"}),
+        "num": next_num,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if body.source is not None:
+        doc["source"] = body.source.model_dump()
+
+    result = await database.db.actions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "action", doc, current_user,
+        label=f"#{next_num} {doc.get('description', '')}".strip(),
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
+    return _serialize(doc)
+
+
 @router.put("/{action_id}", response_model=ActionResponse)
 async def update_action(
     action_id: str,
@@ -56,10 +93,17 @@ async def update_action(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.actions.find_one_and_update(
         {"_id": ObjectId(action_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "action", existing, updates, current_user,
+        label=f"#{existing.get('num', '')} {existing.get('description', '')}".strip(),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     return _serialize(result)
 
@@ -74,9 +118,18 @@ async def update_action_status(
     if not existing:
         raise HTTPException(status_code=404, detail="Action not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
+    updates = {"status": body.status, "updated_at": datetime.now(timezone.utc)}
     result = await database.db.actions.find_one_and_update(
         {"_id": ObjectId(action_id)},
-        {"$set": {"status": body.status, "updated_at": datetime.now(timezone.utc)}},
+        {"$set": updates},
         return_document=True,
+    )
+    await audit_service.log_update(
+        "action", existing, updates, current_user,
+        label=f"#{existing.get('num', '')} {existing.get('description', '')}".strip(),
+        action="status_changed",
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     return _serialize(result)

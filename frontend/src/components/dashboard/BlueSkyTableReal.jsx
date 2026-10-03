@@ -1,24 +1,111 @@
 import React, { useState, useEffect } from 'react';
 import { CloudSun } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
+import { useMonthEditAccess } from '@/hooks/useMonthEditAccess';
 
 function fmtCell(val) {
   if (val === null || val === undefined || val === '') return '—';
   return formatINRFull(val);
 }
 
-export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '' }) {
-  const [remarks, setRemarks] = useState(() => blueSkyRows.map((r) => r.remarks || ''));
+function RemarkInput({ value = '', onSave, disabled }) {
+  const [draft, setDraft] = useState(value || '');
 
   useEffect(() => {
-    setRemarks(blueSkyRows.map((r) => r.remarks || ''));
-  }, [blueSkyRows]);
+    setDraft(value || '');
+  }, [value]);
 
-  const openingChip = blueSkyRows[0]?.opening;
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== (value || '').trim()) {
+      onSave?.(next);
+    }
+  };
+
+  if (disabled) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+
+  return (
+    <input
+      className={`w-full min-w-[220px] text-xs border border-transparent hover:border-border rounded px-2 py-1.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors placeholder:text-slate-400 ${
+        draft ? 'text-foreground' : 'text-muted-foreground'
+      }`}
+      placeholder="Add remark..."
+      maxLength={120}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      title={draft || undefined}
+    />
+  );
+}
+
+function AmountCell({ value, onChange, disabled, className = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    if (disabled) return;
+    setDraft(value != null ? String(value) : '0');
+    setEditing(true);
+  }
+
+  function commit() {
+    const next = parseRupeeInput(draft);
+    if (next != null && next !== (value ?? 0)) onChange?.(next);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className={`py-1 px-2 text-right ${className}`}>
+        <input
+          autoFocus
+          className="w-24 ml-auto text-right text-xs border border-cbva-navy rounded px-1 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className={`py-3 text-right font-tabular col-num ${className} ${
+        disabled ? '' : 'cursor-pointer hover:bg-muted/40 transition-colors'
+      }`}
+      title={disabled ? undefined : 'Click to edit'}
+      onClick={startEdit}
+    >
+      {fmtCell(value)}
+    </td>
+  );
+}
+
+export default function BlueSkyTableReal({
+  blueSkyRows = [],
+  totals,
+  fyLabel = '',
+  onUpdateRemarks,
+  onUpdateAmounts,
+}) {
+  const { canEditMonth } = useMonthEditAccess();
+  const firstWithData = blueSkyRows.find((r) => r.has_data !== false && r.opening != null);
+  const openingChip = firstWithData?.opening ?? totals?.opening;
+  const canEditRow = (row) => !!row.month_key && typeof onUpdateAmounts === 'function' && canEditMonth(row.month_key);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
-      {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-border/60">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
@@ -28,7 +115,6 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
             Blue Sky Pipeline{fyLabel ? ` · ${fyLabel}` : ''}
           </h3>
         </div>
-        {/* Summary chips */}
         <div className="flex flex-wrap gap-2">
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-muted rounded-full text-xs font-medium">
             Opening <span className="font-tabular font-semibold">{fmtCell(openingChip)}</span>
@@ -44,9 +130,13 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
             </>
           )}
         </div>
+        {onUpdateAmounts && (
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Opening is locked from prior closing · Click Additional / Converted to edit · Closing is auto-calculated
+          </p>
+        )}
       </div>
 
-      {/* Table — no vertical clip; only elapsed months are passed in */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -64,33 +154,60 @@ export default function BlueSkyTableReal({ blueSkyRows = [], totals, fyLabel = '
               <tr>
                 <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">No blue sky rows for this period</td>
               </tr>
-            ) : blueSkyRows.map((row, i) => (
-              <tr key={row.monthKey || row.month || i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                <td className="py-3 font-medium text-foreground col-num">{row.month}</td>
-                <td className="py-3 text-right font-tabular text-muted-foreground col-num">{fmtCell(row.opening)}</td>
-                <td className="py-3 text-right font-tabular text-cbva-navy col-num">{fmtCell(row.additional)}</td>
-                <td className="py-3 text-right font-tabular font-semibold text-emerald-600 col-num">{fmtCell(row.converted)}</td>
-                <td className="py-3 text-right font-tabular font-semibold text-foreground col-num">{fmtCell(row.closing)}</td>
-                <td className="py-3 px-4 col-remarks">
-                  <input
-                    className="w-full max-w-[200px] text-xs border border-transparent hover:border-border rounded px-1.5 py-0.5 bg-transparent focus:outline-none focus:border-ring focus:bg-white transition-colors text-muted-foreground placeholder:text-slate-400"
-                    placeholder="Client converted..."
-                    maxLength={40}
-                    value={remarks[i] || ''}
-                    onChange={e => setRemarks(prev => { const n = [...prev]; n[i] = e.target.value; return n; })}
+            ) : blueSkyRows.map((row, i) => {
+              const noData = row.has_data === false;
+              const editable = canEditRow(row);
+              return (
+                <tr key={row.month_key || row.monthKey || row.month || i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                  <td className="py-3 font-medium text-foreground col-num">
+                    <span className="inline-flex items-center gap-2">
+                      {row.month}
+                      {row.is_current_month && (
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700">
+                          Current
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <AmountCell
+                    value={row.opening}
+                    disabled
+                    className={noData ? 'text-muted-foreground' : 'text-muted-foreground'}
                   />
-                </td>
-              </tr>
-            ))}
+                  <AmountCell
+                    value={row.additional}
+                    disabled={!editable}
+                    className={noData ? 'text-muted-foreground' : 'text-cbva-navy'}
+                    onChange={(v) => onUpdateAmounts?.(row, { additional: v })}
+                  />
+                  <AmountCell
+                    value={row.converted}
+                    disabled={!editable}
+                    className={`font-semibold ${noData ? 'text-muted-foreground' : 'text-emerald-600'}`}
+                    onChange={(v) => onUpdateAmounts?.(row, { converted: v })}
+                  />
+                  <td className={`py-3 text-right font-tabular font-semibold col-num ${noData ? 'text-muted-foreground' : 'text-foreground'}`} title="Auto-calculated">
+                    {fmtCell(row.closing)}
+                  </td>
+                  <td className="py-3 px-4 col-remarks">
+                    <RemarkInput
+                      value={row.remarks || ''}
+                      disabled={!row.month_key || !onUpdateRemarks}
+                      onSave={(remarks) => onUpdateRemarks?.(row, remarks)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           {totals && blueSkyRows.length > 0 && (
             <tfoot>
               <tr className="bg-muted/30 border-t border-border">
                 <td className="py-3 text-xs font-bold uppercase text-foreground col-num">Total</td>
-                <td className="py-3 text-right font-tabular font-bold text-foreground col-num">{fmtCell(totals.opening)}</td>
+                <td className="py-3 text-right font-tabular font-bold text-muted-foreground col-num">—</td>
                 <td className="py-3 text-right font-tabular font-bold text-cbva-navy col-num">{fmtCell(totals.additional)}</td>
                 <td className="py-3 text-right font-tabular font-bold text-emerald-700 col-num">{fmtCell(totals.converted)}</td>
-                <td className="py-3 text-right font-tabular font-bold text-foreground col-num">{fmtCell(totals.closing)}</td>
+                <td className="py-3 text-right font-tabular font-bold text-muted-foreground col-num">—</td>
                 <td></td>
               </tr>
             </tfoot>

@@ -4,7 +4,11 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 from typing import Optional
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
+from app.services.client_meeting_months import resolve_monthly_status, merge_monthly_status
 
 router = APIRouter()
 
@@ -20,14 +24,7 @@ class ClientMeetingCreate(BaseModel):
     activity: str = ""
     notes: str = ""
     minutes: str = ""
-    q1_status: str = ""
-    q2_status: str = ""
-    q3_status: str = ""
-    q4_status: str = ""
-    q1_date: str = ""
-    q2_date: str = ""
-    q3_date: str = ""
-    q4_date: str = ""
+    monthly_status: dict[str, dict] = Field(default_factory=dict)
     sort_order: int = 0
 
 
@@ -40,18 +37,12 @@ class ClientMeetingUpdate(BaseModel):
     activity: Optional[str] = None
     notes: Optional[str] = None
     minutes: Optional[str] = None
-    q1_status: Optional[str] = None
-    q2_status: Optional[str] = None
-    q3_status: Optional[str] = None
-    q4_status: Optional[str] = None
-    q1_date: Optional[str] = None
-    q2_date: Optional[str] = None
-    q3_date: Optional[str] = None
-    q4_date: Optional[str] = None
+    monthly_status: Optional[dict[str, dict]] = None
     sort_order: Optional[int] = None
 
 
 def _serialize(doc: dict) -> dict:
+    monthly = resolve_monthly_status(doc)
     return {
         "id": str(doc["_id"]),
         "leader_id": doc["leader_id"],
@@ -64,17 +55,10 @@ def _serialize(doc: dict) -> dict:
         "activity": doc.get("activity", ""),
         "notes": doc.get("notes", ""),
         "minutes": doc.get("minutes", ""),
-        "q1_status": doc.get("q1_status", ""),
-        "q2_status": doc.get("q2_status", ""),
-        "q3_status": doc.get("q3_status", ""),
-        "q4_status": doc.get("q4_status", ""),
-        "q1_date": doc.get("q1_date", ""),
-        "q2_date": doc.get("q2_date", ""),
-        "q3_date": doc.get("q3_date", ""),
-        "q4_date": doc.get("q4_date", ""),
+        "monthly_status": monthly,
         "sort_order": doc.get("sort_order", 0),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
+        "created_at": serialize_datetime(doc.get("created_at")),
+        "updated_at": serialize_datetime(doc.get("updated_at")),
     }
 
 
@@ -98,12 +82,20 @@ async def create_client_meeting(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
     now = datetime.now(timezone.utc)
     doc = body.model_dump()
+    doc["monthly_status"] = merge_monthly_status({}, body.monthly_status)
     doc["created_at"] = now
     doc["updated_at"] = now
     result = await database.db.client_meetings.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "client_meeting", doc, current_user,
+        label=body.client_name,
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
     return _serialize(doc)
 
 
@@ -117,10 +109,19 @@ async def update_client_meeting(
     if not existing:
         raise HTTPException(status_code=404, detail="Client meeting not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    await assert_fy_editable(existing["fiscal_year"], current_user)
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if body.monthly_status is not None:
+        updates["monthly_status"] = merge_monthly_status(existing, body.monthly_status)
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.client_meetings.find_one_and_update(
         {"_id": ObjectId(meeting_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "client_meeting", existing, updates, current_user,
+        label=existing.get("client_name", ""),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
     )
     return _serialize(result)
 
@@ -134,5 +135,12 @@ async def delete_client_meeting(
     if not existing:
         raise HTTPException(status_code=404, detail="Client meeting not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.client_meetings.delete_one({"_id": ObjectId(meeting_id)})
+    await audit_service.log_delete(
+        "client_meeting", existing, current_user,
+        label=existing.get("client_name", ""),
+        leader_id=existing["leader_id"],
+        fiscal_year=existing["fiscal_year"],
+    )
     return None

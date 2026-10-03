@@ -6,6 +6,7 @@ from app.schemas.collection import (
     MonthCollectionResponse, CollectionListResponse,
 )
 from app.core import database
+from app.core.serialization import serialize_datetime, today_ist
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services.fy_calendar import (
     get_fy_month_calendar_year,
@@ -13,6 +14,8 @@ from app.services.fy_calendar import (
     is_fy_month_elapsed,
 )
 from app.services.engagement_derivation import planned_by_month_from_engagements
+from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable, assert_month_unlocked
 
 router = APIRouter()
 
@@ -45,7 +48,7 @@ async def list_collections(
 ):
     enforce_leader_scope(current_user, leader_id)
 
-    as_of = date.today()
+    as_of = today_ist()
     allowed_month_keys = get_available_fy_month_keys(fiscal_year, as_of)
 
     # Planned targets from collection_entries, falling back to engagement monthly_plan
@@ -96,7 +99,7 @@ async def list_collections(
                     "client_name": tx["client_name"],
                     "amount_billed": tx.get("amount_billed", 0),
                     "amount_collected": tx["amount_collected"],
-                    "created_at": tx["created_at"],
+                    "created_at": serialize_datetime(tx["created_at"]),
                 }
                 for tx in txs
             ],
@@ -112,10 +115,12 @@ async def set_monthly_plan(
 ):
     """Upsert the planned (target) amount for a month. Creates the row if it doesn't exist."""
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
 
-    as_of = date.today()
+    as_of = today_ist()
     if not is_fy_month_elapsed(body.month_key, body.fiscal_year, as_of):
         raise HTTPException(status_code=400, detail="Cannot set plan for a future/unavailable month")
+    assert_month_unlocked(body.fiscal_year, body.month_key, current_user, as_of)
 
     month_label = _month_label(body.month_key, body.fiscal_year)
     sort_order = FY_MONTH_KEYS.index(body.month_key) + 1 if body.month_key in FY_MONTH_KEYS else 0
@@ -138,6 +143,12 @@ async def set_monthly_plan(
             {"_id": existing["_id"]},
             {"$set": updates},
         )
+        await audit_service.log_update(
+            "collection", existing, updates, current_user,
+            label=month_label,
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+        )
         return {"entry_id": str(existing["_id"]), "month_key": body.month_key, "planned": body.planned}
     else:
         doc = {
@@ -154,6 +165,13 @@ async def set_monthly_plan(
             "updated_at": now,
         }
         result = await database.db.collection_entries.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        await audit_service.log_create(
+            "collection", doc, current_user,
+            label=month_label,
+            leader_id=body.leader_id,
+            fiscal_year=body.fiscal_year,
+        )
         return {"entry_id": str(result.inserted_id), "month_key": body.month_key, "planned": body.planned}
 
 
@@ -167,6 +185,13 @@ async def update_collection_entry(
     if not existing:
         raise HTTPException(status_code=404, detail="Collection entry not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
+
+    if body.planned is not None and existing.get("fiscal_year"):
+        mk = _key_from_entry_month(existing.get("month", ""))
+        if mk:
+            assert_month_unlocked(existing["fiscal_year"], mk, current_user)
 
     updates: dict = {}
     planned = body.planned if body.planned is not None else existing.get("planned", 0)
@@ -183,6 +208,12 @@ async def update_collection_entry(
             updates["variance"] = collected - planned
         updates["updated_at"] = datetime.now(timezone.utc)
         await database.db.collection_entries.update_one({"_id": ObjectId(entry_id)}, {"$set": updates})
+        await audit_service.log_update(
+            "collection", existing, updates, current_user,
+            label=existing.get("month", entry_id),
+            leader_id=existing["leader_id"],
+            fiscal_year=existing.get("fiscal_year"),
+        )
 
     return {
         "entry_id": entry_id,

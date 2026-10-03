@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { formatINRFull } from '@/lib/formatCurrency';
+import { parseRupeeInput } from '@/lib/parseAmount';
 import {
   FY_MONTHS,
   getCurrentMonthKey,
@@ -8,12 +9,12 @@ import {
   getAvailableFyMonths,
   MONTH_FULL_NAMES,
 } from '@/lib/fyMonths';
-import { priorYearActualRowsForLeader, hardcodedBoardPlan } from '@/lib/consolidatedSummary';
 
-/** Show em-dash for missing or zero amounts — never hide the cell. */
-function fmt(val, emptyLabel = '—') {
-  if (val === null || val === undefined || val === '' || Number(val) === 0) return emptyLabel;
+/** Show em-dash for missing amounts. TBD only when the row is a placeholder. */
+function fmt(val, emptyLabel = '—', allowZero = false) {
   if (val === 'TBD') return 'TBD';
+  if (val === null || val === undefined || val === '') return emptyLabel;
+  if (Number(val) === 0) return allowZero ? formatINRFull(0) : emptyLabel;
   return formatINRFull(val);
 }
 
@@ -27,94 +28,138 @@ function matchMonthKey(label) {
   for (const m of FY_MONTHS) {
     const full = (MONTH_FULL_NAMES[m.key] || m.full || '').toLowerCase();
     if (full && lower.includes(full)) return m.key;
+    if (lower.includes(m.key)) return m.key;
   }
   return null;
 }
 
-function AmountCells({ row, emphasize = false, emptyLabel = '—' }) {
+function AmountCells({ row, emphasize = false, emptyLabel = '—', allowZero = false }) {
   return (
     <>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.green, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.amber, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.blueSky, emptyLabel)}</td>
-      <td className={`py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap`}>{fmt(row.total, emptyLabel)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.green, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.amber, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${emphasize ? 'font-semibold' : ''}`}>{fmt(row.blueSky, emptyLabel, allowZero)}</td>
+      <td className={`py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap`}>{fmt(row.total, emptyLabel, allowZero)}</td>
     </>
+  );
+}
+
+function EditableAmountCell({ value, onSave, disabled, className = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    if (disabled) return;
+    setDraft(value != null && value !== '' ? String(value) : '');
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed === '') {
+      setEditing(false);
+      return;
+    }
+    const next = parseRupeeInput(trimmed);
+    if (next != null && (value == null || next !== Number(value))) onSave?.(next);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <td className={`py-1.5 text-right col-num ${className}`}>
+        <input
+          autoFocus
+          className="w-28 ml-auto block text-right text-xs border border-cbva-navy rounded px-1.5 py-0.5 font-tabular focus:outline-none bg-white"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className={`py-2.5 text-right col-num font-tabular text-slate-600 whitespace-nowrap ${className} ${
+        disabled ? '' : 'cursor-pointer hover:bg-sky-50/80 rounded'
+      }`}
+      onClick={startEdit}
+      title={disabled ? undefined : 'Click to edit'}
+    >
+      {fmt(value)}
+      {!disabled && (
+        <span className="ml-1 text-[9px] font-normal text-muted-foreground">✎</span>
+      )}
+    </td>
   );
 }
 
 /**
  * Monthly Plan Evolution:
- * - Prior-year actual YTD (from consolidated) at top
+ * - Prior-year actuals (editable, stored as pipeline fy_actual — not consolidated)
  * - Initial / Board plan rows when present
  * - Current month always visible with live Green/Amber/Blue Sky/Total
- * - Prior months hidden behind header arrow; expand to show "TBD"
+ * - Prior months hidden behind header arrow; expand to show stored snapshots or TBD
  */
 export default function MonthlyEvolutionCard({
   pipelineData = [],
   fyLabel = '',
   fySlug = '',
-  leaderId = '',
-  consolidatedRows = [],
-  consolidatedColumns = [],
+  fyActualRows = [],
+  onSaveFyActual,
+  canEditFyActual = true,
 }) {
   const [prevOpen, setPrevOpen] = useState(false);
   const currentMonthKey = getCurrentMonthKey();
 
   const actualYtdRows = useMemo(
-    () => priorYearActualRowsForLeader(consolidatedRows, consolidatedColumns, leaderId, fySlug),
-    [consolidatedRows, consolidatedColumns, leaderId, fySlug]
+    () =>
+      (fyActualRows || []).map((r) => {
+        const green = r.green == null || r.green === '' ? null : Number(r.green);
+        const amber = r.amber == null || r.amber === '' ? null : Number(r.amber);
+        const blueSky = r.blueSky == null || r.blueSky === '' ? null : Number(r.blueSky);
+        const hasAny = green != null || amber != null || blueSky != null || (r.id != null);
+        const total = hasAny
+          ? (green || 0) + (amber || 0) + (blueSky || 0)
+          : null;
+        return {
+          key: `actual-${r.fiscal_year}`,
+          fiscalYear: r.fiscal_year,
+          label: r.label || `FY ${r.fiscal_year}`,
+          green,
+          amber,
+          blueSky,
+          total,
+          isActualYtd: true,
+        };
+      }),
+    [fyActualRows]
   );
 
   const { planRows, prevMonthRows, currentRow } = useMemo(() => {
-    const boardOverride = hardcodedBoardPlan(fySlug, leaderId);
-
     const plans = (pipelineData || [])
       .filter((r) => {
         const t = (r.snapshot_type || '').toLowerCase();
         const label = (r.label || '').toLowerCase();
         return t === 'initial' || t === 'board' || label.includes('initial plan') || label.includes('board plan');
       })
-      .map((r) => {
-        const isBoard =
-          (r.snapshot_type || '').toLowerCase() === 'board' ||
-          (r.label || '').toLowerCase().includes('board plan');
-        if (isBoard && boardOverride) {
-          return {
-            key: `plan-${boardOverride.label}`,
-            label: boardOverride.label,
-            green: boardOverride.green,
-            amber: boardOverride.amber,
-            blueSky: boardOverride.blueSky,
-            total: boardOverride.total,
-          };
-        }
-        return {
-          key: `plan-${r.label}`,
-          label: r.label,
-          green: r.green,
-          amber: r.amber,
-          blueSky: r.blueSky,
-          total: r.total,
-        };
-      });
-
-    // If pipeline has no board row but we have a hardcode, insert it after initial
-    if (boardOverride && !plans.some((p) => (p.label || '').toLowerCase().includes('board'))) {
-      const boardRow = {
-        key: `plan-${boardOverride.label}`,
-        label: boardOverride.label,
-        green: boardOverride.green,
-        amber: boardOverride.amber,
-        blueSky: boardOverride.blueSky,
-        total: boardOverride.total,
-      };
-      const initialIdx = plans.findIndex((p) => (p.label || '').toLowerCase().includes('initial'));
-      if (initialIdx >= 0) plans.splice(initialIdx + 1, 0, boardRow);
-      else plans.unshift(boardRow);
-    }
+      .map((r) => ({
+        key: `plan-${r.label}`,
+        label: r.label,
+        green: r.green,
+        amber: r.amber,
+        blueSky: r.blueSky,
+        total: r.total,
+      }));
 
     const monthlyByKey = {};
     (pipelineData || []).forEach((r) => {
+      if ((r.snapshot_type || '').toLowerCase() === 'fy_actual') return;
       const mk = matchMonthKey(r.label);
       if (mk) monthlyByKey[mk] = r;
     });
@@ -146,15 +191,27 @@ export default function MonthlyEvolutionCard({
             }
           : { key: `month-${mk}`, label, ...emptyAmounts() };
       } else {
-        prev.push({ key: `month-${mk}`, label, ...emptyAmounts('TBD'), isTbd: true });
+        const src = monthlyByKey[mk];
+        if (src) {
+          prev.push({
+            key: `month-${mk}`,
+            label,
+            green: src.green,
+            amber: src.amber,
+            blueSky: src.blueSky,
+            total: src.total,
+          });
+        } else {
+          prev.push({ key: `month-${mk}`, label, ...emptyAmounts('TBD'), isTbd: true });
+        }
       }
     });
 
     return { planRows: plans, prevMonthRows: prev, currentRow: current };
-  }, [pipelineData, fySlug, currentMonthKey, leaderId]);
+  }, [pipelineData, fySlug, currentMonthKey]);
 
   const hasAny =
-    actualYtdRows.some((r) => r.total != null) ||
+    actualYtdRows.length > 0 ||
     planRows.length > 0 ||
     currentRow ||
     prevMonthRows.length > 0;
@@ -194,7 +251,42 @@ export default function MonthlyEvolutionCard({
             {actualYtdRows.map((row) => (
               <tr key={row.key} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                 <td className="py-2.5 font-medium text-slate-700 col-num">{row.label}</td>
-                <AmountCells row={row} />
+                <EditableAmountCell
+                  value={row.green}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: next,
+                      amber: row.amber ?? 0,
+                      blueSky: row.blueSky ?? 0,
+                    })
+                  }
+                />
+                <EditableAmountCell
+                  value={row.amber}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: row.green ?? 0,
+                      amber: next,
+                      blueSky: row.blueSky ?? 0,
+                    })
+                  }
+                />
+                <EditableAmountCell
+                  value={row.blueSky}
+                  disabled={!canEditFyActual || !onSaveFyActual}
+                  onSave={(next) =>
+                    onSaveFyActual?.(row.fiscalYear, {
+                      green: row.green ?? 0,
+                      amber: row.amber ?? 0,
+                      blueSky: next,
+                    })
+                  }
+                />
+                <td className="py-2.5 text-right col-num font-tabular font-semibold text-slate-700 whitespace-nowrap">
+                  {fmt(row.total)}
+                </td>
               </tr>
             ))}
 
@@ -208,7 +300,7 @@ export default function MonthlyEvolutionCard({
             {prevOpen && prevMonthRows.map((row) => (
               <tr key={row.key} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
                 <td className="py-2.5 font-medium text-slate-500 col-num">{row.label}</td>
-                <AmountCells row={row} emptyLabel="TBD" />
+                <AmountCells row={row} emptyLabel={row.isTbd ? 'TBD' : '—'} allowZero={!row.isTbd} />
               </tr>
             ))}
 

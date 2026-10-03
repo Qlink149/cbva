@@ -1,0 +1,66 @@
+{
+  "api": "http://127.0.0.1:8001",
+  "database": "cbva1_db",
+  "results": [
+    {
+      "id": "BOOT",
+      "name": "API health",
+      "passed": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH",
+      "name": "Login",
+      "passed": true,
+      "detail": "verify.local@staging.cbva.in"
+    },
+    {
+      "id": "A1",
+      "name": "Create engagement 18,00,000",
+      "passed": true,
+      "detail": "green=1800000"
+    },
+    {
+      "id": "A1",
+      "name": "GET after create (simulate tab return)",
+      "passed": true,
+      "detail": "list green=1800000"
+    },
+    {
+      "id": "A1",
+      "name": "PUT then GET green unchanged",
+      "passed": true,
+      "detail": "green=1800000"
+    },
+    {
+      "id": "A1",
+      "name": "parseAmount comma/lakh (local node)",
+      "passed": true,
+      "detail": "{\"input\":\"18,00,000\",\"rupee\":1800000,\"lakh\":180000000000}\n{\"input\":\"1800000\",\"rupee\":1800000,\"lakh\":180000000000}\n{\"input\":\"18\",\"rupee\":18,\"lakh\":1800000}"
+    },
+    {
+      "id": "A5",
+      "name": "Create action (no deadline)",
+      "passed": true,
+      "detail": "status=201 {\"id\":\"6aa97c406d166f0f105e0bba\",\"engagement_id\":\"6aa97c3e6d166f0f105e0bb7\",\"leader_id\":\"manan\",\"fiscal_year\":\"2627\",\"en"
+    },
+    {
+      "id": "A5",
+      "name": "Action appears in list",
+      "passed": true,
+      "detail": "count=1"
+    },
+    {
+      "id": "B3",
+      "name": "Action linked to engagement_id",
+      "passed": true,
+      "detail": "engagement_id=6aa97c3e6d166f0f105e0bb7"
+    },
+    {
+      "id": "A5",
+      "name": "Create action WITH deadline (Nikhil case)",
+      "passed": false,
+      "detail": "status=500 \u2014 FAILED (likely datetime.date BSON bug)"
+    }
+  ]
+}

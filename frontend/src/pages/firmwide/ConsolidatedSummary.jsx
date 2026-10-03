@@ -28,6 +28,11 @@ export default function ConsolidatedSummary() {
 
   const loading = fyLoading || !activeFY || isLoading;
 
+  const displayRows = useMemo(() => {
+    if (activeFY !== '2526') return rows;
+    return rows.filter((r) => !r.hidden);
+  }, [rows, activeFY]);
+
   const stickyFirstCol =
     'sticky left-0 z-20 min-w-[240px] border-r border-[#BFBFBF] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]';
   const stickyHeader =
@@ -74,9 +79,16 @@ export default function ConsolidatedSummary() {
         </div>
       </div>
 
+      {activeFY === '2526' && (
+        <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">FY 2025-26 is maintained at month level.</span>{' '}
+          Green and Total reflect annual collected; Amber and Blue Sky are not shown for this closed year.
+        </div>
+      )}
+
       {loading && <Skeleton className="h-96 w-full" />}
 
-      {!loading && rows.length > 0 && (
+      {!loading && displayRows.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_15px_rgba(0,0,0,0.08)] overflow-hidden">
           <div className="p-4 sm:p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-3">
@@ -115,7 +127,7 @@ export default function ConsolidatedSummary() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, idx) => {
+                  {displayRows.map((row, idx) => {
                     if (row.kind === 'section') {
                       return (
                         <tr key={`s-${idx}`}>
@@ -190,7 +202,7 @@ export default function ConsolidatedSummary() {
         </div>
       )}
 
-      {!loading && rows.length === 0 && (
+      {!loading && displayRows.length === 0 && (
         <div className="rounded-xl border border-dashed p-12 text-center text-muted-foreground">
           No consolidated data for {fyLabel}. Import the management consolidated sheet to seed this view.
         </div>

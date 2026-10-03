@@ -12,7 +12,7 @@ class TeamMemberCreate(BaseModel):
     joining_date: Optional[date] = None
     status: Literal["Active", "On Notice", "Inactive"] = "Active"
     notes: str = ""
-    fiscal_year: Optional[str] = None
+    fiscal_year: str
     is_manager: bool = False
     is_leader: bool = False
     sort_order: int = 0

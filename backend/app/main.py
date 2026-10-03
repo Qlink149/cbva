@@ -1,14 +1,18 @@
 from contextlib import asynccontextmanager
+from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from loguru import logger
+import asyncio
 import os
 import sys
 
 from app.core.config import settings
 from app.core.database import connect_db, close_db, ensure_db_connected
-from app.core.limiter import limiter
+from app.services.audit_service import request_id_ctx
+from app.core.limiter import limiter, client_ip
 from app.routers import (
     auth,
     leaders,
@@ -30,7 +34,12 @@ from app.routers import (
     assessments,
     financial_years,
     client_meetings,
+    additional_work,
+    new_clients,
     consolidated,
+    audit,
+    kra,
+    appraisals,
 )
 
 
@@ -43,23 +52,43 @@ from slowapi import _rate_limit_exceeded_handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    try:
+        from app.services.fiscal_year import ensure_current_fy_matches_calendar
+        await ensure_current_fy_matches_calendar()
+    except Exception as exc:
+        logger.warning(f"FY calendar sync skipped: {exc}")
     yield
     await close_db()
 
+
+_app_kwargs: dict = {} if os.getenv("VERCEL") else {"lifespan": lifespan}
+if settings.is_prod:
+    # No public API docs / schema in production.
+    _app_kwargs.update(docs_url=None, redoc_url=None, openapi_url=None)
 
 app = FastAPI(
     title="CBVA API",
     version="1.0.0",
     description="CBV & Associates LLP Business Planning Platform",
-    **({} if os.getenv("VERCEL") else {"lifespan": lifespan}),
+    **_app_kwargs,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.middleware("http")
+async def audit_request_id_middleware(request: Request, call_next):
+    token = request_id_ctx.set(uuid4().hex)
+    try:
+        return await call_next(request)
+    finally:
+        request_id_ctx.reset(token)
+
+
+@app.middleware("http")
 async def ensure_db_middleware(request: Request, call_next):
-    await ensure_db_connected()
+    if not request.url.path.startswith("/health"):
+        await ensure_db_connected()
     return await call_next(request)
 
 
@@ -67,16 +96,18 @@ async def ensure_db_middleware(request: Request, call_next):
 async def log_requests(request: Request, call_next):
     response = await call_next(request)
     if response.status_code >= 400:
-        logger.warning("{} {} -> {}", request.method, request.url.path, response.status_code)
+        logger.warning("{} {} -> {} ip={}", request.method, request.url.path, response.status_code, client_ip(request))
     return response
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
+    # Auth is a Bearer header (no cookies, axios has no withCredentials) -> credentials not needed.
+    allow_credentials=False,
+    # PATCH is used by actions / engagements remarks / engagement-actions routers.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(auth.router,        prefix="/api/auth",         tags=["Auth"])
@@ -96,12 +127,33 @@ app.include_router(baselines.router,   prefix="/api/baselines",    tags=["Baseli
 app.include_router(el_summary.router,  prefix="/api/el-summary",   tags=["ELSummary"])
 app.include_router(financial_years.router, prefix="/api/financial-years", tags=["FinancialYears"])
 app.include_router(client_meetings.router, prefix="/api/client-meetings", tags=["ClientMeetings"])
+app.include_router(additional_work.router, prefix="/api/additional-work", tags=["AdditionalWork"])
+app.include_router(new_clients.router, prefix="/api/new-clients", tags=["NewClients"])
 app.include_router(assessments.router, prefix="/api/assessments",  tags=["Assessments"])
 app.include_router(firmwide.router,    prefix="/api/firmwide",     tags=["Firmwide"])
 app.include_router(consolidated.router, prefix="/api/consolidated-summary", tags=["Consolidated"])
 app.include_router(admin.router,       prefix="/api/admin",        tags=["Admin"])
+app.include_router(audit.router,       prefix="/api/audit-log",    tags=["AuditLog"])
+app.include_router(kra.router,         prefix="/api/kra",          tags=["KRA"])
+app.include_router(appraisals.router,  prefix="/api/appraisals",   tags=["Appraisals"])
 
 
 @app.get("/health")
 async def health():
+    """Liveness: process is up. Does not touch Mongo."""
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness: Mongo answers a ping within 2s, else 503."""
+    from app.core import database
+
+    try:
+        if database.db is None:
+            await asyncio.wait_for(database.connect_db(), timeout=8)
+        await asyncio.wait_for(database.db.command("ping"), timeout=2)
+    except Exception as exc:
+        logger.warning("Readiness check failed: {}", exc)
+        return JSONResponse(status_code=503, content={"status": "unavailable", "db": "down"})
+    return {"status": "ok", "db": "up", "version": "1.0.0"}

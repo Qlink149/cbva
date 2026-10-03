@@ -26,6 +26,7 @@ export function ColumnHeaderFilter({
   style = {},
   onSort,
   sortIcon,
+  nowrap = true,
 }) {
   const isActive = (() => {
     if (type === 'text') return Boolean(filters[filterKey]?.trim());
@@ -56,18 +57,23 @@ export function ColumnHeaderFilter({
 
   return (
     <th
-      className={`py-3 px-2 text-[11px] uppercase tracking-wider font-medium whitespace-nowrap ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
+      className={`py-3 px-2 text-[11px] uppercase font-medium ${nowrap ? 'whitespace-nowrap tracking-wider' : 'leading-tight tracking-normal'} ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
       style={style}
       onClick={onSort}
     >
-      <div className={`flex items-center gap-0.5 ${align === 'right' ? 'justify-end' : 'justify-start'}`}>
-        <span className={isActive ? 'text-cbva-navy' : 'text-muted-foreground'}>{label}</span>
+      <div className={`flex items-center gap-0.5 min-w-0 ${align === 'right' ? 'justify-end' : 'justify-start'}`}>
+        <span
+          title={label}
+          className={`min-w-0 ${nowrap ? 'truncate' : 'break-words'} ${isActive ? 'text-cbva-navy' : 'text-muted-foreground'}`}
+        >
+          {label}
+        </span>
         {sortIcon}
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="p-0.5 rounded hover:bg-muted/80 transition-colors"
+              className="p-0.5 rounded hover:bg-muted/80 transition-colors shrink-0"
               onClick={e => e.stopPropagation()}
               aria-label={`Filter ${label}`}
             >

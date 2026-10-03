@@ -19,7 +19,9 @@ function fmt(val) {
 function ELBadge({ status }) {
   if (status === 'Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-green-bg text-status-green">Signed</span>;
   if (status === 'Not Signed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-status-red-bg text-status-red">Not Signed</span>;
-  return <span className="text-xs text-muted-foreground">{status || '—'}</span>;
+  if (status === 'Waived') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">Waived</span>;
+  if (status === 'Waiver Requested') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 text-indigo-700">Waiver Requested</span>;
+  return <span className="text-xs text-muted-foreground">{status || 'NA'}</span>;
 }
 
 export default function FirmwideClients() {

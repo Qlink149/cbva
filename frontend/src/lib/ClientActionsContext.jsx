@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useCallback } from 'react';
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
 import { useEngagements, useUpdateEngagement, useDeleteEngagement, useUpdateRemarks } from '@/hooks/useEngagements';
 import { useEngagementActions } from '@/hooks/useEngagementMeta';
+import { toast } from 'sonner';
 
 const ClientActionsContext = createContext(null);
 
@@ -14,10 +15,18 @@ export function ClientActionsProvider({ children }) {
 
   const {
     actions: clientActions,
+    isLoading: actionsLoading,
     createAction,
     deleteAction,
     patchActionStatus,
+    patchAction,
   } = useEngagementActions(selectedLeaderId, activeFY);
+
+  const clientNameById = useMemo(() => {
+    const map = new Map();
+    clients.forEach((c) => map.set(String(c.id), c.name));
+    return map;
+  }, [clients]);
 
   const clientNameByNum = useMemo(() => {
     const map = new Map();
@@ -28,44 +37,91 @@ export function ClientActionsProvider({ children }) {
   const clientActionsWithNames = useMemo(
     () => clientActions.map((a) => ({
       ...a,
-      clientName: clientNameByNum.get(a.clientNum) || a.clientName || '',
+      clientName:
+        a.clientName
+        || clientNameById.get(String(a.engagementId))
+        || clientNameByNum.get(a.clientNum)
+        || '',
     })),
-    [clientActions, clientNameByNum],
+    [clientActions, clientNameById, clientNameByNum],
   );
 
-  function addAction({ clientNum, clientName, description, deadline, engagementId }) {
-    if (!engagementId || !selectedLeaderId || !activeFY) return;
-    createAction.mutate({
+  const addAction = useCallback(async ({ clientNum, description, deadline, engagementId, remarks }) => {
+    if (!engagementId || !selectedLeaderId || !activeFY) {
+      toast.error('Cannot add action point — missing client or year.');
+      throw new Error('missing client or year');
+    }
+    const body = {
       engagement_id: engagementId,
       leader_id: selectedLeaderId,
       fiscal_year: activeFY,
-      engagement_num: clientNum,
       description,
       deadline: deadline || null,
-    });
-  }
+      remarks: remarks || '',
+    };
+    const num = Number(clientNum);
+    if (Number.isFinite(num)) body.engagement_num = num;
+    return createAction.mutateAsync(body);
+  }, [createAction, selectedLeaderId, activeFY]);
 
-  function removeAction(id) {
+  const removeAction = useCallback((id) => {
     deleteAction.mutate(id);
-  }
+  }, [deleteAction]);
 
-  function updateActionStatus(id, status) {
+  const updateActionStatus = useCallback((id, status) => {
     patchActionStatus.mutate({ id, status });
-  }
+  }, [patchActionStatus]);
+
+  const updateAction = useCallback((id, fields) => {
+    patchAction.mutate({ id, ...fields });
+  }, [patchAction]);
+
+  const updateEngagement = useCallback((vars) => {
+    updateMutation.mutate(vars);
+  }, [updateMutation]);
+
+  const deleteEngagement = useCallback((id) => {
+    deleteMutation.mutate(id);
+  }, [deleteMutation]);
+
+  const updateRemarks = useCallback((vars) => {
+    remarksMutation.mutate(vars);
+  }, [remarksMutation]);
+
+  const value = useMemo(() => ({
+    clients,
+    isLoading,
+    isError,
+    actionsLoading,
+    clientActions: clientActionsWithNames,
+    addAction,
+    deleteAction: removeAction,
+    updateActionStatus,
+    updateAction,
+    updateEngagement,
+    deleteEngagement,
+    updateRemarks,
+    isUpdating: updateMutation.isPending,
+    isAddingAction: createAction.isPending,
+  }), [
+    clients,
+    isLoading,
+    isError,
+    actionsLoading,
+    clientActionsWithNames,
+    addAction,
+    removeAction,
+    updateActionStatus,
+    updateAction,
+    updateEngagement,
+    deleteEngagement,
+    updateRemarks,
+    updateMutation.isPending,
+    createAction.isPending,
+  ]);
 
   return (
-    <ClientActionsContext.Provider value={{
-      clients,
-      isLoading,
-      isError,
-      clientActions: clientActionsWithNames,
-      addAction,
-      deleteAction: removeAction,
-      updateActionStatus,
-      updateEngagement: updateMutation.mutate,
-      deleteEngagement: deleteMutation.mutate,
-      updateRemarks: remarksMutation.mutate,
-    }}>
+    <ClientActionsContext.Provider value={value}>
       {children}
     </ClientActionsContext.Provider>
   );

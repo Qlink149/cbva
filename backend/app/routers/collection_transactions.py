@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from app.schemas.collection_transaction import CollectionTransactionCreate, CollectionTransactionResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -18,9 +21,40 @@ def _serialize(doc: dict) -> dict:
         "client_name": doc["client_name"],
         "amount_billed": doc.get("amount_billed", 0),
         "amount_collected": doc["amount_collected"],
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
+
+
+def _tx_label(tx: dict, engagement_name: str | None = None) -> str:
+    if engagement_name:
+        return f"{engagement_name} — {tx.get('month', '')}"
+    return tx.get("client_name") or str(tx.get("_id", ""))
+
+
+def _collected_derived(old_collected: int, new_collected: int, old_balance: int, new_balance: int) -> list[dict]:
+    derived: list[dict] = []
+    if old_collected != new_collected:
+        derived.append(
+            {
+                "field": "collected",
+                "label": "Collected",
+                "old": old_collected,
+                "new": new_collected,
+                "derived": True,
+            }
+        )
+    if old_balance != new_balance:
+        derived.append(
+            {
+                "field": "balance",
+                "label": "Balance",
+                "old": old_balance,
+                "new": new_balance,
+                "derived": True,
+            }
+        )
+    return derived
 
 
 async def _recompute_engagement_collected(engagement_id: str) -> None:
@@ -62,6 +96,7 @@ async def create_collection_transaction(
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_write_scope(current_user, body.leader_id)
+    await assert_fy_editable(body.fiscal_year, current_user)
 
     engagement = await database.db.engagements.find_one({"_id": ObjectId(body.engagement_id)})
     if not engagement:
@@ -69,7 +104,24 @@ async def create_collection_transaction(
     if engagement["leader_id"] != body.leader_id or engagement["fiscal_year"] != body.fiscal_year:
         raise HTTPException(status_code=400, detail="Engagement does not match leader/fiscal year")
 
+    old_collected = engagement.get("collected", 0)
+    old_balance = engagement.get("balance", 0)
+
     now = datetime.now(timezone.utc)
+
+    # Idempotency guard: a duplicate of the same write (double-click, retry,
+    # slow-network double-submit) arriving within a short window is treated
+    # as the same request rather than a second transaction.
+    dedupe_window_start = now - timedelta(seconds=10)
+    duplicate = await database.db.collection_transactions.find_one({
+        "engagement_id": body.engagement_id,
+        "month": body.month,
+        "amount_collected": body.amount_collected,
+        "created_at": {"$gte": dedupe_window_start},
+    })
+    if duplicate:
+        return _serialize(duplicate)
+
     doc = {
         "leader_id": body.leader_id,
         "fiscal_year": body.fiscal_year,
@@ -86,6 +138,25 @@ async def create_collection_transaction(
 
     await _recompute_engagement_collected(body.engagement_id)
 
+    eng_after = await database.db.engagements.find_one({"_id": ObjectId(body.engagement_id)})
+    derived = _collected_derived(
+        old_collected,
+        eng_after.get("collected", 0) if eng_after else old_collected,
+        old_balance,
+        eng_after.get("balance", 0) if eng_after else old_balance,
+    )
+    label = _tx_label(doc, engagement.get("name"))
+    await audit_service.log_event(
+        entity_type="collection_transaction",
+        entity_id=str(doc["_id"]),
+        entity_label=label,
+        action="created",
+        user=current_user,
+        changes=derived,
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
+
     return _serialize(doc)
 
 
@@ -98,8 +169,30 @@ async def delete_collection_transaction(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     enforce_leader_write_scope(current_user, tx["leader_id"])
+    await assert_fy_editable(tx["fiscal_year"], current_user)
+
+    engagement = await database.db.engagements.find_one({"_id": ObjectId(tx["engagement_id"])})
+    old_collected = engagement.get("collected", 0) if engagement else 0
+    old_balance = engagement.get("balance", 0) if engagement else 0
+    eng_name = engagement.get("name") if engagement else None
 
     engagement_id = tx["engagement_id"]
     await database.db.collection_transactions.delete_one({"_id": ObjectId(transaction_id)})
     await _recompute_engagement_collected(engagement_id)
+
+    eng_after = await database.db.engagements.find_one({"_id": ObjectId(engagement_id)})
+    derived = _collected_derived(
+        old_collected,
+        eng_after.get("collected", 0) if eng_after else 0,
+        old_balance,
+        eng_after.get("balance", 0) if eng_after else 0,
+    )
+    label = _tx_label(tx, eng_name)
+    await audit_service.log_delete(
+        "collection_transaction", tx, current_user,
+        label=label,
+        changes=derived,
+        leader_id=tx["leader_id"],
+        fiscal_year=tx["fiscal_year"],
+    )
     return None

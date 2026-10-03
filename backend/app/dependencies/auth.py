@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
+from app.core.security import JWTError
 from bson import ObjectId
 from app.core.security import decode_token
 from app.core import database
@@ -17,9 +17,11 @@ async def get_current_user(
         if payload.get("type") != "access":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
         user_id: str = payload["sub"]
-    except JWTError:
+    except (JWTError, KeyError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     user = await database.db.users.find_one({"_id": ObjectId(user_id), "is_active": True})
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
@@ -45,9 +47,24 @@ def enforce_leader_write_scope(current_user: dict, leader_id: str) -> None:
     """Raise 403 if user/management tries to write another leader's data. Admin is exempt."""
     if current_user["role"] == "admin":
         return
-    if current_user["role"] == "management" and current_user.get("leader_id") != leader_id:
+    role = current_user.get("role")
+    own = current_user.get("leader_id")
+    if role == "management":
+        # Firmwide management without a home leader is read-only on leader data.
+        if not own:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Management users without an assigned leader cannot edit leader data. Ask an admin to set your leader, or use an admin account.",
+            )
+        if own != leader_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Management cannot modify other leaders' data",
+            )
+        return
+    if role == "user" and own != leader_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Management cannot modify other leaders' data",
+            detail="You can only edit your own leader's engagements and data",
         )
     enforce_leader_scope(current_user, leader_id)

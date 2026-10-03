@@ -47,9 +47,11 @@ pnpm-debug.log*
 backend/db/
 backend/scripts/
 backend/csv/
+# Private client source files
 *.csv
 *.xlsx
 *.xls
+*.pdf
 
 # Local CSV templates (not for commit)
 csv-templates/
@@ -62,3 +64,9 @@ coverage/
 
 # Cursor / agent (optional local tooling)
 .cursor/
+
+# Local architecture / audit notes (not for commit)
+ARCHITECTURE_DESIGN_DOCUMENT.md
+AUDIT_LOG_IMPLEMENTATION_PLAN.md
+AUDIT_LOG_MEGA_PROMPT.md
+TD-Architecture Design Document Template-140726-054817.pdf

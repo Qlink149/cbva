@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from app.schemas.team import TeamMemberCreate, TeamMemberUpdate, TeamMemberResponse
 from app.core import database
+from app.core.serialization import serialize_datetime
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
+from app.services import audit_service
+from app.services.fiscal_year import assert_fy_editable
 
 router = APIRouter()
 
@@ -26,8 +29,8 @@ def _serialize(doc: dict) -> dict:
         "is_leader": doc.get("is_leader", False),
         "sort_order": doc.get("sort_order", 0),
         "reports_to_member_id": doc.get("reports_to_member_id"),
-        "created_at": doc["created_at"],
-        "updated_at": doc["updated_at"],
+        "created_at": serialize_datetime(doc["created_at"]),
+        "updated_at": serialize_datetime(doc["updated_at"]),
     }
 
 
@@ -75,11 +78,12 @@ async def _validate_reports_to(
 @router.get("/", response_model=dict)
 async def list_team(
     leader_id: str = Query(...),
+    fiscal_year: str = Query(...),
     managers_only: bool = Query(False),
     current_user: dict = Depends(get_current_user),
 ):
     enforce_leader_scope(current_user, leader_id)
-    query: dict = {"leader_id": leader_id}
+    query: dict = {"leader_id": leader_id, "fiscal_year": fiscal_year}
     if managers_only:
         query["is_manager"] = True
     cursor = database.db.team_members.find(query).sort([("sort_order", 1), ("full_name", 1)])
@@ -90,11 +94,20 @@ async def list_team(
 @router.post("/", response_model=TeamMemberResponse, status_code=201)
 async def create_member(body: TeamMemberCreate, current_user: dict = Depends(get_current_user)):
     enforce_leader_write_scope(current_user, body.leader_id)
+    if not (body.fiscal_year or "").strip():
+        raise HTTPException(status_code=400, detail="fiscal_year is required")
+    await assert_fy_editable(body.fiscal_year, current_user)
     await _validate_reports_to(body.leader_id, None, body.reports_to_member_id)
     now = datetime.now(timezone.utc)
     doc = {**body.model_dump(), "created_at": now, "updated_at": now}
     result = await database.db.team_members.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await audit_service.log_create(
+        "team_member", doc, current_user,
+        label=doc["full_name"],
+        leader_id=body.leader_id,
+        fiscal_year=body.fiscal_year,
+    )
     return _serialize(doc)
 
 
@@ -108,6 +121,8 @@ async def update_member(
     if not existing:
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if "reports_to_member_id" in body.model_dump(exclude_unset=True):
         reports_to = body.reports_to_member_id
@@ -116,6 +131,11 @@ async def update_member(
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await database.db.team_members.find_one_and_update(
         {"_id": ObjectId(member_id)}, {"$set": updates}, return_document=True
+    )
+    await audit_service.log_update(
+        "team_member", existing, updates, current_user,
+        label=existing["full_name"],
+        leader_id=existing["leader_id"],
     )
     return _serialize(result)
 
@@ -126,5 +146,12 @@ async def delete_member(member_id: str, current_user: dict = Depends(get_current
     if not existing:
         raise HTTPException(status_code=404, detail="Team member not found")
     enforce_leader_write_scope(current_user, existing["leader_id"])
+    if existing.get("fiscal_year"):
+        await assert_fy_editable(existing["fiscal_year"], current_user)
     await database.db.team_members.delete_one({"_id": ObjectId(member_id)})
+    await audit_service.log_delete(
+        "team_member", existing, current_user,
+        label=existing["full_name"],
+        leader_id=existing["leader_id"],
+    )
     return None

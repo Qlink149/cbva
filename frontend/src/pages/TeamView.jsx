@@ -14,6 +14,8 @@ import { useHiring } from '@/hooks/useHiring';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { getFyLabel } from '@/lib/fiscalYear';
 import { sortByDesignation } from '@/lib/designations';
+import { useFyEditAccess } from '@/hooks/useFyEditAccess';
+import { toast } from 'sonner';
 
 function InitialsAvatar({ name, size = 'md' }) {
   const initials = name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -62,12 +64,13 @@ function HiringRemarks({ req, onSave }) {
 
 export default function TeamView({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { canEdit, lockedMessage } = useFyEditAccess();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
-  const { teamMembers, isLoading: teamLoading, addMember, updateMember, deleteMember } = useTeam(selectedLeaderId);
-  const { hiringReqs, isLoading: hiringLoading, addHiring, updateHiring, deleteHiring } = useHiring(selectedLeaderId);
-  const { approvedByDesignation, isLoading: headcountLoading } = useHeadcount(selectedLeaderId);
+  const { teamMembers, isLoading: teamLoading, addMember, updateMember, deleteMember } = useTeam(selectedLeaderId, activeFY);
+  const { hiringReqs, isLoading: hiringLoading, addHiring, updateHiring, deleteHiring } = useHiring(selectedLeaderId, activeFY);
+  const { approvedByDesignation, isLoading: headcountLoading } = useHeadcount(selectedLeaderId, activeFY);
 
   const currentHeadcount = teamMembers.length;
   const boardApproved = Object.values(approvedByDesignation).reduce((sum, v) => sum + (v || 0), 0);
@@ -90,15 +93,27 @@ export default function TeamView({ user }) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-4xl font-light text-foreground tracking-tight">Team</h1>
-          <p className="text-sm text-muted-foreground mt-1">{selectedLeaderId} · {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {selectedLeaderId} · {fyLabel} · {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <LeaderFYSelector showFY={false} />
-          <Button onClick={() => setDrawerOpen(true)} className="bg-cbva-navy hover:bg-cbva-navy/90">
+          <LeaderFYSelector />
+          <Button
+            onClick={() => canEdit ? setDrawerOpen(true) : toast.error(lockedMessage)}
+            disabled={!canEdit}
+            className="bg-cbva-navy hover:bg-cbva-navy/90"
+          >
             <Plus className="w-4 h-4 mr-2" /> Add
           </Button>
         </div>
       </div>
+
+      {!canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          {fyLabel} is read-only. An admin can enable editing under Admin Settings → Financial Years.
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4">
@@ -113,7 +128,12 @@ export default function TeamView({ user }) {
       </div>
 
       {/* Headcount Table */}
-      <HeadcountTable teamMembers={teamMembers} leaderId={selectedLeaderId} fyLabel={fyLabel} />
+      <HeadcountTable
+        teamMembers={teamMembers}
+        leaderId={selectedLeaderId}
+        fiscalYear={activeFY}
+        fyLabel={fyLabel}
+      />
 
       {/* Hiring Requirements */}
       {hiringReqs.length > 0 && (
@@ -154,7 +174,12 @@ export default function TeamView({ user }) {
 
       {/* Team Member Cards */}
       <div>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Team Members</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-foreground">Team Members</h2>
+          <p className="text-xs text-muted-foreground">
+            {currentHeadcount} member{currentHeadcount !== 1 ? 's' : ''}
+          </p>
+        </div>
         {teamMembers.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground bg-card rounded-xl border border-border/60">
             <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />

@@ -18,6 +18,19 @@ export function getCurrentFySlug(fiscalYears = []) {
   return fiscalYears[0]?.slug ?? null;
 }
 
+/** Whether the selected FY allows edits (admins always can). */
+export function isFyEditable(fySlug, fiscalYears = [], userRole = 'user') {
+  if (userRole === 'admin') return true;
+  if (!fySlug || !Array.isArray(fiscalYears) || fiscalYears.length === 0) return false;
+  const fy = fiscalYears.find((item) => item.slug === fySlug);
+  if (!fy) return false;
+  // Explicit admin toggle always wins (true or false)
+  if (fy.is_editable === true || fy.is_editable === false) return fy.is_editable;
+  if (fy.is_editable === 'true' || fy.is_editable === 1) return true;
+  if (fy.is_editable === 'false' || fy.is_editable === 0) return false;
+  return !!fy.is_current;
+}
+
 /**
  * Return the bare year-range portion of a standard 4-char slug,
  * e.g. "2526" -> "25-26". Used to match labelled reference rows
@@ -53,4 +66,17 @@ export function getPrevFySlug(slug, fiscalYears = []) {
     }
   }
   return null;
+}
+
+/** Prior FYs oldest-first, e.g. viewing 2627 → ["2425", "2526"]. */
+export function getPriorFySlugs(slug, fiscalYears = [], count = 2) {
+  const newerFirst = [];
+  let cur = slug;
+  for (let i = 0; i < count; i += 1) {
+    const prev = getPrevFySlug(cur, fiscalYears);
+    if (!prev) break;
+    newerFirst.push(prev);
+    cur = prev;
+  }
+  return newerFirst.reverse();
 }

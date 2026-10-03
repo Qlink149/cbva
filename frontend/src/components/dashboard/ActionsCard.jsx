@@ -1,27 +1,34 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ListChecks, AlertCircle } from 'lucide-react';
+import { isActionOverdue } from '@/lib/isActionOverdue';
 
-function parseDueDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+export default function ActionsCard({ actions = [], fyLabel = '', isLoading = false }) {
+  const { overdue, upcoming } = useMemo(() => {
+    const overdueItems = [];
+    const upcomingItems = [];
+    actions.forEach((a) => {
+      if (isActionOverdue(a.due_date || a.deadline, a.status)) overdueItems.push(a);
+      else if (!['Completed', 'Done', 'Abandoned', 'Closed'].includes(a.status)) upcomingItems.push(a);
+    });
+    return { overdue: overdueItems, upcoming: upcomingItems };
+  }, [actions]);
 
-export default function ActionsCard({ actions = [], fyLabel = '' }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  if (isLoading) {
+    return (
+      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 animate-pulse">
+        <div className="h-4 w-32 bg-slate-200 rounded mb-4" />
+        <div className="space-y-2">
+          <div className="h-8 bg-slate-200 rounded" />
+          <div className="h-8 bg-slate-200 rounded" />
+        </div>
+      </div>
+    );
+  }
 
-  const open = actions.filter((a) => a.status !== 'Closed');
-  const overdue = [];
-  const upcoming = [];
-
-  open.forEach((a) => {
-    const due = parseDueDate(a.due_date);
-    if (due && due < today) overdue.push(a);
-    else upcoming.push(a);
-  });
-
-  const label = (a) => a.description || a.category || 'Untitled action';
+  const label = (a) => {
+    const text = a.description || a.category || 'Untitled action';
+    return a.clientName ? `${a.clientName}: ${text}` : text;
+  };
   const isEmpty = overdue.length === 0 && upcoming.length === 0;
 
   return (
@@ -54,9 +61,9 @@ export default function ActionsCard({ actions = [], fyLabel = '' }) {
                     className="flex items-start justify-between gap-3 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-red-700 min-w-0 truncate">{label(a)}</span>
-                    {a.due_date && (
-                      <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{a.due_date}</span>
-                    )}
+                    {a.due_date || a.deadline ? (
+                      <span className="text-[10px] font-medium text-red-500 whitespace-nowrap">{a.due_date || a.deadline}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -77,9 +84,9 @@ export default function ActionsCard({ actions = [], fyLabel = '' }) {
                     className="flex items-start justify-between gap-3 rounded-lg bg-white border border-slate-200 px-3 py-1.5"
                   >
                     <span className="text-xs font-medium text-slate-700 min-w-0 truncate">{label(a)}</span>
-                    {a.due_date && (
-                      <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">{a.due_date}</span>
-                    )}
+                    {a.due_date || a.deadline ? (
+                      <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">{a.due_date || a.deadline}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

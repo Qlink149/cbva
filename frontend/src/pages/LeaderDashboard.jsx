@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import PipelineBoardChart from '@/components/dashboard/PipelineBoardChart';
@@ -8,24 +8,28 @@ import CollectionsTableReal from '@/components/dashboard/CollectionsTableReal';
 import MeetingsCard from '@/components/dashboard/MeetingsCard';
 import ActionsCard from '@/components/dashboard/ActionsCard';
 import TeamMetrics from '@/components/dashboard/TeamMetrics';
-import PlaceholderCard from '@/components/dashboard/PlaceholderCard';
+import NewClientsCard from '@/components/dashboard/NewClientsCard';
+import AdditionalWorkCard from '@/components/dashboard/AdditionalWorkCard';
 import LeaderFYSelector from '@/components/layout/LeaderFYSelector';
 
 import { useGlobalSelector } from '@/lib/GlobalSelectorContext';
-import { getFyLabel, getPrevFySlug, getFyRange } from '@/lib/fiscalYear';
-import { usePipeline } from '@/hooks/usePipeline';
-import { useBluesky } from '@/hooks/useBluesky';
+import { getFyLabel, getPrevFySlug, getFyRange, isFyEditable } from '@/lib/fiscalYear';
+import { getAvailableFyMonths, getFyMonthCalendarYear } from '@/lib/fyMonths';
+import { usePipeline, useFyActuals, useUpsertFyActual } from '@/hooks/usePipeline';
+import { useBluesky, useUpdateBluesky } from '@/hooks/useBluesky';
 import { useCollections, useUpdateCollectionRemarks } from '@/hooks/useCollections';
 import { useClientMeetings } from '@/hooks/useClientMeetings';
-import { useActions } from '@/hooks/useActions';
+import { useEngagementActions } from '@/hooks/useEngagementMeta';
 import { useHiring } from '@/hooks/useHiring';
 import { useEngagements } from '@/hooks/useEngagements';
 import { useTeam } from '@/hooks/useTeam';
 import { useHeadcount } from '@/hooks/useHeadcount';
 import { useBaselines } from '@/hooks/useBaselines';
-import { useConsolidated } from '@/hooks/useConsolidated';
-import { hardcodedBlueSky, hardcodedCollections } from '@/lib/consolidatedSummary';
-
+import { useNewClients } from '@/hooks/useNewClients';
+import { useAdditionalWork } from '@/hooks/useAdditionalWork';
+import { useAuth } from '@/lib/AuthContext';
+import { useLeaderFyScopedState } from '@/hooks/useLeaderFyScopedState';
+import { PAGE_FILTER_SCOPES, isValidMonthKey } from '@/lib/pageFilterStorage';
 const ELStatusWidgets = lazy(() => import('@/components/dashboard/ELStatusWidgets'));
 
 function SectionSkeleton({ className = 'h-48' }) {
@@ -34,46 +38,78 @@ function SectionSkeleton({ className = 'h-48' }) {
 
 export default function LeaderDashboard({ user }) {
   const { selectedLeaderId, activeFY, fiscalYears } = useGlobalSelector();
+  const { user: authUser } = useAuth();
   const fyLabel = getFyLabel(activeFY, fiscalYears);
 
   const { data: pipelineRes, isLoading: pipelineLoading } = usePipeline(selectedLeaderId, activeFY);
+  const { data: fyActualsRes } = useFyActuals(selectedLeaderId, activeFY);
+  const upsertFyActual = useUpsertFyActual(selectedLeaderId, activeFY);
   const { data: blueSkyRes, isLoading: bsLoading } = useBluesky(selectedLeaderId, activeFY);
+  const updateBluesky = useUpdateBluesky(selectedLeaderId, activeFY);
   const { data: collectionsRes, isLoading: colLoading } = useCollections(selectedLeaderId, activeFY);
   const updateCollectionRemarks = useUpdateCollectionRemarks(selectedLeaderId, activeFY);
   const { data: engagementsRes, isLoading: engLoading } = useEngagements(selectedLeaderId, activeFY);
-  const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId);
-  const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId);
-  const { approvedByDesignation } = useHeadcount(selectedLeaderId);
-  const { data: meetings = [] } = useClientMeetings(selectedLeaderId, activeFY);
-  const { data: leaderActions = [] } = useActions(selectedLeaderId, activeFY);
+  const { hiringReqs, isLoading: hiringLoading } = useHiring(selectedLeaderId, activeFY);
+  const { teamMembers, isLoading: teamLoading } = useTeam(selectedLeaderId, activeFY);
+  const { approvedByDesignation } = useHeadcount(selectedLeaderId, activeFY);
+  const { data: meetings = [], isLoading: meetingsLoading } = useClientMeetings(selectedLeaderId, activeFY);
+  const { actions: clientActions = [], isLoading: actionsLoading } = useEngagementActions(selectedLeaderId, activeFY);
   const { data: baselines = [] } = useBaselines(selectedLeaderId);
   const activeBaseline = baselines[0] ?? null;
-  const { rows: consolidatedRows, columns: consolidatedColumns } = useConsolidated(activeFY);
+  const { data: newClients = [], isLoading: newClientsLoading } = useNewClients(selectedLeaderId, activeFY);
+  const { data: additionalWork = [], isLoading: additionalWorkLoading } = useAdditionalWork(selectedLeaderId, activeFY);
+  const [newClientsMonth, setNewClientsMonth] = useLeaderFyScopedState(
+    PAGE_FILTER_SCOPES.NEW_CLIENTS_MONTH,
+    () => '',
+    {
+      validate: (stored, { activeFY: fy, fallback }) => {
+        const month = typeof stored === 'string' ? stored : fallback;
+        return isValidMonthKey(month, fy, fiscalYears) ? month : '';
+      },
+    },
+  );
+
+  const availableNewClientMonths = useMemo(
+    () => getAvailableFyMonths(activeFY, fiscalYears),
+    [activeFY, fiscalYears],
+  );
+
+  const filteredNewClients = useMemo(() => {
+    if (!newClientsMonth) return newClients;
+    return newClients.filter((c) => {
+      const created = c.created_at ? new Date(c.created_at) : null;
+      if (!created || Number.isNaN(created.getTime())) return false;
+      const calYear = getFyMonthCalendarYear(newClientsMonth, activeFY);
+      const monthNum = parseInt(newClientsMonth, 10);
+      return created.getFullYear() === calYear && created.getMonth() + 1 === monthNum;
+    });
+  }, [newClients, newClientsMonth, activeFY]);
 
   const prevFySlug = getPrevFySlug(activeFY, fiscalYears);
   const prevFyLabel = getFyLabel(prevFySlug, fiscalYears);
+  const canEditFyActual = isFyEditable(activeFY, fiscalYears, authUser?.role || user?.role);
 
   const coreLoading = pipelineLoading || bsLoading || colLoading;
 
   const pipelineData = pipelineRes?.data ?? [];
-  // Previous-FY actuals come from the labelled reference row embedded in the
-  // current FY's pipeline snapshots (same source as the Monthly Plan Evolution),
-  // matched dynamically to the previous FY so it works for any year.
+  const fyActualRows = fyActualsRes?.data ?? [];
+  // Prefer DB-backed fy_actual for chart prior-FY totals; fall back to labelled snapshot row.
+  const prevFyActual = fyActualRows.find((r) => r.fiscal_year === prevFySlug);
   const prevFyRange = getFyRange(prevFySlug);
   const prevFyRow = prevFyRange
     ? pipelineData.find((r) => (r.label || '').replace(/–/g, '-').includes(prevFyRange))
     : null;
-  const prevFyBlueSky = prevFyRow?.blueSky ?? null;
-  const prevFyTotal = prevFyRow
-    ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
-    : null;
+  const prevFyBlueSky = prevFyActual?.blueSky ?? prevFyRow?.blueSky ?? null;
+  const prevFyTotal = prevFyActual?.total != null
+    ? prevFyActual.total
+    : prevFyRow
+      ? prevFyRow.total || ((prevFyRow.green || 0) + (prevFyRow.amber || 0) + (prevFyRow.blueSky || 0))
+      : null;
 
-  const blueSkyOverride = hardcodedBlueSky(activeFY, selectedLeaderId);
-  const blueSkyRows = blueSkyOverride?.rows ?? blueSkyRes?.data ?? [];
-  const blueSkyTotals = blueSkyOverride?.totals ?? blueSkyRes?.totals ?? {};
-  const collectionsOverride = hardcodedCollections(activeFY, selectedLeaderId, collectionsRes?.data ?? []);
-  const collectionRows = collectionsOverride?.rows ?? collectionsRes?.data ?? [];
-  const totalCollected = collectionsOverride?.totalCollected ?? collectionsRes?.total_collected ?? 0;
+  const blueSkyRows = blueSkyRes?.data ?? [];
+  const blueSkyTotals = blueSkyRes?.totals ?? {};
+  const collectionRows = collectionsRes?.data ?? [];
+  const totalCollected = collectionsRes?.total_collected ?? 0;
   const clients = engagementsRes ?? [];
   const hasEngagements = clients.length > 0;
 
@@ -103,7 +139,7 @@ export default function LeaderDashboard({ user }) {
               </p>
             </div>
             <img
-              src="https://media.base44.com/images/public/69fe2ae7dcf5259c46299cee/e5b8e8806_CBV_Logo1.png"
+              src="/cbv-logo.png"
               alt="CBV & Associates LLP"
               className="h-28 object-contain"
             />
@@ -130,7 +166,7 @@ export default function LeaderDashboard({ user }) {
             </p>
           </div>
           <img
-            src="https://media.base44.com/images/public/69fe2ae7dcf5259c46299cee/e5b8e8806_CBV_Logo1.png"
+            src="/cbv-logo.png"
             alt="CBV & Associates LLP"
             className="h-28 object-contain"
           />
@@ -157,17 +193,36 @@ export default function LeaderDashboard({ user }) {
                 pipelineData={pipelineData}
                 fyLabel={fyLabel}
                 fySlug={activeFY}
-                leaderId={selectedLeaderId}
-                consolidatedRows={consolidatedRows}
-                consolidatedColumns={consolidatedColumns}
+                fyActualRows={fyActualRows}
+                canEditFyActual={canEditFyActual}
+                onSaveFyActual={(fiscalYear, amounts) =>
+                  upsertFyActual.mutate({ fiscalYear, ...amounts })
+                }
               />
             )}
           </div>
         </div>
 
         {bsLoading ? <SectionSkeleton className="h-64" /> : (
-          <BlueSkyTableReal blueSkyRows={blueSkyRows} totals={blueSkyTotals} fyLabel={fyLabel} />
-        )}
+          <BlueSkyTableReal
+            blueSkyRows={blueSkyRows}
+            totals={blueSkyTotals}
+            fyLabel={fyLabel}
+            onUpdateRemarks={(row, remarks) =>
+              updateBluesky.mutate({
+                entryId: row.id,
+                monthKey: row.month_key,
+                remarks,
+              })
+            }
+            onUpdateAmounts={(row, amounts) =>
+              updateBluesky.mutate({
+                entryId: row.id,
+                monthKey: row.month_key,
+                ...amounts,
+              })
+            }
+          />        )}
 
         {colLoading ? <SectionSkeleton className="h-64" /> : (
           <CollectionsTableReal
@@ -180,13 +235,30 @@ export default function LeaderDashboard({ user }) {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <MeetingsCard meetings={meetings} fyLabel={fyLabel} />
-          <ActionsCard actions={leaderActions} fyLabel={fyLabel} />
+          <MeetingsCard meetings={meetings} fyLabel={fyLabel} isLoading={meetingsLoading} />
+          <ActionsCard actions={clientActions} fyLabel={fyLabel} isLoading={actionsLoading} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <PlaceholderCard title="Shadow P&L" message="To Be Built — Revenue split by engagement leaders. Coming in the next phase." />
-          <PlaceholderCard title="Origination" message="To Be Built — Partner origination tracking. Coming in the next phase." />
+          <NewClientsCard
+            clients={filteredNewClients}
+            fyLabel={fyLabel}
+            isLoading={newClientsLoading}
+            selectedMonth={newClientsMonth}
+            onMonthChange={setNewClientsMonth}
+            availableMonths={availableNewClientMonths}
+            leaderId={selectedLeaderId}
+            fiscalYear={activeFY}
+            canEdit={canEditFyActual}
+          />
+          <AdditionalWorkCard
+            rows={additionalWork}
+            fyLabel={fyLabel}
+            leaderId={selectedLeaderId}
+            fiscalYear={activeFY}
+            canEdit={canEditFyActual}
+            isLoading={additionalWorkLoading}
+          />
         </div>
 
         {engLoading ? <SectionSkeleton className="h-56" /> : clients.length > 0 && (

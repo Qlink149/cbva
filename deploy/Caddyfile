@@ -1,0 +1,47 @@
+# DIRECT edge mode (default): browsers -> Caddy (Let's Encrypt via ACME) -> api. No Cloudflare.
+# SITE_ADDRESS and ACME_EMAIL come from the environment (compose passes them from /opt/cbva/.env):
+#   prod:    SITE_ADDRESS=cbva-api.claraai.tech          staging: SITE_ADDRESS=cbva-api-staging.claraai.tech
+#   ACME_EMAIL defaults to yogansh@claraai.tech
+# Certificates: Caddy obtains and renews them automatically (HTTP-01 on port 80, TLS-ALPN-01 on 443 as fallback).
+# Port 80 MUST be reachable from the internet (validation + HTTP->HTTPS redirect); see VULTR_FIREWALL.md.
+# The Cloudflare variant is kept in Caddyfile.cloudflare (EDGE_MODE=cloudflare, see README).
+{
+	email {$ACME_EMAIL:yogansh@claraai.tech}
+	# ACME directory. Unset = Let's Encrypt PRODUCTION. For the first real issuance set
+	#   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+	# (untrusted test certificates, generous rate limits), then unset it to switch to production. See README §4a.
+	acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+	# Optional extra global options. Empty in production (the glob matches nothing). The local stack test
+	# mounts a file here to use Caddy's internal CA instead of Let's Encrypt.
+	import /etc/caddy/conf.d/*.global
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	reverse_proxy api:8000 {
+		health_uri /health/ready
+		health_interval 30s
+		health_timeout 5s
+
+		# Direct mode has no trusted proxy in front of Caddy, so every client-supplied forwarding header
+		# is untrusted: drop them all, then set the ONE header the API trusts from its own TCP peer
+		# (Caddy). {remote_host} is the real TCP peer address of the browser connection.
+		header_up -CF-Connecting-IP
+		header_up -X-Forwarded-For
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

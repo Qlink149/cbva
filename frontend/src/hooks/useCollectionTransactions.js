@@ -14,7 +14,7 @@ export const useCollectionTransactions = (leaderId, fiscalYear, month) =>
         ...(month ? { month } : {}),
       }),
     enabled: !!leaderId && !!fiscalYear,
-    staleTime: 0,
+    staleTime: 60_000,
     select: (res) => res.data ?? res,
   });
 
