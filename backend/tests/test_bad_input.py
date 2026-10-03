@@ -82,3 +82,29 @@ async def test_duplicate_baseline_is_409_not_500(client, admin_headers):
     second = await client.post("/api/baselines/", headers=admin_headers, json=body)
     assert second.status_code == 409, second.text
     assert await database.db.baseline_plans.count_documents({"leader_id": "manan"}) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/appraisals/rounds", "/api/appraisals/scorecard"])
+@pytest.mark.parametrize("leader_id,fy,expected", [("no-such-leader", "2627", 404), ("manan", "abcd", 422)])
+async def test_appraisal_gets_never_create_rounds_for_unknown_leader_or_bad_fy(
+        client, admin_headers, seed_users, path, leader_id, fy, expected):
+    res = await client.get(path, headers=admin_headers, params={"leader_id": leader_id, "fiscal_year": fy})
+    assert res.status_code == expected, res.text
+    assert await database.db.appraisal_rounds.count_documents({}) == 0
+    ok = await client.get(path, headers=admin_headers, params={"leader_id": "manan", "fiscal_year": "2627"})
+    assert ok.status_code == 200 and await database.db.appraisal_rounds.count_documents({"leader_id": "manan"}) == 4
+
+
+@pytest.mark.asyncio
+async def test_one_malformed_audit_entry_does_not_break_the_audit_list(client, admin_headers):
+    """Seen on cbva_verify: entries with leader_id=123 (int) made every /api/audit-log page answer 500."""
+    await database.db.audit_log.insert_one({
+        "entity_type": "client", "entity_id": "x", "entity_label": 42, "action": "created", "changes": [],
+        "actor_id": "a", "actor_name": "A", "actor_role": "admin", "leader_id": 123, "fiscal_year": 2627,
+        "source": "ui", "created_at": datetime.now(timezone.utc),
+    })
+    res = await client.get("/api/audit-log/", headers=admin_headers)
+    assert res.status_code == 200, res.text
+    entry = res.json()["data"][0]
+    assert entry["leader_id"] == "123" and entry["fiscal_year"] == "2627" and entry["entity_label"] == "42"

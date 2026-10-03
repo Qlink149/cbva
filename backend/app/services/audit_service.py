@@ -157,23 +157,28 @@ def _normalize_changes(changes: list | None) -> list[dict]:
     return out
 
 
+def _opt_str(value) -> str | None:
+    return None if value is None else str(value)
+
+
 def _serialize_audit_doc(doc: dict) -> dict:
+    # Every scalar is coerced to the response type: one malformed entry must not 500 the whole audit list.
     out = {
         "id": str(doc["_id"]),
         "entity_type": doc.get("entity_type") or "unknown",
         "entity_id": str(doc.get("entity_id") or ""),
-        "entity_label": doc.get("entity_label") or "",
+        "entity_label": str(doc.get("entity_label") or ""),
         "action": doc.get("action") or "updated",
         "changes": _normalize_changes(doc.get("changes")),
         "snapshot": _json_safe(doc.get("snapshot")) if doc.get("snapshot") is not None else None,
         "actor_id": str(doc.get("actor_id") or ""),
-        "actor_name": doc.get("actor_name") or "",
-        "actor_role": doc.get("actor_role") or "",
-        "leader_id": doc.get("leader_id"),
-        "fiscal_year": doc.get("fiscal_year"),
-        "source": doc.get("source") or "ui",
+        "actor_name": str(doc.get("actor_name") or ""),
+        "actor_role": str(doc.get("actor_role") or ""),
+        "leader_id": _opt_str(doc.get("leader_id")),
+        "fiscal_year": _opt_str(doc.get("fiscal_year")),
+        "source": str(doc.get("source") or "ui"),
         "triggered_by": str(doc["triggered_by"]) if doc.get("triggered_by") else None,
-        "request_id": doc.get("request_id"),
+        "request_id": _opt_str(doc.get("request_id")),
         "created_at": serialize_datetime(doc.get("created_at")) or serialize_datetime(datetime.now(timezone.utc)),
     }
     return out
