@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import connect_db, close_db, ensure_db_connected
 from app.services.audit_service import request_id_ctx
 from app.core.limiter import limiter, client_ip
+from app.core.proxy import TrailingSlashNormalizerMiddleware, TrustedProxySchemeMiddleware
 from app.routers import (
     auth,
     leaders,
@@ -70,6 +71,9 @@ app = FastAPI(
     title="CBVA API",
     version="1.0.0",
     description="CBV & Associates LLP Business Planning Platform",
+    # No trailing-slash redirects: behind Caddy they pointed at http:// and broke the frontend. Both spellings
+    # are served directly by TrailingSlashNormalizerMiddleware below.
+    redirect_slashes=False,
     **_app_kwargs,
 )
 app.state.limiter = limiter
@@ -109,6 +113,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+# Added last = outermost: the scheme is fixed before anything else runs, then the path is normalised.
+app.add_middleware(TrailingSlashNormalizerMiddleware, router=app.router)
+app.add_middleware(TrustedProxySchemeMiddleware)
 
 app.include_router(auth.router,        prefix="/api/auth",         tags=["Auth"])
 app.include_router(leaders.router,     prefix="/api/leaders",      tags=["Leaders"])

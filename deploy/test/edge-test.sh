@@ -23,10 +23,11 @@ caddy_ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "cbva-edge_int
 client_ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "cbva-edge_internal").IPAddress}}' cbva-edge-client-1)"
 echo "caddy container=$caddy_ip  second client container=$client_ip"
 
-echo "--- client 1 (docker host) sends spoofed CF-Connecting-IP, X-Forwarded-For and X-Real-IP"
+echo "--- client 1 (docker host) sends spoofed CF-Connecting-IP, X-Forwarded-For, X-Real-IP and X-Forwarded-Proto"
 body="$(curl --resolve api.test.local:18443:127.0.0.1 -sk https://api.test.local:18443/anything \
-  -H 'CF-Connecting-IP: 1.1.1.1' -H 'X-Forwarded-For: 2.2.2.2, 3.3.3.3' -H 'X-Real-IP: 4.4.4.4')"
-echo "$body" | "$PY" -c "import sys,json; h=json.load(sys.stdin)['headers']; print({k:h.get(k) for k in ('x-real-ip','cf-connecting-ip','x-forwarded-for')})"
+  -H 'CF-Connecting-IP: 1.1.1.1' -H 'X-Forwarded-For: 2.2.2.2, 3.3.3.3' -H 'X-Real-IP: 4.4.4.4' -H 'X-Forwarded-Proto: http')"
+echo "$body" | "$PY" -c "import sys,json; h=json.load(sys.stdin)['headers']; print({k:h.get(k) for k in ('x-real-ip','cf-connecting-ip','x-forwarded-for','x-forwarded-proto')})"
+expect "$(echo "$body" | field x-forwarded-proto)" "https" "X-Forwarded-Proto set by Caddy to https (client-sent 'http' overwritten)" "X-Forwarded-Proto not https"
 real1="$(echo "$body" | field x-real-ip)"
 expect "$(echo "$body" | field cf-connecting-ip)" "<absent>" "CF-Connecting-IP stripped" "CF-Connecting-IP reached upstream"
 expect "$(echo "$body" | field x-forwarded-for)" "<absent>" "X-Forwarded-For stripped" "X-Forwarded-For reached upstream"
