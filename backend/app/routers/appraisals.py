@@ -16,6 +16,7 @@ from app.services.appraisal_rollup import (
     overall_weighted_avg,
 )
 from app.services.fiscal_year import assert_fy_editable
+from app.services.fy_calendar import parse_fy_slug
 from app.services.kra_resolve import resolve_competencies, resolve_kpis, resolve_weights
 
 router = APIRouter()
@@ -69,6 +70,12 @@ async def ensure_rounds(fiscal_year: str, leader_id: str) -> list[dict]:
         {"fiscal_year": fiscal_year, "leader_id": leader_id}
     ).to_list(length=10)
     by_type = {d["round_type"]: d for d in existing}
+    if len(by_type) < len(ROUND_TYPES):
+        # This GET creates missing rounds: never for a malformed FY or a leader that does not exist.
+        if parse_fy_slug(fiscal_year) is None:
+            raise HTTPException(status_code=422, detail="fiscal_year must be a 4-digit slug, e.g. 2627")
+        if not await database.db.leaders.find_one({"_id": leader_id}, {"_id": 1}):
+            raise HTTPException(status_code=404, detail="Leader not found")
     for round_type in ROUND_TYPES:
         if round_type in by_type:
             continue
