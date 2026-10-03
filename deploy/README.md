@@ -103,14 +103,14 @@ GitHub **environment** `production` (and one for staging if you add a staging jo
 | `SSH_HOST`, `SSH_USER` | VPS address, `deploy` |
 | `SSH_KEY` | private key for `deploy` |
 | `SSH_HOST_FINGERPRINT` | `SHA256:...` from the command above: pins the host key |
-| `GHCR_PULL_USER`, `GHCR_PULL_TOKEN` | GitHub user + PAT with `read:packages` that the VPS uses to pull |
+| `VULTR_CR_USERNAME`, `VULTR_CR_API_KEY` | Vultr Container Registry credentials (repository secrets, used by CI to push and by the deploy step to log the VPS in and pull). Vultr panel → Container Registry → your registry → Docker/Kubernetes credentials |
 
 ## 4. First-run order
 
 ```bash
 cd /opt/cbva
-export GHCR_OWNER=<github-owner> TAG=<image-tag>      # CI records the tag in .current_tag
-docker login ghcr.io -u <user>                          # PAT with read:packages
+export TAG=<image-tag>                                  # CI records the tag in .current_tag; image = blr.vultrcr.com/qlink01/cbva-api:$TAG
+docker login blr.vultrcr.com -u <VULTR_CR_USERNAME>     # password prompt: the registry API key
 docker compose pull
 
 # (migrating existing data? do deploy/DATA_MIGRATION.md steps 1-2 now, before bootstrap)
@@ -149,11 +149,11 @@ Tested: `test/edge-test.sh` (real Caddyfile + echo upstream) and `backend/tests/
 
 1. The deploy job records `/opt/cbva/.current_tag` and `.previous_tag`. If pull, start or the health check fails it
    **automatically** re-deploys the previous tag (an ERR trap, simulated against a stub docker for four scenarios).
-2. Manual: `cd /opt/cbva && export GHCR_OWNER=<owner> TAG=$(cat .previous_tag) && docker compose up -d api && curl -fsS https://cbva-api.claraai.tech/health/ready && echo $TAG > .current_tag`.
+2. Manual: `cd /opt/cbva && export TAG=$(cat .previous_tag) && docker compose up -d api && curl -fsS https://cbva-api.claraai.tech/health/ready && echo $TAG > .current_tag`.
 3. No schema migrations in code (index creation is additive), so no DB rollback step. For data problems restore the Atlas
    snapshot into a **new** database and switch `DATABASE_NAME`.
 4. Frontend: Vercel → Deployments → promote/redeploy the previous production deployment (Instant Rollback).
-5. Keep the last 3 image tags in GHCR.
+5. Keep the last 3 image tags in the registry (Vultr Container Registry bills by storage: delete older `:<sha>` tags, never `:latest`/`:staging` or the tags in `.current_tag` / `.previous_tag`).
 
 ## 7. Operating notes
 

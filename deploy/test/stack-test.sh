@@ -20,7 +20,7 @@ DATABASE_NAME=cbva_stack
 MONGODB_URL=mongodb://mongo:27017
 FRONTEND_ORIGIN=https://app.test.local
 ENVF
-export GHCR_OWNER=local TAG=test SITE_ADDRESS=api.test.local ACME_EMAIL=yogansh@claraai.tech
+export TAG=test SITE_ADDRESS=api.test.local ACME_EMAIL=yogansh@claraai.tech
 DC=(docker compose -p cbva-stack -f ../docker-compose.yml -f docker-compose.stack-test.yml --project-directory ..)
 cleanup() { "${DC[@]}" down -v >/dev/null 2>&1 || true; rm -f .env.stack; }
 trap cleanup EXIT

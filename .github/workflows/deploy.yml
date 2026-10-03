@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/cbva-api
+  # Vultr Container Registry (Bangalore). Secrets: VULTR_CR_USERNAME, VULTR_CR_API_KEY.
+  IMAGE: blr.vultrcr.com/qlink01/cbva-api
 
 jobs:
   test:
@@ -46,13 +47,12 @@ jobs:
         run: pip-audit -r requirements.txt
 
   # Runs on every PR and push: builds the exact backend/Dockerfile and smoke-tests the container
-  # (non-root, read-only rootfs, health, SIGTERM). Pushes to GHCR only outside pull requests.
+  # (non-root, read-only rootfs, health, SIGTERM). Pushes to Vultr Container Registry only outside pull requests.
   build:
     needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -77,9 +77,9 @@ jobs:
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: blr.vultrcr.com
+          username: ${{ secrets.VULTR_CR_USERNAME }}
+          password: ${{ secrets.VULTR_CR_API_KEY }}
       - name: Push image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
       # Host key is pinned via SSH_HOST_FINGERPRINT (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`
       # on the VPS, value like SHA256:abc...). The action refuses to connect on mismatch (no StrictHostKeyChecking=no).
-      - name: Sync compose, Caddyfile and Cloudflare ranges
+      - name: Sync compose and Caddyfile
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -114,21 +114,19 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           NEW_TAG: ${{ needs.build.outputs.tag }}
-          GHCR_OWNER: ${{ github.repository_owner }}
-          GHCR_USER: ${{ secrets.GHCR_PULL_USER }}
-          GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          VULTR_CR_USERNAME: ${{ secrets.VULTR_CR_USERNAME }}
+          VULTR_CR_API_KEY: ${{ secrets.VULTR_CR_API_KEY }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
-          envs: NEW_TAG,GHCR_OWNER,GHCR_USER,GHCR_TOKEN
+          envs: NEW_TAG,VULTR_CR_USERNAME,VULTR_CR_API_KEY
           script_stop: true
           script: |
             set -euo pipefail
             cd /opt/cbva
-            export GHCR_OWNER
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
+            echo "$VULTR_CR_API_KEY" | docker login blr.vultrcr.com -u "$VULTR_CR_USERNAME" --password-stdin >/dev/null
             PREV_TAG="$(cat .current_tag 2>/dev/null || true)"
 
             wait_healthy() {

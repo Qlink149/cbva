@@ -10,7 +10,8 @@ name: cbva
 
 services:
   api:
-    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER}/cbva-api:${TAG:-latest}
+    # Vultr Container Registry; CI pushes :<sha> and :latest (production) or :staging. TAG selects the tag.
+    image: ${CBVA_IMAGE:-blr.vultrcr.com/qlink01/cbva-api}:${TAG:-latest}
     env_file: .env
     restart: unless-stopped
     read_only: true
