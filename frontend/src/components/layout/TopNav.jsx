@@ -44,7 +44,7 @@ export default function TopNav({ user, navItems, sections }) {
           {/* Logo — bigger */}
           <Link to="/" className="flex items-center shrink-0">
             <img
-              src="https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png"
+              src="/cbv-logo.png"
               alt="CBVA"
               className="h-12 w-auto"
             />

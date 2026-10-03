@@ -1,0 +1,71 @@
+# Runs on the VPS in /opt/cbva. DIRECT edge mode (no Cloudflare): Caddy terminates TLS with Let's Encrypt.
+# The API port is NOT published: Caddy is the only peer, which is what lets the app trust the client-IP header
+# Caddy sets (X-Real-IP; only from private-network peers). Never add `ports:` to api.
+#
+# Required in /opt/cbva/.env:  SITE_ADDRESS=cbva-api.claraai.tech   (staging: cbva-api-staging.claraai.tech)
+# Optional:                    ACME_EMAIL (default yogansh@claraai.tech), CADDYFILE (default ./Caddyfile)
+# Cloudflare mode: docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up -d
+#                  with CADDYFILE=./Caddyfile.cloudflare and EDGE_MODE=cloudflare in .env
+name: cbva
+
+services:
+  api:
+    # Vultr Container Registry; CI pushes :<sha> and :latest (production) or :staging. TAG selects the tag.
+    image: ${CBVA_IMAGE:-blr.vultrcr.com/qlink01/cbva-api}:${TAG:-latest}
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 700m
+    memswap_limit: 1400m
+    cpus: 1.0
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [internal]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. cbva-api.claraai.tech}
+      ACME_EMAIL: ${ACME_EMAIL:-yogansh@claraai.tech}
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}   # staging for the first issuance, see README §4a
+    ports:
+      - "80:80"      # ACME HTTP-01 validation + HTTP->HTTPS redirect: must be reachable from the internet
+      - "443:443"
+    volumes:
+      - ${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # issued certificates + ACME account: keep, or Let's Encrypt rate limits bite
+      - caddy_config:/config
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  caddy_data:
+  caddy_config:

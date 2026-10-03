@@ -4,6 +4,11 @@ from zoneinfo import ZoneInfo
 IST = ZoneInfo("Asia/Kolkata")
 
 
+def today_ist() -> date:
+    """Today's date in India. Never use date.today(): it follows the container's libc timezone."""
+    return datetime.now(IST).date()
+
+
 def serialize_datetime(dt: datetime | None) -> str | None:
     """Serialize a datetime as UTC ISO-8601 with Z suffix for JSON APIs."""
     if dt is None:

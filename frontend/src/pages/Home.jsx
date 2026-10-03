@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 
 const WelcomeAnimation = lazy(() => import('@/components/welcome/WelcomeAnimation'));
 
-const LOGO_SRC = 'https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png';
+const LOGO_SRC = '/cbv-logo.png';
 
 export default function Home() {
   const navigate = useNavigate();

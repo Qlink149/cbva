@@ -1,9 +1,38 @@
+import asyncio
+import time
+
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.core.config import settings
 
 _client: AsyncIOMotorClient | None = None
 db: AsyncIOMotorDatabase | None = None
+
+
+_INDEX_RETRIES = 3
+_INDEX_RECHECK_SECONDS = 30.0
+_indexes_ready = False
+_last_index_attempt = 0.0
+
+
+async def _create_indexes_with_retry(retries: int = _INDEX_RETRIES) -> bool:
+    """Retry index creation with exponential backoff (1s, 2s). Never raises."""
+    global _indexes_ready, _last_index_attempt
+    _last_index_attempt = time.monotonic()
+    for attempt in range(1, retries + 1):
+        try:
+            await _create_indexes()
+            _indexes_ready = True
+            logger.info("MongoDB connected and indexes ensured.")
+            return True
+        except Exception as exc:
+            if attempt == retries:
+                logger.error("Index creation failed after {} attempts; will retry on a later request: {}", attempt, exc)
+                return False
+            delay = 2 ** (attempt - 1)
+            logger.warning("Index creation attempt {}/{} failed ({}); retrying in {}s", attempt, _INDEX_RETRIES, exc, delay)
+            await asyncio.sleep(delay)
+    return False
 
 
 async def connect_db() -> None:
@@ -13,16 +42,15 @@ async def connect_db() -> None:
     _client = AsyncIOMotorClient(
         settings.MONGODB_URL,
         serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=30000,
+        maxPoolSize=10,
+        minPoolSize=1,
+        maxIdleTimeMS=60000,
+        retryWrites=True,
     )
     db = _client[settings.DATABASE_NAME]
-    try:
-        await _create_indexes()
-        logger.info("MongoDB connected and indexes ensured.")
-    except Exception as exc:
-        logger.warning(
-            "MongoDB not reachable at startup — indexes skipped. "
-            "Make sure MongoDB is running. Error: %s", exc
-        )
+    await _create_indexes_with_retry()
 
 
 _fy_synced = False
@@ -33,6 +61,9 @@ async def ensure_db_connected() -> None:
     global _fy_synced
     if db is None:
         await connect_db()
+    elif not _indexes_ready and time.monotonic() - _last_index_attempt > _INDEX_RECHECK_SECONDS:
+        # Single attempt, rate-limited: never stall requests behind a backoff loop.
+        await _create_indexes_with_retry(retries=1)
     if not _fy_synced and db is not None:
         try:
             from app.services.fiscal_year import ensure_current_fy_matches_calendar
@@ -43,11 +74,12 @@ async def ensure_db_connected() -> None:
 
 
 async def close_db() -> None:
-    global _client, db
+    global _client, db, _indexes_ready
     if _client:
         _client.close()
     _client = None
     db = None
+    _indexes_ready = False
 
 
 async def _create_indexes() -> None:

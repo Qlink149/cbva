@@ -1,4 +1,5 @@
 import pytest
+from app.services.fiscal_year import calendar_fy_slug
 from unittest.mock import AsyncMock, MagicMock, patch
 from bson import ObjectId
 from datetime import datetime, timezone
@@ -64,6 +65,9 @@ async def test_log_event_never_raises_on_db_failure():
 
 @pytest.mark.asyncio
 async def test_engagement_update_creates_audit_entry(client, seed_users):
+    from tests.conftest import seed_editable_fy
+    FY = calendar_fy_slug()  # current FY: earlier FYs are month-locked for non-admins
+    await seed_editable_fy(FY)
     headers = {
         "Authorization": f"Bearer {create_access_token(str(seed_users['user']['_id']), 'user', 'manan')}"
     }
@@ -71,7 +75,7 @@ async def test_engagement_update_creates_audit_entry(client, seed_users):
         "/api/engagements/",
         json={
             "leader_id": "manan",
-            "fiscal_year": "2526",
+            "fiscal_year": FY,
             "name": "Audit Test Co",
             "green": 100000,
             "amber": 200000,
@@ -105,9 +109,15 @@ async def test_engagement_update_creates_audit_entry(client, seed_users):
     assert audit_doc["actor_name"] == "Test Leader"
 
 
+@pytest.mark.skip(reason="Stale: GET /api/audit-log/ is admin-only (app/routers/audit.py require_roles('admin')), "
+                         "so per-leader scoping for non-admins is unreachable. Replaced by "
+                         "test_audit_api_is_admin_only below. Re-enable if non-admin access is restored.")
 @pytest.mark.asyncio
 async def test_audit_api_leader_scoping(client, seed_users):
     from app.core import database
+    from tests.conftest import seed_editable_fy
+    FY = calendar_fy_slug()  # current FY: earlier FYs are month-locked for non-admins
+    await seed_editable_fy(FY)
 
     now = datetime.now(timezone.utc)
     await database.db.audit_log.insert_many([
@@ -121,7 +131,7 @@ async def test_audit_api_leader_scoping(client, seed_users):
             "actor_name": "Test Leader",
             "actor_role": "user",
             "leader_id": "manan",
-            "fiscal_year": "2526",
+            "fiscal_year": FY,
             "source": "ui",
             "created_at": now,
         },
@@ -135,7 +145,7 @@ async def test_audit_api_leader_scoping(client, seed_users):
             "actor_name": "Mgmt",
             "actor_role": "management",
             "leader_id": "varun",
-            "fiscal_year": "2526",
+            "fiscal_year": FY,
             "source": "ui",
             "created_at": now,
         },
@@ -165,6 +175,31 @@ async def test_audit_api_leader_scoping(client, seed_users):
     assert "Own" in labels
     assert "Other" not in labels
     assert "secret@user.com" not in labels
+
+
+@pytest.mark.asyncio
+async def test_audit_api_is_admin_only(client, seed_users):
+    from app.core import database
+
+    now = datetime.now(timezone.utc)
+    await database.db.audit_log.insert_one({
+        "entity_type": "engagement", "entity_id": "e1", "entity_label": "Own", "action": "updated",
+        "changes": [], "actor_id": "u", "actor_name": "U", "actor_role": "user",
+        "leader_id": "manan", "fiscal_year": None, "source": "ui", "created_at": now,
+    })
+    user_headers = {"Authorization": f"Bearer {create_access_token(str(seed_users['user']['_id']), 'user', 'manan')}"}
+    mgmt_headers = {"Authorization": f"Bearer {create_access_token(str(seed_users['mgmt']['_id']), 'management', 'varun')}"}
+    assert (await client.get("/api/audit-log/", headers=user_headers)).status_code == 403
+    assert (await client.get("/api/audit-log/", headers=mgmt_headers)).status_code == 403
+
+    admin_id = ObjectId()
+    await database.db.users.insert_one({
+        "_id": admin_id, "full_name": "Adm", "email": "adm3@test.com", "password_hash": "x",
+        "role": "admin", "leader_id": None, "is_active": True, "refresh_token_hashes": [],
+    })
+    res = await client.get("/api/audit-log/", headers={"Authorization": f"Bearer {create_access_token(str(admin_id), 'admin', None)}"})
+    assert res.status_code == 200
+    assert "Own" in [d["entity_label"] for d in res.json()["data"]]
 
 
 @pytest.mark.asyncio

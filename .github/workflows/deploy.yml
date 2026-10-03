@@ -1,0 +1,212 @@
+name: backend-deploy
+
+on:
+  pull_request:
+    paths: ["backend/**", "deploy/**", ".github/workflows/deploy.yml"]
+  push:
+    branches: [main]
+    paths: ["backend/**", "deploy/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy this ref to... (production deploys only run on push to main, so choosing production fails with a message)"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || format('deploy-{0}', github.event_name == 'workflow_dispatch' && inputs.environment || 'production') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Vultr Container Registry (Bangalore). Secrets: VULTR_CR_USERNAME, VULTR_CR_API_KEY.
+  IMAGE: blr.vultrcr.com/qlink01/cbva-api
+
+jobs:
+  # Decides what this run may do. pull_request: build and test only. push to main: build, push :<sha> + :latest,
+  # deploy PRODUCTION. workflow_dispatch environment=staging: build, push :<sha> + :staging, deploy STAGING from any
+  # branch. workflow_dispatch environment=production is refused: production deploys only run on push to main
+  # (to redeploy, re-run the push workflow run for main from the Actions tab).
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.p.outputs.environment }}
+      deploy: ${{ steps.p.outputs.deploy }}
+      extra_tag: ${{ steps.p.outputs.extra_tag }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)
+              environment=""; deploy=false; extra_tag="" ;;
+            push)
+              environment=vultr-production; deploy=true; extra_tag=latest ;;
+            workflow_dispatch)
+              if [ "$INPUT_ENV" = production ]; then
+                echo "::error::Production deploys run only on push to main. Use environment=staging here, or re-run the push workflow run for main."
+                exit 1
+              fi
+              environment=staging; deploy=true; extra_tag=staging ;;
+            *)
+              echo "::error::unexpected event $EVENT"; exit 1 ;;
+          esac
+          {
+            echo "environment=$environment"
+            echo "deploy=$deploy"
+            echo "extra_tag=$extra_tag"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MONGODB_URL: mongodb://localhost:27017
+      DATABASE_NAME: cbva_test
+      SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
+      FRONTEND_ORIGIN: http://localhost:5173
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt pip-audit
+      - run: pytest -q -rs
+      - name: Dependency audit (runtime deps incl. transitives)
+        run: pip-audit -r requirements.txt
+
+  # Runs on every PR and push: builds the exact backend/Dockerfile and smoke-tests the container
+  # (non-root, read-only rootfs, health, SIGTERM). Pushes to Vultr Container Registry only outside pull requests.
+  build:
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (local, for smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          load: true
+          tags: cbva-api:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container smoke test
+        run: SKIP_BUILD=1 IMAGE=cbva-api:smoke bash deploy/smoke-test.sh
+      - name: Edge test (real Caddyfile, spoofed forwarding headers stripped, real client IP)
+        run: bash deploy/test/edge-test.sh
+      - name: Full stack test, direct mode (real compose + Caddyfile + API image; rate limits per real IP)
+        run: bash deploy/test/stack-test.sh
+      - uses: docker/login-action@v3
+        if: needs.plan.outputs.deploy == 'true'
+        with:
+          registry: blr.vultrcr.com
+          username: ${{ secrets.VULTR_CR_USERNAME }}
+          password: ${{ secrets.VULTR_CR_API_KEY }}
+      - name: Push image
+        if: needs.plan.outputs.deploy == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:${{ needs.plan.outputs.extra_tag }}
+          cache-from: type=gha
+
+  # One deploy job for both environments. The GitHub Environment (staging or vultr-production) supplies its own
+  # SSH_HOST, SSH_USER, SSH_KEY and SSH_HOST_FINGERPRINT; VULTR_CR_* are repository secrets.
+  deploy:
+    needs: [plan, build]
+    if: needs.plan.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.plan.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show target
+        run: echo "Deploying ${{ needs.build.outputs.tag }} to ${{ needs.plan.outputs.environment }}"
+      # Host key is pinned via SSH_HOST_FINGERPRINT (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`
+      # on the VPS, value like SHA256:abc...). The action refuses to connect on mismatch (no StrictHostKeyChecking=no).
+      - name: Sync compose and Caddyfile
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          source: "deploy/docker-compose.yml,deploy/Caddyfile"
+          target: /opt/cbva
+          strip_components: 1
+      - name: Deploy with health check and automatic rollback
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          NEW_TAG: ${{ needs.build.outputs.tag }}
+          VULTR_CR_USERNAME: ${{ secrets.VULTR_CR_USERNAME }}
+          VULTR_CR_API_KEY: ${{ secrets.VULTR_CR_API_KEY }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          envs: NEW_TAG,VULTR_CR_USERNAME,VULTR_CR_API_KEY
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/cbva
+            echo "$VULTR_CR_API_KEY" | docker login blr.vultrcr.com -u "$VULTR_CR_USERNAME" --password-stdin >/dev/null
+            PREV_TAG="$(cat .current_tag 2>/dev/null || true)"
+
+            wait_healthy() {
+              local st=none
+              for _ in $(seq 1 24); do
+                st="$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q api)" 2>/dev/null || echo none)"
+                [ "$st" = healthy ] && return 0
+                sleep 5
+              done
+              return 1
+            }
+
+            rollback() {
+              echo "::error::Deploy of ${NEW_TAG} failed; collecting logs"
+              docker compose logs --tail=80 api || true
+              if [ -n "$PREV_TAG" ]; then
+                echo "Rolling back to ${PREV_TAG}"
+                export TAG="$PREV_TAG"
+                docker compose pull api && docker compose up -d api
+                if wait_healthy; then echo "Rollback to ${PREV_TAG} healthy"; else echo "::error::Rollback to ${PREV_TAG} is NOT healthy"; fi
+              else
+                echo "::error::No previous tag recorded (first deploy); nothing to roll back to"
+              fi
+            }
+            # Any failure after this point (pull, up, health) restores the previous tag.
+            trap 'rc=$?; trap - ERR; rollback; exit $rc' ERR
+
+            export TAG="$NEW_TAG"
+            docker compose pull api
+            docker compose up -d
+            wait_healthy   # non-zero return trips the ERR trap -> rollback
+
+            echo "$NEW_TAG" > .current_tag
+            if [ -n "$PREV_TAG" ]; then echo "$PREV_TAG" > .previous_tag; fi
+            docker image prune -f >/dev/null
+            echo "Deployed ${NEW_TAG}"

@@ -8,7 +8,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/lib/AuthContext';
 
-const LOGO_SRC = 'https://media.base44.com/images/public/user_699e998295e6df9ade5456dd/ab50d79a4_CBV_Logo.png';
+const LOGO_SRC = '/cbv-logo.png';
 
 const LEADER_NAV = [
   { label: 'Dashboard', path: '/my-plan/dashboard', icon: LayoutDashboard },

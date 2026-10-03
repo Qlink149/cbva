@@ -1,0 +1,32 @@
+# Local test only: the REAL deploy/Caddyfile in direct mode in front of a header-echo upstream named "api",
+# using Caddy's internal CA (local_certs) instead of Let's Encrypt. `client` gives a second, different source IP.
+name: cbva-edge
+services:
+  api:
+    image: python:3.11-slim
+    volumes: ["./echo.py:/echo.py:ro"]
+    command: ["python", "/echo.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+  caddy:
+    image: caddy:2
+    depends_on:
+      api: {condition: service_healthy}
+    environment:
+      SITE_ADDRESS: api.test.local
+      ACME_EMAIL: yogansh@claraai.tech
+    ports: ["18080:80", "18443:443"]
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./conf.d:/etc/caddy/conf.d:ro
+    networks: [internal]
+  client:
+    image: curlimages/curl
+    entrypoint: ["sleep", "3600"]
+    networks: [internal]
+networks:
+  internal:

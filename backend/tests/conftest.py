@@ -5,9 +5,20 @@ from httpx import AsyncClient, ASGITransport
 from bson import ObjectId
 from datetime import datetime, timezone
 
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only-0123456789abcdef")
 os.environ.setdefault("DATABASE_NAME", "cbva_test")
 os.environ.setdefault("MONGODB_URL", "mongodb://localhost:27017")
+os.environ.setdefault("FRONTEND_ORIGIN", "http://localhost:5173")
+os.environ.setdefault("ENV", "dev")
+
+# Teardown below calls delete_many({}) on real collections: never run against a non-test DB or a remote host.
+from tests.db_guard import check_test_database  # noqa: E402
+
+check_test_database(
+    os.environ["MONGODB_URL"],
+    os.environ["DATABASE_NAME"],
+    allow_remote=os.environ.get("ALLOW_REMOTE_TEST_DB") == "1",
+)
 
 from app.main import app
 from app.core import database
@@ -75,6 +86,17 @@ async def seed_users():
     await database.db.leaders.insert_one({"_id": "manan", "name": "Manan", "practice": "Tax", "is_active": True})
     await database.db.leaders.insert_one({"_id": "varun", "name": "Varun", "practice": "TP", "is_active": True})
     return {"user": user_doc, "mgmt": mgmt_doc}
+
+
+async def seed_editable_fy(slug: str, is_current: bool = False) -> None:
+    """Insert an editable financial_years doc. Writes by non-admins are blocked unless the FY is editable."""
+    now = datetime.now(timezone.utc)
+    await database.db.financial_years.delete_many({"slug": slug})
+    await database.db.financial_years.insert_one({
+        "slug": slug, "label": f"FY 20{slug[:2]}-{slug[2:]}", "is_current": is_current,
+        "is_editable": True, "is_active": True, "sort_order": int(slug),
+        "created_at": now, "updated_at": now,
+    })
 
 
 def auth_header(user_id: ObjectId, role: str, leader_id: str | None):

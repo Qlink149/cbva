@@ -6,7 +6,7 @@ from app.schemas.collection import (
     MonthCollectionResponse, CollectionListResponse,
 )
 from app.core import database
-from app.core.serialization import serialize_datetime
+from app.core.serialization import serialize_datetime, today_ist
 from app.dependencies.auth import get_current_user, enforce_leader_scope, enforce_leader_write_scope
 from app.services.fy_calendar import (
     get_fy_month_calendar_year,
@@ -48,7 +48,7 @@ async def list_collections(
 ):
     enforce_leader_scope(current_user, leader_id)
 
-    as_of = date.today()
+    as_of = today_ist()
     allowed_month_keys = get_available_fy_month_keys(fiscal_year, as_of)
 
     # Planned targets from collection_entries, falling back to engagement monthly_plan
@@ -117,7 +117,7 @@ async def set_monthly_plan(
     enforce_leader_write_scope(current_user, body.leader_id)
     await assert_fy_editable(body.fiscal_year, current_user)
 
-    as_of = date.today()
+    as_of = today_ist()
     if not is_fy_month_elapsed(body.month_key, body.fiscal_year, as_of):
         raise HTTPException(status_code=400, detail="Cannot set plan for a future/unavailable month")
     assert_month_unlocked(body.fiscal_year, body.month_key, current_user, as_of)
