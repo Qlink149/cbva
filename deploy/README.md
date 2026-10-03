@@ -96,14 +96,26 @@ MONGODB_URL=...  DATABASE_NAME=cbva         # staging: cbva_staging, its own use
 SECRET_KEY=$(openssl rand -hex 32)          # different on each server
 ```
 
-GitHub **environment** `production` (and one for staging if you add a staging job; the shipped workflow deploys `main` to `production` only) with secrets:
+### CI/CD: two environments (GitHub Actions `backend-deploy`)
 
-| Secret | Value |
-|---|---|
-| `SSH_HOST`, `SSH_USER` | VPS address, `deploy` |
-| `SSH_KEY` | private key for `deploy` |
-| `SSH_HOST_FINGERPRINT` | `SHA256:...` from the command above: pins the host key |
-| `VULTR_CR_USERNAME`, `VULTR_CR_API_KEY` | Vultr Container Registry credentials (repository secrets, used by CI to push and by the deploy step to log the VPS in and pull). Vultr panel → Container Registry → your registry → Docker/Kubernetes credentials |
+Create two GitHub **Environments** (Settings → Environments): `staging` and `production`. Each holds the SSH secrets of **its own** VPS
+(same secret names, different values), so the deploy job picks the right server from the environment name. Add required reviewers to `production` if you want a manual gate.
+
+| Secret | Scope | Value |
+|---|---|---|
+| `SSH_HOST`, `SSH_USER` | Environment (`staging` / `production`) | that VPS's address, `deploy` |
+| `SSH_KEY` | Environment | private key for `deploy` on that VPS |
+| `SSH_HOST_FINGERPRINT` | Environment | `SHA256:...` from the command above (pins that host's key) |
+| `VULTR_CR_USERNAME`, `VULTR_CR_API_KEY` | **Repository** | Vultr Container Registry credentials, used by CI to push and by the deploy step to log the VPS in and pull. Vultr panel → Container Registry → your registry → Docker/Kubernetes credentials |
+
+| Trigger | Builds and pushes | Deploys to |
+|---|---|---|
+| pull request | builds + smoke/edge/stack tests only, **no push** | nothing |
+| **push to `main`** | `blr.vultrcr.com/qlink01/cbva-api:<sha12>` and `:latest` | **production** |
+| manual: Actions → backend-deploy → *Run workflow* → `environment = staging` (any branch) | `:<sha12>` and `:staging` | **staging** |
+| manual with `environment = production` | refused with an error | nothing: production deploys run only on push to `main` (to redeploy, use *Re-run all jobs* on the push run) |
+
+Both deploys use the same health-check and automatic rollback (see §6); `/opt/cbva/.current_tag` / `.previous_tag` are kept per server.
 
 ## 4. First-run order
 

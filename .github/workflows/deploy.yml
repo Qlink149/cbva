@@ -7,9 +7,15 @@ on:
     branches: [main]
     paths: ["backend/**", "deploy/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy this ref to... (production deploys only run on push to main, so choosing production fails with a message)"
+        type: choice
+        options: [staging, production]
+        default: staging
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy-production' }}
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || format('deploy-{0}', github.event_name == 'workflow_dispatch' && inputs.environment || 'production') }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -17,6 +23,43 @@ env:
   IMAGE: blr.vultrcr.com/qlink01/cbva-api
 
 jobs:
+  # Decides what this run may do. pull_request: build and test only. push to main: build, push :<sha> + :latest,
+  # deploy PRODUCTION. workflow_dispatch environment=staging: build, push :<sha> + :staging, deploy STAGING from any
+  # branch. workflow_dispatch environment=production is refused: production deploys only run on push to main
+  # (to redeploy, re-run the push workflow run for main from the Actions tab).
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.p.outputs.environment }}
+      deploy: ${{ steps.p.outputs.deploy }}
+      extra_tag: ${{ steps.p.outputs.extra_tag }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)
+              environment=""; deploy=false; extra_tag="" ;;
+            push)
+              environment=production; deploy=true; extra_tag=latest ;;
+            workflow_dispatch)
+              if [ "$INPUT_ENV" = production ]; then
+                echo "::error::Production deploys run only on push to main. Use environment=staging here, or re-run the push workflow run for main."
+                exit 1
+              fi
+              environment=staging; deploy=true; extra_tag=staging ;;
+            *)
+              echo "::error::unexpected event $EVENT"; exit 1 ;;
+          esac
+          {
+            echo "environment=$environment"
+            echo "deploy=$deploy"
+            echo "extra_tag=$extra_tag"
+          } >> "$GITHUB_OUTPUT"
+
   test:
     runs-on: ubuntu-latest
     services:
@@ -49,7 +92,7 @@ jobs:
   # Runs on every PR and push: builds the exact backend/Dockerfile and smoke-tests the container
   # (non-root, read-only rootfs, health, SIGTERM). Pushes to Vultr Container Registry only outside pull requests.
   build:
-    needs: test
+    needs: [plan, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,29 +118,33 @@ jobs:
       - name: Full stack test, direct mode (real compose + Caddyfile + API image; rate limits per real IP)
         run: bash deploy/test/stack-test.sh
       - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
+        if: needs.plan.outputs.deploy == 'true'
         with:
           registry: blr.vultrcr.com
           username: ${{ secrets.VULTR_CR_USERNAME }}
           password: ${{ secrets.VULTR_CR_API_KEY }}
       - name: Push image
-        if: github.event_name != 'pull_request'
+        if: needs.plan.outputs.deploy == 'true'
         uses: docker/build-push-action@v6
         with:
           context: backend
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ needs.plan.outputs.extra_tag }}
           cache-from: type=gha
 
+  # One deploy job for both environments. The GitHub Environment (staging or production) supplies its own
+  # SSH_HOST, SSH_USER, SSH_KEY and SSH_HOST_FINGERPRINT; VULTR_CR_* are repository secrets.
   deploy:
-    needs: build
-    if: github.event_name != 'pull_request'
+    needs: [plan, build]
+    if: needs.plan.outputs.deploy == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ needs.plan.outputs.environment }}
     steps:
       - uses: actions/checkout@v4
+      - name: Show target
+        run: echo "Deploying ${{ needs.build.outputs.tag }} to ${{ needs.plan.outputs.environment }}"
       # Host key is pinned via SSH_HOST_FINGERPRINT (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`
       # on the VPS, value like SHA256:abc...). The action refuses to connect on mismatch (no StrictHostKeyChecking=no).
       - name: Sync compose and Caddyfile
