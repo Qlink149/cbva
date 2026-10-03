@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from bson.errors import InvalidId
 from loguru import logger
 import asyncio
 import os
@@ -78,6 +79,12 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(InvalidId)
+async def _invalid_object_id(request: Request, exc: InvalidId):
+    # Handlers call ObjectId(path_id) directly; a malformed id is bad input, not a server error.
+    return JSONResponse(status_code=422, content={"detail": "Invalid id"})
 
 
 @app.middleware("http")
